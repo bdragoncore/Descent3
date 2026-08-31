@@ -11,7 +11,7 @@ The project uses Google Test for unit testing. See [BUILD.md](BUILD.md#testing) 
 
 ### Render tests and call graph viewer
 
-To build and run the headless render tests and view the HTML report:
+A TypeScript runner (`npm run render-tests`) runs the headless render tests in steps (configure, build, run, call graph, report). Test results scroll up with a single status line (spinner + "Run render tests") fixed at the bottom. To build and run and view the HTML report:
 
 ```bash
 mkdir -p build
@@ -20,7 +20,8 @@ cmake .. -DCMAKE_CXX_COMPILER=clang++ -DBUILD_TESTING=ON
 cmake --build .
 cd ..
 
-python3 tests/render/run_render_tests.py \
+npm install          # first time at repo root (for tsx/runner)
+npm run render-tests -- \
   --build-dir build \
   --output-dir build/tests/render_output
 ```
@@ -34,7 +35,7 @@ cd tests/callgraph-viewer
 npm install        # first time only
 cd ../..
 
-python3 tests/render/run_render_tests.py \
+npm run render-tests -- \
   --build-dir build \
   --output-dir build/tests/render_output \
   --serve

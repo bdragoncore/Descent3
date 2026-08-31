@@ -193,7 +193,23 @@ class HTMLReportGenerator:
                 .force("link", d3.forceLink(links).id(x => x.id).distance(80))
                 .force("charge", d3.forceManyBody().strength(-200))
                 .force("center", d3.forceCenter(width/2, height/2));
-            const link = g.append("g").selectAll("line").data(links).join("line").attr("stroke", "#30363d").attr("stroke-width", 1);
+            const maxTotalNs = RAW.links.length ? Math.max(...RAW.links.map(l => l.total_ns || 0), 1) : 1;
+            const linkGrp = g.append("g");
+            const linkSel = linkGrp.selectAll("line").data(links).join("line")
+                .attr("stroke", "#30363d")
+                .attr("stroke-width", d => {{
+                    const tn = d.total_ns;
+                    if (tn == null || tn === 0) return 1;
+                    return Math.max(1, 1 + 2 * (tn / maxTotalNs));
+                }});
+            linkSel.append("title").text(d => {{
+                const cnt = d.count != null ? d.count : "";
+                const tn = d.total_ns != null ? d.total_ns : "";
+                const fmt = n => n < 1e6 ? n + "ns" : (n/1e6).toFixed(2) + "ms";
+                if (cnt !== "" && tn !== "") return "calls: " + cnt + ", time: " + fmt(tn);
+                if (cnt !== "") return "calls: " + cnt;
+                return "";
+            }});
             const node = g.append("g").selectAll("g").data(nodes).join("g")
                 .attr("cursor", "pointer")
                 .call(d3.drag().on("start", (e,d) => {{ e.sourceEvent.stopPropagation(); if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }})
@@ -203,7 +219,7 @@ class HTMLReportGenerator:
             node.append("text").attr("x", 10).attr("dy", "0.35em").text(d => (d.label || d.id).length > 40 ? (d.label || d.id).slice(0,38)+"…" : (d.label || d.id)).attr("fill", "#c9d1d9").attr("font-size", "10px");
             node.append("title").text(d => d.label || d.id);
             simulation.on("tick", () => {{
-                link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                linkSel.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
                 node.attr("transform", d => `translate(${{d.x}},${{d.y}})`);
             }});
         }})();

@@ -22,6 +22,11 @@ TEST_F(D3EGLContextTest, EglContextCreation) {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     EXPECT_EQ(glGetError(), (GLenum)GL_NO_ERROR) << "GL should be working";
+
+    const char *glVendor = (const char *)glGetString(GL_VENDOR);
+    const char *glRenderer = (const char *)glGetString(GL_RENDERER);
+    EXPECT_TRUE(glVendor != nullptr && glVendor[0] != '\0') << "GL_VENDOR should be non-null";
+    EXPECT_TRUE(glRenderer != nullptr && glRenderer[0] != '\0') << "GL_RENDERER should be non-null";
 }
 
 TEST_F(D3EGLContextTest, BasicClear) {

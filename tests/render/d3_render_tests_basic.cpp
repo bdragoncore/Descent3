@@ -10,6 +10,8 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 class D3RenderTest : public D3RenderTestBase {
 protected:
@@ -134,6 +136,28 @@ TEST_F(D3RenderTest, FramebufferConsistency) {
     SavePNG("FramebufferConsistency");
 }
 
+TEST_F(D3RenderTest, FramebufferConsistencySameFrame) {
+    BeginFrame();
+    setup3DView(1.5f);
+
+    drawQuad3D(-0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.5f, 0.5f, 0.0f, -0.5f, 0.5f, 0.0f, 0.0f, 0.0f, 1.0f);
+    glFlush();
+    glFinish();
+    ReadPixels();
+
+    size_t fbSize = static_cast<size_t>(width_) * height_ * 4;
+    std::vector<uint8_t> fb1(framebuffer_, framebuffer_ + fbSize);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    drawQuad3D(-0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.5f, 0.5f, 0.0f, -0.5f, 0.5f, 0.0f, 0.0f, 0.0f, 1.0f);
+    glFlush();
+    glFinish();
+    ReadPixels();
+
+    EXPECT_EQ(std::memcmp(fb1.data(), framebuffer_, fbSize), 0) << "Framebuffer should be identical for two identical draws in same frame";
+    SavePNG("FramebufferConsistencySameFrame");
+}
+
 TEST_F(D3RenderTest, RenderSameSceneTwice) {
     BeginFrame();
     setup3DView(1.5f);
@@ -161,4 +185,110 @@ TEST_F(D3RenderTest, RenderSameSceneTwice) {
     glFinish();
     ReadPixels();
     SavePNG("RenderSameSceneTwice");
+}
+
+TEST_F(D3RenderTest, RenderWithLighting) {
+    BeginFrame();
+    rend_SetZBufferState(1);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    float lightPos[] = {2.0f, 2.0f, 2.0f, 0.0f};
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+    float lightColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-2.0f, 2.0f, -2.0f, 2.0f, 0.1f, 10.0f);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    glEnable(GL_COLOR_MATERIAL);
+
+    glColor3f(0.8f, 0.8f, 0.8f);
+    glBegin(GL_TRIANGLES);
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glVertex3f(-1.0f, -1.0f, -2.0f);
+    glVertex3f(1.0f, -1.0f, -2.0f);
+    glVertex3f(0.0f, 1.0f, -2.0f);
+    glEnd();
+
+    glFlush();
+    glFinish();
+    ReadPixels();
+
+    int litPixels = 0;
+    for (int i = 0; i < width_ * height_ * 4; i += 4) {
+        int r = framebuffer_[i], g = framebuffer_[i + 1], b = framebuffer_[i + 2];
+        if (std::abs(r - 200) < 60 && std::abs(g - 200) < 60 && std::abs(b - 200) < 60)
+            litPixels++;
+    }
+    EXPECT_GT(litPixels, 2000) << "Expected many lit pixels from GL_LIGHTING path";
+    SavePNG("RenderWithLighting");
+}
+
+TEST_F(D3RenderTest, RenderTexturedQuad) {
+    BeginFrame();
+
+    GLuint texId = 0;
+    glGenTextures(1, &texId);
+    glBindTexture(GL_TEXTURE_2D, texId);
+
+    unsigned char texData[32 * 32 * 4];
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 32; x++) {
+            int idx = (y * 32 + x) * 4;
+            texData[idx] = (x < 16) ? 255 : 0;
+            texData[idx + 1] = (y < 16) ? 255 : 0;
+            texData[idx + 2] = 128;
+            texData[idx + 3] = 255;
+        }
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 32, 32, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-1.0f, 1.0f, -1.0f, 1.0f, 0.1f, 10.0f);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex3f(-0.8f, -0.8f, -1.0f);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex3f(0.8f, -0.8f, -1.0f);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex3f(0.8f, 0.8f, -1.0f);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex3f(-0.8f, 0.8f, -1.0f);
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+    glFlush();
+    glFinish();
+    ReadPixels();
+
+    int nonBlack = 0;
+    for (int i = 0; i < width_ * height_ * 4; i += 4) {
+        if (framebuffer_[i] > 10 || framebuffer_[i + 1] > 10 || framebuffer_[i + 2] > 10)
+            nonBlack++;
+    }
+    EXPECT_GT(nonBlack, 5000) << "Expected many non-black pixels from textured quad";
+
+    glDeleteTextures(1, &texId);
+    SavePNG("RenderTexturedQuad");
 }

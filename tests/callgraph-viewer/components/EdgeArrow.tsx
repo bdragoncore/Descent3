@@ -9,6 +9,10 @@ interface EdgeArrowProps {
   sourceH: number;
   targetW: number;
   targetH: number;
+  /** Optional cost (e.g. time) for stroke width and tooltip */
+  cost?: number;
+  /** Optional call count for tooltip and fallback stroke width */
+  calls?: number;
 }
 
 /**
@@ -23,6 +27,8 @@ export function EdgeArrow({
   sourceH,
   targetW,
   targetH,
+  cost,
+  calls,
 }: EdgeArrowProps) {
   const sx = x1 + sourceW;
   const sy = y1 + sourceH / 2;
@@ -41,14 +47,30 @@ export function EdgeArrow({
   const a2x = ax + arrowSize * 0.5 * Math.cos(angle - perp);
   const a2y = ay + arrowSize * 0.5 * Math.sin(angle - perp);
 
+  const hasWeight = (cost != null && cost > 0) || (calls != null && calls > 0);
+  const strokeWidth =
+    hasWeight
+      ? Math.min(6, Math.max(1.5, 1.5 + (cost ?? 0) / 1e7 + (calls ?? 0) * 0.05))
+      : 1.5;
+  const title =
+    cost != null && calls != null
+      ? `calls: ${calls}, cost: ${cost >= 1e6 ? `${(cost / 1e6).toFixed(2)}M` : cost}`
+      : cost != null
+        ? `cost: ${cost >= 1e6 ? `${(cost / 1e6).toFixed(2)}M` : cost}`
+        : calls != null
+          ? `calls: ${calls}`
+          : undefined;
+
   return (
     <g>
       <path
         d={path}
         fill="none"
         stroke="#30363d"
-        strokeWidth={1.5}
-      />
+        strokeWidth={strokeWidth}
+      >
+        {title != null ? <title>{title}</title> : null}
+      </path>
       <polygon
         points={`${tx},${ty} ${a1x},${a1y} ${a2x},${a2y}`}
         fill="#30363d"

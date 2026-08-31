@@ -210,6 +210,53 @@ def build_tree(events: list) -> dict:
     return root
 
 
+ROOT_ID = "<root>"
+
+
+def build_dag(events: list) -> dict:
+    """
+    Build a DAG from enter/exit events for D3 force layout.
+    Returns {"nodes": [{"id", "label"}, ...], "links": [{"source", "target", "count", "total_ns"}, ...]}.
+    """
+    nodes_map: dict[str, dict] = {}
+    edges: dict[tuple[str, str], dict] = {}  # (caller, callee) -> { count, total_ns }
+    stack: list[tuple[str, int]] = []  # (fn, ts_ns at enter)
+
+    def ensure_node(fn: str) -> None:
+        if fn not in nodes_map:
+            nodes_map[fn] = {"id": fn, "label": fn}
+
+    ensure_node(ROOT_ID)
+
+    for event in events:
+        if event["type"] == "enter":
+            fn = event.get("fn", "??")
+            ts = event.get("ts_ns", 0)
+            ensure_node(fn)
+            caller = stack[-1][0] if stack else ROOT_ID
+            key = (caller, fn)
+            if key not in edges:
+                edges[key] = {"count": 0, "total_ns": 0}
+            edges[key]["count"] += 1
+            stack.append((fn, ts))
+        elif event["type"] == "exit" and stack:
+            fn, ts_enter = stack.pop()
+            ts_exit = event.get("ts_ns", 0)
+            duration = ts_exit - ts_enter
+            caller = stack[-1][0] if stack else ROOT_ID
+            key = (caller, fn)
+            if key in edges:
+                edges[key]["total_ns"] += duration
+            ensure_node(fn)
+
+    nodes = list(nodes_map.values())
+    links = [
+        {"source": src, "target": tgt, "count": e["count"], "total_ns": e["total_ns"]}
+        for (src, tgt), e in edges.items()
+    ]
+    return {"nodes": nodes, "links": links}
+
+
 def _count_nodes(node: dict) -> int:
     n = 1
     for c in node.get("children") or []:
@@ -232,14 +279,16 @@ def _truncate_tree(node: dict, cap: int, seen: list) -> None:
         kept.append(child)
         _truncate_tree(child, cap, seen)
     if len(kept) < len(children):
-        dropped_count = sum(_count_nodes(c) for c in children[len(kept):])
-        kept.append({
-            "fn": f"[+{dropped_count} nodes truncated — trace too large to show in full]",
-            "addr": "",
-            "ts": 0,
-            "duration": 0,
-            "children": [],
-        })
+        dropped_count = sum(_count_nodes(c) for c in children[len(kept) :])
+        kept.append(
+            {
+                "fn": f"[+{dropped_count} nodes truncated — trace too large to show in full]",
+                "addr": "",
+                "ts": 0,
+                "duration": 0,
+                "children": [],
+            }
+        )
     node["children"] = kept
 
 
@@ -252,8 +301,14 @@ def generate_html(trace_path: str) -> str:
     test_method = _get_test_method_name(trace_path)
     if path:
         tree = path_to_slim_tree(path)
-        end_label = "ReadPixels" if path and "ReadPixels" in path[-1].get("fn", "") else "final GL"
-        truncated_note = f" &nbsp;|&nbsp; Path: {test_method} → {end_label} ({len(path)} nodes)"
+        end_label = (
+            "ReadPixels"
+            if path and "ReadPixels" in path[-1].get("fn", "")
+            else "final GL"
+        )
+        truncated_note = (
+            f" &nbsp;|&nbsp; Path: {test_method} → {end_label} ({len(path)} nodes)"
+        )
     else:
         tree = build_tree(events)
         node_count = _count_nodes(tree)
@@ -266,9 +321,12 @@ def generate_html(trace_path: str) -> str:
     merge_repeated_calls(tree)
     annotate_stats(tree)
 
+    dag = build_dag(events)
     tree_json = json.dumps(tree, indent=2)
+    dag_json = json.dumps(dag)
     # Prevent </script> in JSON from closing the script tag in HTML
     tree_json_safe = tree_json.replace("</script>", "<\\/script>")
+    dag_json_safe = dag_json.replace("</script>", "<\\/script>")
     test_name = os.path.basename(trace_path).replace(".json", "").replace("trace__", "")
     safe_name = html_mod.escape(test_name)
 
@@ -284,12 +342,12 @@ def generate_html(trace_path: str) -> str:
     body {{ font-family: 'Menlo','Consolas',monospace; background:#0d1117; color:#c9d1d9; padding:20px; }}
     h1 {{ font-size:18px; margin-bottom:4px; color:#58a6ff; }}
     .subtitle {{ font-size:12px; color:#8b949e; margin-bottom:20px; }}
-    #controls {{ margin-bottom:12px; }}
+    #tree-controls {{ margin-bottom:12px; }}
     button {{ background:#21262d; color:#c9d1d9; border:1px solid #30363d; padding:6px 14px;
               border-radius:6px; cursor:pointer; font-size:12px; margin-right:8px; }}
     button:hover {{ background:#30363d; }}
     #tree-container {{ background:#161b22; border:1px solid #30363d; border-radius:8px;
-                       overflow:auto; padding:20px; min-height:400px; }}
+                        overflow:auto; padding:20px; min-height:400px; }}
     .link {{ stroke:#30363d; stroke-width:1.5px; }}
     .tooltip {{ position:fixed; background:#1c2128; border:1px solid #30363d; border-radius:6px;
                 padding:10px 14px; font-size:11px; pointer-events:none; opacity:0;
@@ -302,10 +360,8 @@ def generate_html(trace_path: str) -> str:
 </head>
 <body>
   <h1>&#9654; Render Trace: {safe_name}</h1>
-  <div class="subtitle">{total_events} events{truncated_note} &nbsp;|&nbsp; Click nodes to expand/collapse</div>
-  <div id="controls">
-    <button onclick="expandAll()">Expand All</button>
-    <button onclick="collapseAll()">Collapse All</button>
+  <div class="subtitle">{total_events} events{truncated_note}</div>
+  <div id="tree-controls">
     <button onclick="resetZoom()">Reset Zoom</button>
   </div>
   <div id="tree-container"><svg id="tree-svg"></svg></div>
@@ -316,148 +372,141 @@ const COLORS = ['#58a6ff','#79c0ff','#56d364','#3fb950','#f0883e','#d29922','#bc
 const colorFor = depth => COLORS[depth % COLORS.length];
 const fmtDur = ns => ns < 1000 ? ns+'ns' : ns < 1e6 ? (ns/1000).toFixed(2)+'us'
                    : ns < 1e9  ? (ns/1e6).toFixed(2)+'ms' : (ns/1e9).toFixed(3)+'s';
-const margin = {{top:20,right:300,bottom:20,left:80}};
+const margin = {{top:20,right:20,bottom:20,left:20}};
 const nodeH  = 28;
 const NODE_W = 200;
 const NODE_H = 80;
-let svg, g, root, zoom, nodeId = 0;
+let nodeId = 0;
 
-function init() {{
-  const w = Math.max(document.getElementById('tree-container').clientWidth - 40, 900);
-  svg  = d3.select('#tree-svg').attr('width', w).attr('height', 600);
-  zoom = d3.zoom().scaleExtent([0.2,4]).on('zoom', e => g.attr('transform', e.transform));
-  svg.call(zoom);
-  svg.append('defs').append('marker')
-    .attr('id', 'arrowhead')
-    .attr('viewBox', '0 -5 10 10')
-    .attr('refX', 10)
-    .attr('refY', 0)
-    .attr('markerWidth', 6)
-    .attr('markerHeight', 6)
-    .attr('orient', 'auto')
-    .append('path')
-    .attr('d', 'M0,-5L10,0L0,5')
-    .attr('fill', '#58a6ff');
-  g    = svg.append('g').attr('transform',`translate(${{margin.left}},${{margin.top}})`);
-  root = d3.hierarchy(RAW_TREE);
-  root.x0 = root.y0 = 0;
-  root.children && root.children.forEach(collapse);
-  update(root);
+let svgTree, gTree, rootTree, zoomTree;
+function initTree() {{
+  const container = document.getElementById('tree-container');
+  const w = Math.max(container.clientWidth - 40, 900);
+  svgTree = d3.select('#tree-svg').attr('width', w).attr('height', 600);
+  zoomTree = d3.zoom().scaleExtent([0.2,4]).on('zoom', e => gTree.attr('transform', e.transform));
+  svgTree.call(zoomTree);
+  svgTree.selectAll('defs').remove();
+  svgTree.append('defs').append('marker').attr('id','arrowhead').attr('viewBox','0 -5 10 10').attr('refX',10).attr('refY',0).attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto').append('path').attr('d','M0,-5L10,0L0,5').attr('fill','#58a6ff');
+  gTree = svgTree.append('g').attr('transform',`translate(${{margin.left}},${{margin.top}})`);
+  rootTree = d3.hierarchy(RAW_TREE);
+  
+  // Calculate initial positions for ALL nodes
+  d3.tree().nodeSize([100, 300])(rootTree);
+  // Save these as base positions for all nodes
+  rootTree.each(d => {{ d.baseX = d.x; d.baseY = d.y; d.savedX = d.x; d.savedY = d.y; }});
+  
+  rootTree.x0 = rootTree.y0 = 0;
+  // Don't collapse anything - show full tree
+  updateTree(rootTree);
 }}
 
-const collapse = d => {{ if (d.children) {{ d._children = d.children; d._children.forEach(collapse); d.children = null; }} }};
-const expand   = d => {{ if (d._children) {{ d.children = d._children; d._children = null; d.children.forEach(expand); }} }};
-const expandAll   = () => {{ root.children && root.children.forEach(expand);   update(root); }};
-const collapseAll = () => {{ root.children && root.children.forEach(collapse); update(root); }};
-const resetZoom   = () => svg.transition().duration(400)
-  .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top));
+const resetZoom   = () => svgTree.transition().duration(400).call(zoomTree.transform, d3.zoomIdentity.translate(margin.left, margin.top));
 
-function updateLinks() {{
-  const links = root.links();
-  const lk = g.selectAll('line.link').data(links, d => d.target.id);
-  const lkE = lk.enter().insert('line', 'g')
-    .attr('class','link')
-    .attr('marker-end', 'url(#arrowhead)')
-    .attr('x1', d => d.source.y0 + NODE_W / 2)
-    .attr('y1', d => d.source.x0)
-    .attr('x2', d => d.source.y0 + NODE_W / 2)
-    .attr('y2', d => d.source.x0);
-  lkE.merge(lk).transition().duration(250)
-    .attr('x1', d => d.source.y + NODE_W / 2)
+function updateLinksTree() {{
+  const links = rootTree.links();
+  const lk = gTree.selectAll('line.link').data(links, d => d.target.id);
+  const lkE = lk.enter().insert('line','g').attr('class','link').attr('marker-end','url(#arrowhead)')
+    .attr('x1', d => d.source.y + NODE_W/2)
     .attr('y1', d => d.source.x)
-    .attr('x2', d => d.target.y - NODE_W / 2)
+    .attr('x2', d => d.source.y + NODE_W/2)
+    .attr('y2', d => d.source.x);
+  lkE.merge(lk)
+    .attr('x1', d => d.source.y + NODE_W/2)
+    .attr('y1', d => d.source.x)
+    .attr('x2', d => d.target.y - NODE_W/2 + 10)  // Extend line 10px into node so arrow tip lands on edge
     .attr('y2', d => d.target.x);
-  lk.exit().transition().duration(250)
-    .attr('x1', d => d.source.y + NODE_W / 2)
-    .attr('y1', d => d.source.x)
-    .attr('x2', d => d.source.y + NODE_W / 2)
-    .attr('y2', d => d.source.x)
-    .remove();
+  lk.exit().remove();
 }}
 
-function update(src) {{
-  d3.tree().nodeSize([nodeH, 300])(root);
-  let nc = 0; root.each(() => nc++);
-  svg.attr('height', Math.max(600, nc * nodeH + margin.top + margin.bottom));
-
-  const nodes = root.descendants(), links = root.links();
-  const nd = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++nodeId));
+function updateTree(src) {{
+  // Get all currently visible descendants
+  const nodes = rootTree.descendants();
+  const links = rootTree.links();
+  
+  // For newly visible nodes (entering), assign positions if they don't have saved positions
+  nodes.forEach((d, i) => {{
+    // If this node doesn't have a saved position yet, use its base position or place relative to parent
+    if (d.savedX === undefined || d.savedY === undefined) {{
+      if (d.parent) {{
+        // Place relative to parent with offset based on sibling index
+        const siblings = d.parent.children || [];
+        const idx = siblings.indexOf(d);
+        d.savedY = d.parent.savedY + 300;  // 300px to the right of parent
+        d.savedX = d.parent.savedX + (idx * 100);  // 100px spacing between siblings
+      }} else {{
+        // Root node - use base position
+        d.savedX = d.baseX || 0;
+        d.savedY = d.baseY || 0;
+      }}
+    }}
+    // Set current x/y from saved positions
+    d.x = d.savedX;
+    d.y = d.savedY;
+  }});
+  
+  let nc = nodes.length;
+  svgTree.attr('height', Math.max(600, nc * nodeH + margin.top + margin.bottom));
+  
+  const nd = gTree.selectAll('g.node').data(nodes, d => d.id || (d.id = ++nodeId));
   const ndE = nd.enter().append('g').attr('class','node')
-    .attr('transform', `translate(${{src.y0}},${{src.x0}})`)
-    .on('click', (_,d) => {{ if(d.children){{d._children=d.children;d.children=null;}}
-                              else{{d.children=d._children;d._children=null;}} update(d); }})
+    .attr('transform', d => `translate(${{d.y}},${{d.x}})`)
     .on('mouseover', showTooltip).on('mousemove', moveTooltip).on('mouseout', hideTooltip);
-
-  const card = ndE.append('foreignObject')
-    .attr('width', NODE_W)
-    .attr('height', NODE_H)
-    .attr('x', -NODE_W / 2)
-    .attr('y', -NODE_H / 2)
-    .append('xhtml:div')
-    .style('width', NODE_W + 'px')
-    .style('height', NODE_H + 'px')
+  const card = ndE.append('foreignObject').attr('width',NODE_W).attr('height',NODE_H).attr('x',-NODE_W/2).attr('y',-NODE_H/2).append('xhtml:div')
+    .style('width', NODE_W+'px').style('height',NODE_H+'px')
     .style('background', d => d.data.endpoint ? '#2d1a0e' : '#161b22')
-    .style('border', d => d.data.endpoint ? '2px solid #f0883e' : '2px solid ' + colorFor(d.depth || 0))
-    .style('border-radius', '6px')
-    .style('padding', '6px 10px')
-    .style('font-family', 'Menlo, Consolas, monospace')
-    .style('font-size', '11px')
-    .style('color', '#c9d1d9')
-    .style('cursor', 'pointer')
+    .style('border', d => d.data.endpoint ? '2px solid #f0883e' : '2px solid ' + colorFor(d.depth||0))
+    .style('border-radius','6px').style('padding','6px 10px').style('font-family','Menlo, Consolas, monospace').style('font-size','11px').style('color','#c9d1d9').style('cursor','pointer')
     .html(d => {{
-      const fn = d.data.fn || '??';
-      const title = fn.length > 24 ? fn.slice(0,22) + '...' : fn;
-      const calls = d.data.calls || 1;
-      const total = d.data.total_time_ns != null ? d.data.total_time_ns : (d.data.duration || 0);
-      const avg = d.data.avg_time_ns != null ? d.data.avg_time_ns : (d.data.duration || 0);
-      const hiddenChildren = (!d.children && d._children) ? (d.data.child_count || d._children.length || 0) : 0;
-      const endpointLabel = d.data.endpoint ? '<div style=\"color:#f0883e;font-weight:bold;margin-top:2px;\">ENDPOINT</div>' : '';
-      const hiddenLabel = hiddenChildren ? `<div style=\"color:#8b949e;\">hidden: <span style=\"color:#c9d1d9;\">${{hiddenChildren}} children</span></div>` : '';
-      const badge = hiddenChildren ? '[+]' : '';
-      return `
-        <div style=\"color:${{d.data.endpoint ? '#f0883e' : '#79c0ff'}};font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;\">
-          ${'{'}title{'}'} <span style=\"float:right;\">${'{'}badge{'}'}</span>
-        </div>
-        <div style=\"border-top:1px solid #30363d;margin:4px 0;\"></div>
-        <div style=\"color:#8b949e;\">calls: <span style=\"color:#c9d1d9;\">${'{'}calls{'}'}</span></div>
-        <div style=\"color:#8b949e;\">time: <span style=\"color:#56d364;\">${'{'}fmtDur(total){'}'}</span></div>
-        <div style=\"color:#8b949e;\">avg: <span style=\"color:#56d364;\">${'{'}fmtDur(avg){'}'}</span></div>
-        ${'{'}hiddenLabel{'}'}
-        ${'{'}endpointLabel{'}'}
-      `;
+      const fn = d.data.fn||'??'; const title = fn.length>24 ? fn.slice(0,22)+'...' : fn;
+      const calls = d.data.calls||1; const total = d.data.total_time_ns != null ? d.data.total_time_ns : (d.data.duration||0);
+      const avg = d.data.avg_time_ns != null ? d.data.avg_time_ns : (d.data.duration||0);
+      const hiddenChildren = (!d.children && d._children) ? (d.data.child_count||d._children.length||0) : 0;
+      return `<div style="color:${{d.data.endpoint?'#f0883e':'#79c0ff'}};font-weight:bold;">${{title}}</div><div style="border-top:1px solid #30363d;margin:4px 0;"></div><div style="color:#8b949e;">calls: <span style="color:#c9d1d9;">${{calls}}</span> time: <span style="color:#56d364;">${{fmtDur(total)}}</span></div>${{hiddenChildren ? '<div style="color:#8b949e;">+'+hiddenChildren+' children</div>' : ''}}`;
     }});
-
-  const drag = d3.drag()
-    .on('start', (event, d) => {{ d.dragging = true; }})
-    .on('drag', (event, d) => {{
-      d.x = event.y;
-      d.y = event.x;
-      d3.select(event.sourceEvent.target.closest('g.node'))
-        .attr('transform', `translate(${{d.y}},${{d.x}})`);
-      updateLinks();
+  ndE.call(d3.drag()
+    .on('start', function(e, d) {{
+      d3.select(this).raise();
+      // Store the grab offset: where on the node we clicked
+      d.grabOffsetX = e.x - d.y;
+      d.grabOffsetY = e.y - d.x;
     }})
-    .on('end', (event, d) => {{ d.dragging = false; }});
-
-  ndE.call(drag);
-
+    .on('drag', function(e, d) {{
+      // Apply grab offset so node follows cursor from where we grabbed it
+      d.y = e.x - d.grabOffsetX;
+      d.x = e.y - d.grabOffsetY;
+      d.savedY = d.y;  // Save the new position
+      d.savedX = d.x;
+      d3.select(this).attr('transform', `translate(${{d.y}},${{d.x}})`);
+      updateLinksTree();
+    }})
+    .on('end', function(e, d) {{
+      // Distinguish click from drag
+      const moved = Math.abs(d.x - (e.y - d.grabOffsetY)) + Math.abs(d.y - (e.x - d.grabOffsetX));
+      if (moved < 10) {{
+        // It's a click - expand/collapse
+        if (d.children) {{ d._children = d.children; d.children = null; }}
+        else if (d._children) {{ d.children = d._children; d._children = null; }}
+        updateTree(d);
+      }}
+    }}));
   const ndU = ndE.merge(nd);
-  ndU.transition().duration(250).attr('transform', d => `translate(${{d.y}},${{d.x}})`);
-  nd.exit().transition().duration(250).attr('transform', `translate(${{src.y}},${{src.x}})`).remove();
-  nodes.forEach(d => {{ d.x0=d.x; d.y0=d.y; }});
-  updateLinks();
+  ndU.attr('transform', d => `translate(${{d.y}},${{d.x}})`);
+  nd.exit().transition().duration(250).remove();
+  updateLinksTree();
 }}
 
-const tip = document.getElementById('tooltip');
+const tipEl = document.getElementById('tooltip');
 function showTooltip(ev, d) {{
-  tip.innerHTML = `<div class="fn">${{d.data.fn||'??'}}</div>
-    <div class="dur">Duration: ${{fmtDur(d.data.duration)}}</div>
-    <div class="addr">Addr: ${{d.data.addr||'n/a'}}</div>
-    <div>Children: ${{(d.children||d._children||[]).length}}</div>`;
-  tip.style.opacity = '1'; moveTooltip(ev);
+  const data = d.data || d;
+  const fn = data.fn || data.label || d.id || '??';
+  const dur = data.duration != null ? data.duration : (data.total_time_ns != null ? data.total_time_ns : 0);
+  tipEl.innerHTML = `<div class="fn">${{fn}}</div><div class="dur">${{fmtDur(dur)}}</div>`;
+  tipEl.style.opacity = '1'; moveTooltip(ev);
 }}
-function moveTooltip(ev) {{ tip.style.left=(ev.clientX+16)+'px'; tip.style.top=(ev.clientY+16)+'px'; }}
-function hideTooltip()   {{ tip.style.opacity='0'; }}
-init();
+function moveTooltip(ev) {{ tipEl.style.left=(ev.clientX+16)+'px'; tipEl.style.top=(ev.clientY+16)+'px'; }}
+function hideTooltip() {{ tipEl.style.opacity='0'; }}
+
+initTree();
 </script>
 </body>
 </html>"""

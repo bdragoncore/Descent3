@@ -1,6 +1,6 @@
 /*
- * SoftwareGLTest - Software rendering tests with cube rotations.
- * Linked into d3_render_tests executable.
+ * GLTests - GL perspective and cube rotation tests (gluPerspective, gluLookAt).
+ * All render tests use Mesa llvmpipe; this suite focuses on 3D perspective and cube variants.
  */
 
 #include "render_test_base.h"
@@ -9,9 +9,9 @@
 #include <GL/glu.h>
 #include <gtest/gtest.h>
 
-class SoftwareGLTest : public D3RenderTestBase {
+class GLTests : public D3RenderTestBase {
 protected:
-    SoftwareGLTest() : D3RenderTestBase(512, 512) {}
+    GLTests() : D3RenderTestBase(512, 512) {}
 
     void drawCube() {
         glColor4f(1.0f, 0.0f, 0.0f, 1.0f);
@@ -89,7 +89,7 @@ protected:
     }
 };
 
-TEST_F(SoftwareGLTest, RenderQuadToFramebuffer) {
+TEST_F(GLTests, RenderQuadToFramebuffer) {
     BeginFrame();
     setup3DScene();
 
@@ -109,7 +109,7 @@ TEST_F(SoftwareGLTest, RenderQuadToFramebuffer) {
     SavePNG("RenderQuadToFramebuffer");
 }
 
-TEST_F(SoftwareGLTest, Render3DCube) {
+TEST_F(GLTests, Render3DCube) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -124,7 +124,7 @@ TEST_F(SoftwareGLTest, Render3DCube) {
     SavePNG("Render3DCube");
 }
 
-TEST_F(SoftwareGLTest, CubeRotationX45) {
+TEST_F(GLTests, CubeRotationX45) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -140,7 +140,7 @@ TEST_F(SoftwareGLTest, CubeRotationX45) {
     SavePNG("CubeRotationX45");
 }
 
-TEST_F(SoftwareGLTest, CubeRotationY45) {
+TEST_F(GLTests, CubeRotationY45) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -156,7 +156,7 @@ TEST_F(SoftwareGLTest, CubeRotationY45) {
     SavePNG("CubeRotationY45");
 }
 
-TEST_F(SoftwareGLTest, CubeRotationXY) {
+TEST_F(GLTests, CubeRotationXY) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -172,7 +172,7 @@ TEST_F(SoftwareGLTest, CubeRotationXY) {
     SavePNG("CubeRotationXY");
 }
 
-TEST_F(SoftwareGLTest, CubeRotationXYZ) {
+TEST_F(GLTests, CubeRotationXYZ) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -188,7 +188,7 @@ TEST_F(SoftwareGLTest, CubeRotationXYZ) {
     SavePNG("CubeRotationXYZ");
 }
 
-TEST_F(SoftwareGLTest, CubeEdgeOn) {
+TEST_F(GLTests, CubeEdgeOn) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
@@ -204,7 +204,7 @@ TEST_F(SoftwareGLTest, CubeEdgeOn) {
     SavePNG("CubeEdgeOn");
 }
 
-TEST_F(SoftwareGLTest, CubeCorner) {
+TEST_F(GLTests, CubeCorner) {
     BeginFrame();
     setup3DScene();
     gluLookAt(0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);

@@ -9,7 +9,7 @@
  * Test suites are implemented in separate source files and linked into this executable:
  *   d3_render_tests_basic.cpp       — D3RenderTest (quads, cube, framebuffer)
  *   d3_render_tests_egl.cpp         — D3EGLContextTest (clear, depth, SavePNG)
- *   d3_render_tests_software_gl.cpp — SoftwareGLTest (cube rotations)
+ *   d3_render_tests_gl.cpp         — GLTests (perspective / cube)
  *   d3_render_tests_text.cpp       — D3TextFixture (HUD text, requires d3.hog)
  *   d3_render_tests_mesa_legacy.cpp — D3MesaRenderLegacy
  *   d3_render_tests_mesa_renderer_legacy.cpp — D3MesaRendererLegacy

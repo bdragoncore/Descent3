@@ -72,9 +72,9 @@ export function CallGraph({ graph }: CallGraphProps) {
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.05, 5])
+    
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 10])
       .on("zoom", (event) => {
         setTransform({
           x: event.transform.x,
@@ -82,8 +82,10 @@ export function CallGraph({ graph }: CallGraphProps) {
           k: event.transform.k,
         });
       });
+    
     zoomRef.current = zoom;
     d3.select(svg).call(zoom);
+    
     return () => {
       zoomRef.current = null;
       d3.select(svg).on(".zoom", null);
@@ -139,6 +141,8 @@ export function CallGraph({ graph }: CallGraphProps) {
                   sourceH={NODE_H}
                   targetW={NODE_W}
                   targetH={NODE_H}
+                  cost={e.cost}
+                  calls={e.calls}
                 />
               );
             })}
