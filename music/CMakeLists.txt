@@ -20,6 +20,7 @@ target_link_libraries(music
 )
 target_include_directories(music PUBLIC
   $<BUILD_INTERFACE:
+  ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/music
   >
 )

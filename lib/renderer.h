@@ -314,6 +314,7 @@ enum renderer_type {
   RENDERER_DIRECT3D = 3,
   RENDERER_GLIDE = 4, // Unused
   RENDERER_NONE = 5,
+  RENDERER_MESA = 6,
 };
 
 extern renderer_type Renderer_type;

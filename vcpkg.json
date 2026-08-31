@@ -1,5 +1,5 @@
 {
-  "builtin-baseline": "84bab45d415d22042bd0b9081aea57f362da3f35",
+  "builtin-baseline": "ce35b1a53aac26d7fcdb8ee1ef7a8e4eea02d27b",
   "dependencies": [
     {
       "name": "cpp-httplib",
@@ -7,17 +7,29 @@
     },
     "glm",
     "gtest",
-    "plog",
+    {
+      "name": "plog",
+      "version>=": "1.1.10"
+    },
     {
       "name": "sdl3",
       "version>=": "3.2.6",
-      "features": ["x11","wayland", "alsa"],
+      "features": [
+        "x11",
+        "wayland",
+        "alsa"
+      ],
       "platform": "linux"
     },
     {
       "name": "sdl3",
       "version>=": "3.2.6",
       "platform": "!linux"
+    },
+    {
+      "name": "dbus",
+      "default-features": false,
+      "platform": "linux"
     },
     {
       "name": "libxcrypt",
@@ -31,5 +43,5 @@
       "name": "sdl3",
       "version": "3.2.6"
     }
- ]
+  ]
 }

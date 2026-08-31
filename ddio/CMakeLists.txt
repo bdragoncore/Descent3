@@ -35,6 +35,7 @@ target_link_libraries(ddio PRIVATE
 )
 target_include_directories(ddio PUBLIC
   $<BUILD_INTERFACE:
+  ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/ddio
   >
   ${SDL3_INCLUDE_DIRS}
