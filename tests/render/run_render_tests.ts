@@ -471,11 +471,12 @@ async function main() {
   const projectRoot = path.resolve(testsDir, "..");
 
   const buildDir = path.resolve(projectRoot, args.buildDir);
-  const outputDir =
-    args.outputDir ??
-    path.join(buildDir, "tests", "render_output");
-  const baselineDir =
-    args.baselineDir ?? path.join(testsDir, "render_output_baseline");
+  const outputDir = args.outputDir
+    ? path.resolve(args.outputDir)
+    : path.join(buildDir, "tests", "render_output");
+  const baselineDir = args.baselineDir
+    ? path.resolve(args.baselineDir)
+    : path.join(testsDir, "render_output_baseline");
 
   const tracingAvailable = await detectTracingAvailable(buildDir);
   const tracingEnabled =
@@ -595,19 +596,41 @@ async function main() {
   if (tracingEnabled) {
     await runTask("Build aggregate call graph", async () => {
       callgraphPath = path.join(buildDir, "callgraph.json");
-      const cliPath = path.join(
-        testsDir,
-        "report_tools",
-        "callgraph_cli.py"
+      const reportToolsDir = path.join(testsDir, "report-tools-ts");
+      
+      // Ensure dependencies are installed
+      const nodeModulesPath = path.join(reportToolsDir, "node_modules");
+      if (!existsSync(nodeModulesPath)) {
+        console.log(dim("   Installing report tools dependencies..."));
+        const installRes = await runCommand("npm", ["install"], {
+          cwd: reportToolsDir,
+          verbose: args.verbose,
+        });
+        if (installRes.code !== 0) {
+          throw new Error(
+            `Failed to install report tools dependencies: ${installRes.stderr || ""}`
+          );
+        }
+      }
+      
+      // Generate callgraph using TypeScript (via tsx, no build needed)
+      const traceArgs = allTracePaths.flatMap(t => ["--traces", t]);
+      const res = await runCommand(
+        "npm", 
+        [
+          "run", "generate", "--",
+          "--mode", "trace",
+          "--output-dir", path.dirname(callgraphPath!),
+          ...traceArgs
+        ], 
+        {
+          cwd: reportToolsDir,
+          verbose: args.verbose,
+        }
       );
-      const argsPy = [cliPath, callgraphPath!, ...allTracePaths];
-      const res = await runCommand("python3", argsPy, {
-        cwd: projectRoot,
-        verbose: args.verbose,
-      });
       if (res.code !== 0) {
         throw new Error(
-          `callgraph_cli.py failed with code ${res.code}${
+          `Call graph generation failed with code ${res.code}${
             res.stderr ? `: ${res.stderr}` : ""
           }`
         );
@@ -618,28 +641,51 @@ async function main() {
 
   if (tracingEnabled && allTracePaths.length) {
     await runTask("Generate per-trace HTML", async () => {
-      const genPath = path.join(
-        testsDir,
-        "report_tools",
-        "generate_html.py"
-      );
-      for (const trace of allTracePaths) {
-        const res = await runCommand("python3", [genPath, trace], {
-          cwd: projectRoot,
+      const reportToolsDir = path.join(testsDir, "report-tools-ts");
+      const traceArgs = allTracePaths.flatMap(t => ["--traces", t]);
+      
+      // Ensure dependencies are installed
+      const nodeModulesPath = path.join(reportToolsDir, "node_modules");
+      if (!existsSync(nodeModulesPath)) {
+        console.log(dim("   Installing report tools dependencies..."));
+        const installRes = await runCommand("npm", ["install"], {
+          cwd: reportToolsDir,
           verbose: args.verbose,
         });
-        if (res.code !== 0) {
-          console.log(
-            red(`  Error generating HTML for ${path.basename(trace)}`)
+        if (installRes.code !== 0) {
+          throw new Error(
+            `Failed to install report tools dependencies: ${installRes.stderr || ""}`
           );
-          if (!args.verbose && res.stderr) console.log(dim(res.stderr));
-        } else if (args.verbose) {
-          const htmlName = path.basename(trace).replace(".json", ".html");
-          console.log(dim(`   Generated: ${htmlName}`));
         }
       }
-      if (allTracePaths.length) {
+      
+      const res = await runCommand(
+        "npm",
+        [
+          "run", "generate", "--",
+          "--mode", "trace",
+          "--output-dir", outputDir,
+          ...traceArgs
+        ],
+        {
+          cwd: reportToolsDir,
+          verbose: args.verbose,
+        }
+      );
+      
+      if (res.code !== 0) {
+        console.log(
+          red(`  Error generating trace HTML files`)
+        );
+        if (!args.verbose && res.stderr) console.log(dim(res.stderr));
+      } else {
         console.log(dim(`   Generated ${allTracePaths.length} trace HTML files`));
+        if (args.verbose) {
+          for (const trace of allTracePaths) {
+            const htmlName = path.basename(trace).replace(".json", ".html");
+            console.log(dim(`   Generated: ${htmlName}`));
+          }
+        }
       }
     });
   }
@@ -647,39 +693,38 @@ async function main() {
   await runTask("Generate HTML report", async () => {
     const resultsJson = path.join(outputDir, "render_results.json");
     await fs.writeFile(resultsJson, JSON.stringify(allResults, null, 2), "utf8");
-
-    const cliPath = path.join(
-      testsDir,
-      "report_tools",
-      "html_report_cli.py"
-    );
-
-    const baselineArg = existsSync(baselineDir) ? baselineDir : "NONE";
-    const callgraphArg = callgraphPath && existsSync(callgraphPath)
-      ? callgraphPath
-      : "NONE";
-    const viewerBaseUrl = args.serve
-      ? `http://localhost:${args.port}`
-      : "NONE";
+    
+    const reportToolsDir = path.join(testsDir, "report-tools-ts");
+    
+    // Ensure dependencies are installed
+    const nodeModulesPath = path.join(reportToolsDir, "node_modules");
+    if (!existsSync(nodeModulesPath)) {
+      console.log(dim("   Installing report tools dependencies..."));
+      const installRes = await runCommand("npm", ["install"], {
+        cwd: reportToolsDir,
+        verbose: args.verbose,
+      });
+      if (installRes.code !== 0) {
+        throw new Error(
+          `Failed to install report tools dependencies: ${installRes.stderr || ""}`
+        );
+      }
+    }
 
     const res = await runCommand(
-      "python3",
+      "npm",
       [
-        cliPath,
-        resultsJson,
-        outputDir,
-        baselineArg,
-        args.report,
-        args.updateBaseline ? "1" : "0",
-        tracingEnabled ? "1" : "0",
-        callgraphArg,
-        viewerBaseUrl,
+        "run", "generate", "--",
+        "--mode", "report",
+        "--output-dir", outputDir,
+        "--results", resultsJson
       ],
-      { cwd: projectRoot, verbose: args.verbose }
+      { cwd: reportToolsDir, verbose: args.verbose }
     );
+    
     if (res.code !== 0) {
       throw new Error(
-        `html_report_cli.py failed with code ${res.code}${
+        `HTML report generation failed with code ${res.code}${
           res.stderr ? `: ${res.stderr}` : ""
         }`
       );

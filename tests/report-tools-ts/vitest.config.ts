@@ -1,0 +1,22 @@
+import {defineConfig} from 'vitest/config';
+import {resolve} from 'path';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['__tests__/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+      '@algorithms': resolve(__dirname, 'src/algorithms'),
+      '@utils': resolve(__dirname, 'src/utils'),
+      '@types': resolve(__dirname, 'src/types'),
+    },
+  },
+});
