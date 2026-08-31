@@ -18,7 +18,6 @@ import {
   annotateStats,
 } from '../src/algorithms/treeBuilder';
 import {
-  generateReportHtml,
   generateTraceHtml,
   generateUnitReportHtml,
   generateCombinedReportHtml,
@@ -49,7 +48,6 @@ function parseArgs(args: string[]): CliArgs {
       case '--mode':
         result.mode = args[++i] as CliArgs['mode'];
         if (
-          result.mode !== 'report' &&
           result.mode !== 'trace' &&
           result.mode !== 'unit-report' &&
           result.mode !== 'combined' &&
@@ -185,41 +183,6 @@ async function transformResults(
       };
     })
   );
-}
-
-/**
- * Generates the main report HTML.
- *
- * @param args - CLI arguments
- */
-async function generateReport(args: CliArgs): Promise<void> {
-  if (!args.resultsJson) {
-    console.error('Error: --results required for report mode');
-    process.exit(1);
-  }
-
-  console.log('Reading results...');
-  const resultsData = await readFile(args.resultsJson, 'utf-8');
-  const rawResults = JSON.parse(resultsData);
-  const results = await transformResults(rawResults, args.outputDir);
-
-  console.log(`Generating report for ${results.length} tests...`);
-
-  const html = generateReportHtml({
-    generatedAt: new Date().toISOString(),
-    tracingEnabled: true,
-    total: results.length,
-    passed: results.filter((r) => r.passed).length,
-    failed: results.filter((r) => !r.passed).length,
-    md5Regressions: 0, // Calculate from results if needed
-    results,
-    updateBaseline: process.env.UPDATE_BASELINE === '1',
-  });
-
-  const outputPath = join(args.outputDir, 'render_report.html');
-  await mkdir(args.outputDir, {recursive: true});
-  await writeFile(outputPath, html);
-  console.log(`✓ Generated ${outputPath}`);
 }
 
 /**
@@ -381,10 +344,6 @@ async function main(): Promise<void> {
   console.log('');
 
   try {
-    if (args.mode === 'report' || args.mode === 'all') {
-      await generateReport(args);
-    }
-
     if (args.mode === 'trace' || args.mode === 'all') {
       await generateTraces(args);
     }

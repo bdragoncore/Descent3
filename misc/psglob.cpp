@@ -37,6 +37,7 @@
 
 #include "psglob.h"
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 
 #if defined(POSIX)
@@ -149,6 +150,26 @@ int PSGlobMatch(char *pattern, char *text, int case_sensitive, int dot_special) 
   }
 
   return *t == '\0';
+}
+
+// Returns 1 if the string contains any glob pattern characters: an unescaped
+// '*', '?', or a closed [...] set. A '\' escapes the next character, and an
+// unclosed '[' is treated as a literal.
+int PSGlobHasPattern(char *string) {
+  for (char *p = string; *p; p++) {
+    if (*p == '\\') {
+      p++; // skip escaped character
+      continue;
+    }
+    if (*p == '*' || *p == '?')
+      return 1;
+    if (*p == '[') {
+      if (strchr(p + 1, ']'))
+        return 1;
+      return 0;
+    }
+  }
+  return 0;
 }
 
 // Like PSGlobMatch, but match pattern against any final segment of text

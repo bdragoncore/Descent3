@@ -6,7 +6,6 @@
 
 import React from 'react';
 import {renderToString} from 'react-dom/server';
-import {ReportPage} from '../components/ReportPage';
 import {UnitReportPage} from '../components/UnitReportPage';
 import {CombinedReportPage} from '../components/CombinedReportPage';
 import type {TestReportData, UnitTestReportData} from '../types';
@@ -155,38 +154,6 @@ const CRITICAL_CSS = `
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   }
 `;
-
-/**
- * Generates the main report HTML from test results.
- *
- * @param data - Report data including stats and test results
- * @returns Complete HTML string
- */
-export function generateReportHtml(data: {
-  generatedAt: string;
-  tracingEnabled: boolean;
-  total: number;
-  passed: number;
-  failed: number;
-  md5Regressions: number;
-  results: TestReportData[];
-  updateBaseline?: boolean;
-}): string {
-  const htmlContent = renderToString(React.createElement(ReportPage, data));
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Render Test Report</title>
-  <style>${CRITICAL_CSS}</style>
-</head>
-<body>
-  ${htmlContent}
-</body>
-</html>`;
-}
 
 /**
  * Generates a simple HTML page for per-trace visualization.

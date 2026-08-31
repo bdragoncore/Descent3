@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { CallGraph as CallGraphData, LayoutNode } from "@/lib/types";
 import { computeLayout } from "@/lib/layout";
+import { filterGraph, type FilterOptions } from "@/lib/filter";
 import { NodeBox } from "./NodeBox";
 import { EdgeArrow } from "./EdgeArrow";
 import { Toolbar } from "./Toolbar";
+import { ModuleLegend } from "./ModuleLegend";
 import { Tooltip } from "./Tooltip";
 
 const NODE_W = 230;
@@ -23,18 +25,40 @@ interface CallGraphProps {
   graph: CallGraphData;
 }
 
+const DEFAULT_FILTER: FilterOptions = {
+  hideStdlib: true,
+  hideMesaInternal: true,
+  rootFn: "main",
+  leafFn: "glFlush",
+  maxDepth: 10,
+  minCostPct: 0.001,
+  enabledModules: new Set(),
+  groupByModule: true,
+};
+
 export function CallGraph({ graph }: CallGraphProps) {
-  const layoutResult = computeLayout(graph);
+  const [filterOpts, setFilterOpts] = useState<FilterOptions>(DEFAULT_FILTER);
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+  const [showLegend, setShowLegend] = useState(true);
+
+  // Apply filter
+  const filtered = filterGraph(graph, {
+    ...filterOpts,
+    enabledModules,
+  });
+
+  const layoutResult = computeLayout(filtered.graph);
   const [nodes, setNodes] = useState<LayoutNode[]>(layoutResult.nodes);
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const [tooltip, setTooltip] = useState<TooltipState>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const innerRef = useRef<SVGGElement>(null);
 
-  // Reset nodes when graph changes
+  // Reset nodes when any filter changes or graph changes
   useEffect(() => {
-    setNodes(layoutResult.nodes);
-  }, [graph.root, layoutResult.nodes.length]);
+    const fresh = computeLayout(filtered.graph);
+    setNodes(fresh.nodes);
+  }, [filtered.graph, filtered.graph.root, filtered.graph.nodes, filtered.graph.edges.length]);
 
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
@@ -42,18 +66,15 @@ export function CallGraph({ graph }: CallGraphProps) {
     const svg = svgRef.current;
     const zoom = zoomRef.current;
     if (svg && zoom) {
-      zoom.transform(
-        d3.select(svg),
-        d3.zoomIdentity.translate(x, y).scale(k)
-      );
+      zoom.transform(d3.select(svg), d3.zoomIdentity.translate(x, y).scale(k));
     }
   }, []);
 
   const handleResetLayout = useCallback(() => {
-    setNodes(layoutResult.nodes);
+    setNodes(computeLayout(filtered.graph).nodes);
     setTransform({ x: 0, y: 0, k: 1 });
     setTimeout(() => applyZoomTransform(0, 0, 1), 0);
-  }, [layoutResult.nodes, applyZoomTransform]);
+  }, [filtered.graph, applyZoomTransform]);
 
   const handleFitView = useCallback(() => {
     const w = layoutResult.width;
@@ -72,20 +93,13 @@ export function CallGraph({ graph }: CallGraphProps) {
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
-    
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 10])
       .on("zoom", (event) => {
-        setTransform({
-          x: event.transform.x,
-          y: event.transform.y,
-          k: event.transform.k,
-        });
+        setTransform({ x: event.transform.x, y: event.transform.y, k: event.transform.k });
       });
-    
     zoomRef.current = zoom;
     d3.select(svg).call(zoom);
-    
     return () => {
       zoomRef.current = null;
       d3.select(svg).on(".zoom", null);
@@ -94,17 +108,43 @@ export function CallGraph({ graph }: CallGraphProps) {
 
   const handleNodeDrag = useCallback((id: string, dx: number, dy: number) => {
     setNodes((prev) =>
-      prev.map((n) =>
-        n.id === id ? { ...n, x: n.x + dx, y: n.y + dy } : n
-      )
+      prev.map((n) => (n.id === id ? { ...n, x: n.x + dx, y: n.y + dy } : n))
     );
+  }, []);
+
+  const handleFilterChange = useCallback((updates: Partial<FilterOptions>) => {
+    setFilterOpts((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const handleModuleToggle = useCallback((moduleName: string) => {
+    setEnabledModules((prev) => {
+      const next = new Set(prev);
+      if (moduleName === "__all__") {
+        return new Set();
+      }
+      if (next.has(moduleName)) {
+        next.delete(moduleName);
+      } else {
+        next.add(moduleName);
+      }
+      return next;
+    });
   }, []);
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
   return (
     <div>
-      <Toolbar onResetLayout={handleResetLayout} onFitView={handleFitView} />
+      <Toolbar
+        onResetLayout={handleResetLayout}
+        onFitView={handleFitView}
+        filterOptions={filterOpts}
+        onFilterChange={handleFilterChange}
+        report={filtered.report}
+      />
+      {showLegend && (
+        <ModuleLegend enabledModules={enabledModules} onToggle={handleModuleToggle} />
+      )}
       <div
         style={{
           width: "100%",
@@ -126,7 +166,7 @@ export function CallGraph({ graph }: CallGraphProps) {
             ref={innerRef}
             transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}
           >
-            {graph.edges.map((e, i) => {
+            {filtered.graph.edges.map((e, i) => {
               const src = nodeMap.get(e.from);
               const tgt = nodeMap.get(e.to);
               if (!src || !tgt) return null;
@@ -167,6 +207,8 @@ export function CallGraph({ graph }: CallGraphProps) {
     </div>
   );
 }
+
+// ── DraggableNode ───────────────────────────────────────────────────────
 
 interface DraggableNodeProps {
   node: LayoutNode;

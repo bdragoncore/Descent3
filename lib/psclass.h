@@ -143,6 +143,7 @@ public:
       node->next = m_mark->next;
     }
     freenode->next = nullptr;
+    m_length--;
     return freenode;
   };
 };

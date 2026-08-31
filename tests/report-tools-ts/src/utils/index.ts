@@ -4,7 +4,7 @@
  * @module utils
  */
 
-export {generateReportHtml, generateTraceHtml} from './renderToHtml';
+export {generateTraceHtml} from './renderToHtml';
 export {
   findMatchingPng,
   readMd5File,

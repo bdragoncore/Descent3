@@ -56,6 +56,11 @@
 //	9) If case_sensitive is 0, than case does not matter for the non-pattern characters
 int PSGlobMatch(char *pattern, char *text, int case_sensitive, int dot_special);
 
+// Returns 1 if the string contains any glob pattern characters
+// ('*', '?', or a closed [...] set), 0 otherwise. Escaped characters
+// (preceded by '\') are not counted as pattern characters.
+int PSGlobHasPattern(char *string);
+
 // Like PSGlobMatch, but match pattern against any final segment of text
 int PSGlobMatchAfterStar(char *pattern, int case_sensitive, char *text);
 

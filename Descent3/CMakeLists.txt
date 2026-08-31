@@ -363,7 +363,7 @@ list(REMOVE_ITEM D3_LIB_SOURCES "sdlmain.cpp")
 
 add_library(descent3 STATIC ${D3_LIB_SOURCES} ${HEADERS} ${INCS})
 
-target_link_libraries(descent3 PRIVATE
+target_link_libraries(descent3 PUBLIC
   SDL3::SDL3
   2dlib
   AudioEncode

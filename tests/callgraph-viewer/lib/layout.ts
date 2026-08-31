@@ -35,8 +35,8 @@ export interface LayoutResult {
 }
 
 /**
- * BFS from root; assign depth to each node. Group by depth, then assign
- * x = startX + depth * (NODE_W + COL_GAP), y = centered in column.
+ * BFS layout for the call graph. Places nodes in columns by call depth.
+ * Accepts both raw and filtered/grouped graphs (grouped nodes use [brackets]).
  */
 export function computeLayout(graph: CallGraph): LayoutResult {
   const { root, nodes, edges } = graph;
@@ -93,12 +93,17 @@ export function computeLayout(graph: CallGraph): LayoutResult {
     for (const id of ids) {
       const data = nodes[id];
       if (!data) continue;
+      // Detect grouped nodes: show module name without brackets as label
+      const label = id.startsWith("[") && id.endsWith("]")
+        ? id.slice(1, -1)
+        : data.short_fn || id;
       nodeMap.set(id, {
         ...data,
         id,
         x: colX,
         y,
         depth: d,
+        short_fn: label,
       });
       y += NODE_H + ROW_GAP;
     }

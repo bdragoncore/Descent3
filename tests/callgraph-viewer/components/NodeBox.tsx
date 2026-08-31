@@ -2,6 +2,8 @@
 
 import type { LayoutNode } from "@/lib/types";
 import { getNodeColor } from "@/lib/layout";
+import { getModuleColor } from "@/lib/filter";
+import { classifyFn } from "@/lib/filter";
 
 const NODE_W = 230;
 const NODE_H = 96;
@@ -12,9 +14,13 @@ interface NodeBoxProps {
 }
 
 export function NodeBox({ node, onDrag }: NodeBoxProps) {
-  const borderColor = getNodeColor(node.depth, node.endpoint);
-  const headerBg = node.endpoint ? "#2d1a0e" : "#1c2128";
-  const fnColor = node.endpoint ? "#f0883e" : "#79c0ff";
+  const isGrouped = node.id.startsWith("[") && node.id.endsWith("]");
+  const moduleColor = isGrouped
+    ? getModuleColor(node.id)
+    : getNodeColor(node.depth, node.endpoint);
+  const borderColor = isGrouped ? moduleColor : getNodeColor(node.depth, node.endpoint);
+  const headerBg = isGrouped ? `${moduleColor}18` : node.endpoint ? "#2d1a0e" : "#1c2128";
+  const fnColor = isGrouped ? moduleColor : node.endpoint ? "#f0883e" : "#79c0ff";
 
   const formatCost = (n: number) =>
     n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);

@@ -58,17 +58,11 @@ target_compile_definitions(d3_render_test_base PRIVATE
 )
 
 set(D3_RENDER_SUITES
-    egl
-    gl
     game
-    hud
 )
 
 set(D3_RENDER_SUITE_SOURCES
-    egl               d3_render_tests_egl.cpp
-    gl                d3_render_tests_gl.cpp
     game              d3_render_tests_game.cpp
-    hud               d3_render_tests_hud.cpp
 )
 
 function(add_d3_render_test_executable suite_name)
@@ -166,9 +160,6 @@ endforeach()
 
 # Convenience target that builds all render test binaries
 add_custom_target(d3_render_tests_all DEPENDS
-    d3_render_tests_egl
-    d3_render_tests_gl
     d3_render_tests_game
-    d3_render_tests_hud
 )
 

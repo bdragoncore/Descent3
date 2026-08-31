@@ -14,14 +14,11 @@ const dim = chalk.dim;
 type RenderArgs = {
   buildDir: string;
   outputDir?: string;
-  baselineDir?: string;
-  report: string;
   verbose: boolean;
   rebuild: boolean;
   noBuild: boolean;
   tracingFlag: boolean | null;
   skipTrace: boolean;
-  updateBaseline: boolean;
   serve: boolean;
   port: number;
 };
@@ -53,10 +50,7 @@ type CommandResult = {
 };
 
 const RENDER_BINARIES = [
-  { name: "d3_render_tests_egl", description: "EGL tests" },
-  { name: "d3_render_tests_gl", description: "Standard GL tests" },
   { name: "d3_render_tests_game", description: "D3 game rendering (polymodel, etc.)" },
-  { name: "d3_render_tests_hud", description: "D3 game rendering (HUD, text)" },
 ] as const;
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -170,14 +164,11 @@ function parseArgs(argv: string[]): RenderArgs {
   const args: RenderArgs = {
     buildDir: "build",
     outputDir: undefined,
-    baselineDir: undefined,
-    report: "render_report.html",
     verbose: false,
     rebuild: false,
     noBuild: false,
     tracingFlag: null,
     skipTrace: false,
-    updateBaseline: false,
     serve: false,
     port: 3000,
   };
@@ -191,12 +182,6 @@ function parseArgs(argv: string[]): RenderArgs {
         break;
       case "--output-dir":
         args.outputDir = next();
-        break;
-      case "--baseline-dir":
-        args.baselineDir = next();
-        break;
-      case "--report":
-        args.report = next() ?? args.report;
         break;
       case "--verbose":
       case "-v":
@@ -214,9 +199,6 @@ function parseArgs(argv: string[]): RenderArgs {
       case "--skip-trace":
         args.skipTrace = true;
         args.tracingFlag = false;
-        break;
-      case "--update-baseline":
-        args.updateBaseline = true;
         break;
       case "--serve":
         args.serve = true;
@@ -449,6 +431,7 @@ async function runTestsExecutable(
   verbose: boolean,
   tracing: boolean,
   binaryArgs: string[],
+  gtestFilter?: string,
   onFinished?: (executable: string, durationMs: number) => void
 ): Promise<{
   tests: ParsedTestResult[];
@@ -466,6 +449,7 @@ async function runTestsExecutable(
   const fullEnv = {
     ...process.env,
     ...env,
+    D3_SKIP_OVERLAY: "1",
     ...(tracing
       ? {
           TRACE_OUTPUT_DIR: path.resolve(outputDir),
@@ -475,7 +459,12 @@ async function runTestsExecutable(
   };
 
   const start = Date.now();
-  const res = await runCommand(binaryPath, binaryArgs, {
+  const effectiveArgs = [...binaryArgs];
+  if (gtestFilter) {
+    effectiveArgs.push(`--gtest_filter=${gtestFilter}`);
+  }
+
+  const res = await runCommand(binaryPath, effectiveArgs, {
     cwd: outputDir,
     env: fullEnv,
     verbose,
@@ -544,6 +533,136 @@ async function startViewer(outputDir: string, port: number, verbose: boolean) {
   child.unref();
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function generateReportHtml(
+  results: AllResult[],
+  generatedAt: Date,
+  htmxJs: string
+): string {
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  const total = results.length;
+  const passPct = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  const cards = results
+    .map((r) => {
+      const name = `${r.test_suite}.${r.test_name}`;
+      const imgs = r.pngs
+        .map(
+          (p) =>
+            `<img src="${escapeHtml(path.basename(p))}" loading="lazy" ` +
+            `hx-on:click="this.classList.toggle('zoom')" alt="${escapeHtml(r.test_name)}">`
+        )
+        .join("\n");
+      const traces = r.traces
+        .map(
+          (t) =>
+            `<a class="trace" href="${escapeHtml(path.basename(t))}" target="_blank">trace</a>`
+        )
+        .join(" ");
+      return (
+        `<article class="card ${r.passed ? "pass" : "fail"}" data-name="${escapeHtml(name.toLowerCase())}">` +
+        `<header><span class="tname">${escapeHtml(name)}</span>` +
+        `<span class="badge ${r.passed ? "pass" : "fail"}">${r.passed ? "PASSED" : "FAILED"}</span></header>` +
+        `<div class="meta">${escapeHtml(r.exe)} &middot; ${r.duration_ms}ms ${traces}</div>` +
+        (imgs ? `<div class="imgs">\n${imgs}\n</div>` : "") +
+        `</article>`
+      );
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Render Test Report</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1117; color: #f1f5f9; margin: 0; padding: 24px; line-height: 1.5;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { border-bottom: 2px solid #8b5cf6; padding-bottom: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin: 20px 0; }
+  .stat { background: #161b22; border: 1px solid #2d3748; border-radius: 12px; padding: 16px; text-align: center; }
+  .stat .n { font-size: 2rem; font-weight: 700; }
+  .stat .l { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; }
+  .pass .n { color: #56d364; } .fail .n { color: #ff7b72; } .total .n { color: #f1f5f9; }
+  .controls { display: flex; gap: 12px; margin: 20px 0; flex-wrap: wrap; }
+  .controls input {
+    flex: 1; min-width: 220px; background: #161b22; border: 1px solid #2d3748;
+    color: #f1f5f9; border-radius: 8px; padding: 10px 14px; font-size: 0.95rem;
+  }
+  button {
+    background: #21262d; color: #f1f5f9; border: 1px solid #2d3748; border-radius: 8px;
+    padding: 10px 18px; font-size: 0.9rem; cursor: pointer;
+  }
+  button:hover { background: #2d333b; }
+  button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px; }
+  .card { background: #161b22; border: 1px solid #2d3748; border-radius: 14px; padding: 18px; }
+  .card.pass { border-left: 4px solid #56d364; }
+  .card.fail { border-left: 4px solid #ff7b72; }
+  .card header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .card .tname { font-weight: 600; }
+  .badge {
+    padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .badge.pass { background: rgba(35, 134, 54, 0.25); color: #56d364; border: 1px solid #56d364; }
+  .badge.fail { background: rgba(218, 54, 51, 0.25); color: #ff7b72; border: 1px solid #ff7b72; }
+  .meta { color: #94a3b8; font-size: 0.85rem; margin-bottom: 12px; }
+  .trace { color: #58a6ff; margin-left: 8px; }
+  .imgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .imgs img {
+    width: 100%; border-radius: 8px; border: 1px solid #2d3748; cursor: zoom-in;
+    image-rendering: pixelated; background: #000;
+  }
+  .imgs img.zoom {
+    position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: contain;
+    background: rgba(0, 0, 0, 0.95); z-index: 100; border: none; border-radius: 0; cursor: zoom-out;
+  }
+  .hidden { display: none; }
+  body[data-filter="pass"] .card.fail { display: none; }
+  body[data-filter="fail"] .card.pass { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Render Test Report</h1>
+  <p style="color:#94a3b8;font-size:0.85rem">Generated: ${escapeHtml(generatedAt.toLocaleString())} &middot; ${total} tests &middot; ${passPct}% passed</p>
+  <div class="stats">
+    <div class="stat total"><div class="n">${total}</div><div class="l">Total</div></div>
+    <div class="stat pass"><div class="n">${passed}</div><div class="l">Passed</div></div>
+    <div class="stat fail"><div class="n">${failed}</div><div class="l">Failed</div></div>
+  </div>
+  <div class="controls">
+    <input id="search" type="search" placeholder="Filter tests..." autocomplete="off"
+           hx-on:input="document.querySelectorAll('.card').forEach(c => c.classList.toggle('hidden', this.value && c.dataset.name.indexOf(this.value.toLowerCase()) < 0))">
+    <button hx-on:click="document.body.dataset.filter='all'; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active')); this.classList.add('active')">All</button>
+    <button hx-on:click="document.body.dataset.filter='pass'; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active')); this.classList.add('active')">Passed</button>
+    <button hx-on:click="document.body.dataset.filter='fail'; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active')); this.classList.add('active')">Failed</button>
+  </div>
+  <div class="grid">
+${cards}
+  </div>
+</div>
+<script>${htmxJs}</script>
+</body>
+</html>
+`;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -555,9 +674,6 @@ async function main() {
   const outputDir = args.outputDir
     ? path.resolve(args.outputDir)
     : path.join(buildDir, "tests", "render_output");
-  const baselineDir = args.baselineDir
-    ? path.resolve(args.baselineDir)
-    : path.join(testsDir, "render_output_baseline");
 
   const tracingAvailable = await detectTracingAvailable(buildDir);
   // Tracing is opt-in: only enable when --tracing is passed (default: off for speed).
@@ -569,7 +685,6 @@ async function main() {
     console.log(dim(k.padEnd(20) + v));
   kv("Build directory:", buildDir);
   kv("Output directory:", outputDir);
-  kv("Baseline directory:", baselineDir);
   kv(
     "Tracing:",
     tracingEnabled
@@ -633,6 +748,7 @@ async function main() {
         args.verbose,
         tracingEnabled,
         binaryArgs,
+        undefined,
         (exe, durationMs) => status.update(`${exe} finished in ${durationMs}ms`)
       );
 
@@ -667,12 +783,14 @@ async function main() {
           callgraphs: [],
         });
         const line = dim(`${t.suite}.${t.name} (${t.duration_ms}ms)`);
+        const statusIcon = t.status === "PASSED" ? green("✓") : red("✗");
+
         if (t.status === "PASSED") {
           totalPassed += 1;
-          status.log(`   ${green("✓")} ${line}`);
+          status.log(`   ${statusIcon} ${line}`);
         } else {
           totalFailed += 1;
-          status.log(`   ${red("✗")} ${line}`);
+          status.log(`   ${statusIcon} ${line}`);
         }
       }
     }
@@ -739,42 +857,15 @@ async function main() {
   });
 
   await runTask("Generate render report", async () => {
-    const reportToolsDir = path.join(testsDir, "report-tools-ts");
-    const nodeModulesPath = path.join(reportToolsDir, "node_modules");
-    if (!existsSync(nodeModulesPath)) {
-      console.log(dim("   Installing report tools dependencies..."));
-      const installRes = await runCommand("npm", ["install"], {
-        cwd: reportToolsDir,
-        verbose: args.verbose,
-      });
-      if (installRes.code !== 0) {
-        throw new Error(
-          `Failed to install report tools dependencies: ${installRes.stderr || ""}`
-        );
-      }
-    }
-    const resultsJson = path.join(outputDir, "render_results.json");
-    const res = await runCommand(
-      "npm",
-      [
-        "run", "generate", "--",
-        "--mode", "report",
-        "--output-dir", outputDir,
-        "--results", resultsJson,
-      ],
-      {
-        cwd: reportToolsDir,
-        verbose: args.verbose,
-      }
-    );
-    if (res.code !== 0) {
-      throw new Error(
-        `Render report generation failed with code ${res.code}${
-          res.stderr ? `: ${res.stderr}` : ""
-        }`
-      );
+    const htmxPath = path.join(scriptDir, "htmx.min.js");
+    let htmxJs: string;
+    try {
+      htmxJs = await fs.readFile(htmxPath, "utf8");
+    } catch {
+      throw new Error(`htmx.min.js not found at ${htmxPath} (run: curl -o tests/render/htmx.min.js https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js)`);
     }
     const reportPath = path.join(outputDir, "render_report.html");
+    await fs.writeFile(reportPath, generateReportHtml(allResults, new Date(), htmxJs), "utf8");
     console.log(dim(`   Report: ${reportPath}`));
   });
 
