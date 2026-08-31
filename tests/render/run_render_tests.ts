@@ -290,7 +290,17 @@ async function ensureCmakeConfigured(
   verbose: boolean
 ): Promise<boolean> {
   const cachePath = path.join(buildDir, "CMakeCache.txt");
-  if (existsSync(cachePath)) return true;
+  
+  // Check if CMake is configured AND build files exist
+  if (existsSync(cachePath)) {
+    // Verify build files exist (Makefile for Unix Makefiles generator)
+    const makePath = path.join(buildDir, "Makefile");
+    const ninjaPath = path.join(buildDir, "build.ninja");
+    if (existsSync(makePath) || existsSync(ninjaPath)) {
+      return true;
+    }
+    // CMakeCache exists but build files are missing - need reconfigure
+  }
 
   const res = await runCommand(
     "cmake",
@@ -639,97 +649,10 @@ async function main() {
     });
   }
 
-  if (tracingEnabled && allTracePaths.length) {
-    await runTask("Generate per-trace HTML", async () => {
-      const reportToolsDir = path.join(testsDir, "report-tools-ts");
-      const traceArgs = allTracePaths.flatMap(t => ["--traces", t]);
-      
-      // Ensure dependencies are installed
-      const nodeModulesPath = path.join(reportToolsDir, "node_modules");
-      if (!existsSync(nodeModulesPath)) {
-        console.log(dim("   Installing report tools dependencies..."));
-        const installRes = await runCommand("npm", ["install"], {
-          cwd: reportToolsDir,
-          verbose: args.verbose,
-        });
-        if (installRes.code !== 0) {
-          throw new Error(
-            `Failed to install report tools dependencies: ${installRes.stderr || ""}`
-          );
-        }
-      }
-      
-      const res = await runCommand(
-        "npm",
-        [
-          "run", "generate", "--",
-          "--mode", "trace",
-          "--output-dir", outputDir,
-          ...traceArgs
-        ],
-        {
-          cwd: reportToolsDir,
-          verbose: args.verbose,
-        }
-      );
-      
-      if (res.code !== 0) {
-        console.log(
-          red(`  Error generating trace HTML files`)
-        );
-        if (!args.verbose && res.stderr) console.log(dim(res.stderr));
-      } else {
-        console.log(dim(`   Generated ${allTracePaths.length} trace HTML files`));
-        if (args.verbose) {
-          for (const trace of allTracePaths) {
-            const htmlName = path.basename(trace).replace(".json", ".html");
-            console.log(dim(`   Generated: ${htmlName}`));
-          }
-        }
-      }
-    });
-  }
-
-  await runTask("Generate HTML report", async () => {
+  await runTask("Write results JSON", async () => {
     const resultsJson = path.join(outputDir, "render_results.json");
     await fs.writeFile(resultsJson, JSON.stringify(allResults, null, 2), "utf8");
-    
-    const reportToolsDir = path.join(testsDir, "report-tools-ts");
-    
-    // Ensure dependencies are installed
-    const nodeModulesPath = path.join(reportToolsDir, "node_modules");
-    if (!existsSync(nodeModulesPath)) {
-      console.log(dim("   Installing report tools dependencies..."));
-      const installRes = await runCommand("npm", ["install"], {
-        cwd: reportToolsDir,
-        verbose: args.verbose,
-      });
-      if (installRes.code !== 0) {
-        throw new Error(
-          `Failed to install report tools dependencies: ${installRes.stderr || ""}`
-        );
-      }
-    }
-
-    const res = await runCommand(
-      "npm",
-      [
-        "run", "generate", "--",
-        "--mode", "report",
-        "--output-dir", outputDir,
-        "--results", resultsJson
-      ],
-      { cwd: reportToolsDir, verbose: args.verbose }
-    );
-    
-    if (res.code !== 0) {
-      throw new Error(
-        `HTML report generation failed with code ${res.code}${
-          res.stderr ? `: ${res.stderr}` : ""
-        }`
-      );
-    }
-    console.log(dim(`   Report: ${path.join(outputDir, args.report)}`));
+    console.log(dim(`   Results: ${resultsJson}`));
   });
 
   if (args.serve) {
@@ -748,13 +671,13 @@ async function main() {
   console.log(
     green.bold("║") + dim(pad(`Total: ${total}  Passed: ${totalPassed}  Failed: ${totalFailed}`)) + green.bold("║")
   );
-  const reportPath = path.join(outputDir, args.report);
-  const reportStr =
-    reportPath.length > summaryWidth - 8
-      ? "…" + reportPath.slice(-(summaryWidth - 9))
-      : reportPath;
+  const resultsPath = path.join(outputDir, "render_results.json");
+  const resultsStr =
+    resultsPath.length > summaryWidth - 10
+      ? "…" + resultsPath.slice(-(summaryWidth - 11))
+      : resultsPath;
   console.log(
-    green.bold("║") + dim(pad("Report: " + reportStr)) + green.bold("║")
+    green.bold("║") + dim(pad("Results: " + resultsStr)) + green.bold("║")
   );
   console.log(green.bold("╚" + border + "╝"));
   console.log();

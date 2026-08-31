@@ -16,8 +16,18 @@ import {
   pruneStdNodes,
   annotateStats,
 } from '../src/algorithms/treeBuilder';
-import {generateReportHtml, generateTraceHtml} from '../src/utils/renderToHtml';
-import type {TraceEvent, TestReportData, CliArgs} from '../src/types';
+import {
+  generateReportHtml,
+  generateTraceHtml,
+  generateUnitReportHtml,
+  generateCombinedReportHtml,
+} from '../src/utils/renderToHtml';
+import type {
+  TraceEvent,
+  TestReportData,
+  UnitTestReportData,
+  CliArgs,
+} from '../src/types';
 
 /**
  * Parses command line arguments.
@@ -37,6 +47,16 @@ function parseArgs(args: string[]): CliArgs {
     switch (arg) {
       case '--mode':
         result.mode = args[++i] as CliArgs['mode'];
+        if (
+          result.mode !== 'report' &&
+          result.mode !== 'trace' &&
+          result.mode !== 'unit-report' &&
+          result.mode !== 'combined' &&
+          result.mode !== 'all'
+        ) {
+          console.error(`Error: unknown mode "${result.mode}"`);
+          process.exit(1);
+        }
         break;
       case '--output-dir':
         result.outputDir = args[++i];
@@ -53,6 +73,12 @@ function parseArgs(args: string[]): CliArgs {
           j++;
         }
         i = j - 1;
+        break;
+      case '--unit-results':
+        result.unitResultsJson = args[++i];
+        break;
+      case '--render-results':
+        result.renderResultsJson = args[++i];
         break;
     }
   }
@@ -83,17 +109,15 @@ async function transformResults(
   return Promise.all(
     rawData.map(async (item: any) => {
       // Build expected trace filename pattern
-      // Format: trace__{Suite}__{TestName}.json/.html
+      // Format: trace__{Suite}__{TestName}.json
       const tracePattern = `trace__${item.test_suite}__${item.test_name}`;
       const expectedTraceJson = join(outputDir, `${tracePattern}.json`);
-      const expectedTraceHtml = join(outputDir, `${tracePattern}.html`);
 
-      // Check if trace JSON file exists (HTML will be generated from it)
-      let traceHtmlFilename: string | null = null;
+      // Check if trace JSON file exists and read its data
+      let traceData: object | null = null;
       try {
-        await readFile(expectedTraceJson);
-        // JSON exists, so HTML should be generated
-        traceHtmlFilename = expectedTraceHtml;
+        const traceJson = await readFile(expectedTraceJson, 'utf-8');
+        traceData = JSON.parse(traceJson);
       } catch {
         // Check if it's already in the traces array
         if (item.traces && item.traces.length > 0) {
@@ -101,7 +125,12 @@ async function transformResults(
             t.includes(tracePattern)
           );
           if (matchingTrace) {
-            traceHtmlFilename = matchingTrace.replace('.json', '.html');
+            try {
+              const traceJson = await readFile(matchingTrace, 'utf-8');
+              traceData = JSON.parse(traceJson);
+            } catch {
+              // Could not read trace file
+            }
           }
         }
       }
@@ -123,8 +152,8 @@ async function transformResults(
         outputText: '',
         environment: item.environment || {},
         renderFunctions: [],
-        pngFilename: item.pngs && item.pngs.length > 0 ? item.pngs[0] : null,
-        traceHtmlFilename,
+        pngFilename: item.pngs && item.pngs.length > 0 ? basename(item.pngs[0]) : null,
+        traceData,
         callgraphs: item.callgraphs || [],
         passed: item.passed || false,
       };
@@ -162,6 +191,112 @@ async function generateReport(args: CliArgs): Promise<void> {
   });
 
   const outputPath = join(args.outputDir, 'render_report.html');
+  await mkdir(args.outputDir, {recursive: true});
+  await writeFile(outputPath, html);
+  console.log(`✓ Generated ${outputPath}`);
+}
+
+/**
+ * Transforms raw unit_results.json (snake_case) to UnitTestReportData[].
+ */
+function transformUnitResults(rawData: unknown[]): UnitTestReportData[] {
+  return rawData.map((item: any) => ({
+    executable: item.exe || '',
+    testSuite: item.test_suite || '',
+    testName: item.test_name || '',
+    durationMs: item.duration_ms ?? 0,
+    status: item.passed ? 'PASSED' : 'FAILED',
+    passed: Boolean(item.passed),
+  }));
+}
+
+/**
+ * Generates the unit test report HTML.
+ *
+ * @param args - CLI arguments
+ */
+async function generateUnitReport(args: CliArgs): Promise<void> {
+  if (!args.resultsJson) {
+    console.error('Error: --results required for unit-report mode');
+    process.exit(1);
+  }
+
+  console.log('Reading unit results...');
+  const resultsData = await readFile(args.resultsJson, 'utf-8');
+  const rawResults = JSON.parse(resultsData);
+  const results = transformUnitResults(Array.isArray(rawResults) ? rawResults : []);
+
+  console.log(`Generating unit report for ${results.length} tests...`);
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+
+  const html = generateUnitReportHtml({
+    generatedAt: new Date().toISOString(),
+    total: results.length,
+    passed,
+    failed,
+    results,
+  });
+
+  const outputPath = join(args.outputDir, 'unit_report.html');
+  await mkdir(args.outputDir, {recursive: true});
+  await writeFile(outputPath, html);
+  console.log(`✓ Generated ${outputPath}`);
+}
+
+/**
+ * Generates the combined test report HTML with Unit and Render tabs.
+ *
+ * @param args - CLI arguments
+ */
+async function generateCombinedReport(args: CliArgs): Promise<void> {
+  if (!args.unitResultsJson || !args.renderResultsJson) {
+    console.error('Error: --unit-results and --render-results required for combined mode');
+    process.exit(1);
+  }
+
+  console.log('Reading unit results...');
+  const unitResultsData = await readFile(args.unitResultsJson, 'utf-8');
+  const rawUnitResults = JSON.parse(unitResultsData);
+  const unitResults = transformUnitResults(Array.isArray(rawUnitResults) ? rawUnitResults : []);
+
+  console.log('Reading render results...');
+  const renderResultsData = await readFile(args.renderResultsJson, 'utf-8');
+  const rawRenderResults = JSON.parse(renderResultsData);
+  const renderResults = await transformResults(rawRenderResults, join(args.outputDir, 'render_output'));
+
+  const unitPassed = unitResults.filter((r) => r.passed).length;
+  const unitFailed = unitResults.length - unitPassed;
+
+  const renderPassed = renderResults.filter((r) => r.passed).length;
+  const renderFailed = renderResults.length - renderPassed;
+
+  // Count MD5 regressions
+  let md5Regressions = 0;
+  for (const test of renderResults) {
+    if (test.md5Hash && test.previousMd5 && test.md5Hash !== test.previousMd5) {
+      md5Regressions++;
+    }
+  }
+
+  console.log(`Generating combined report for ${unitResults.length} unit + ${renderResults.length} render tests...`);
+
+  const html = generateCombinedReportHtml({
+    generatedAt: new Date().toISOString(),
+    unitTotal: unitResults.length,
+    unitPassed,
+    unitFailed,
+    unitResults,
+    renderTotal: renderResults.length,
+    renderPassed,
+    renderFailed,
+    renderResults,
+    tracingEnabled: renderResults.some((r) => r.traceData !== null),
+    md5Regressions,
+  });
+
+  const outputPath = join(args.outputDir, 'tests_report.html');
   await mkdir(args.outputDir, {recursive: true});
   await writeFile(outputPath, html);
   console.log(`✓ Generated ${outputPath}`);
@@ -224,6 +359,14 @@ async function main(): Promise<void> {
 
     if (args.mode === 'trace' || args.mode === 'all') {
       await generateTraces(args);
+    }
+
+    if (args.mode === 'unit-report') {
+      await generateUnitReport(args);
+    }
+
+    if (args.mode === 'combined') {
+      await generateCombinedReport(args);
     }
 
     console.log('\n✓ Generation complete!');

@@ -1,9 +1,13 @@
 /*
- * D3 Mock CFile - In-Memory File System for Testing
+ * Enhanced D3 Mock CFile - Full Implementation
  *
- * Provides a mock implementation of cfile functions for unit testing.
- * Uses gMock for expectations/verification.
- * Linked as OBJECT library to take precedence over real cfile.
+ * Provides a complete mock implementation of cfile functions for unit testing.
+ * Supports:
+ * - In-memory file system
+ * - HOG library simulation
+ * - Base directories
+ * - Search paths
+ * - Case-insensitive path resolution
  */
 
 #pragma once
@@ -17,6 +21,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdarg>
+#include <filesystem>
+#include <algorithm>
 
 // D3 types
 typedef unsigned char ubyte;
@@ -44,13 +50,39 @@ public:
   bool is_text = false;
 };
 
-// In-memory file system - fully self-contained, no real cfile calls
+// Simulated HOG library
+class InMemoryLibrary {
+public:
+  std::string name;
+  int handle = -1;
+  std::map<std::string, std::vector<uint8_t>> files; // filename -> data
+
+  bool HasFile(const std::string &filename) const { return files.find(filename) != files.end(); }
+
+  const std::vector<uint8_t> *GetFileData(const std::string &filename) const {
+    auto it = files.find(filename);
+    if (it != files.end()) {
+      return &it->second;
+    }
+    return nullptr;
+  }
+};
+
+// Search path entry
+struct SearchPath {
+  std::string path;
+  std::vector<std::string> extensions; // empty = all files
+};
+
+// Enhanced in-memory file system
 class InMemoryFileSystem {
 public:
   InMemoryFileSystem();
   ~InMemoryFileSystem();
 
+  // File operations
   MockCFILE *OpenFile(const std::string &name, const char *mode);
+  MockCFILE *OpenFileFromLibrary(const std::string &name, int lib_handle);
   void CloseFile(MockCFILE *cf);
 
   // Test data injection
@@ -61,9 +93,43 @@ public:
   // Get internal file for direct manipulation
   InMemoryFile *GetFile(const std::string &name);
 
+  // Library operations
+  int OpenLibrary(const std::string &name);
+  void CloseLibrary(int handle);
+  InMemoryLibrary *GetLibrary(int handle);
+  InMemoryLibrary *GetLibrary(const std::string &name);
+  void AddFileToLibrary(const std::string &lib_name, const std::string &filename, const std::vector<uint8_t> &data);
+
+  // Base directory operations
+  void AddBaseDirectory(const std::string &dir);
+  void ClearBaseDirectories();
+  std::vector<std::string> GetBaseDirectories() const { return base_directories_; }
+
+  // Search path operations
+  bool AddSearchPath(const std::string &path, const std::vector<std::string> &ext_list = {});
+  void ClearSearchPaths();
+  std::vector<SearchPath> GetSearchPaths() const { return search_paths_; }
+
+  // Path resolution
+  std::string LocatePath(const std::string &relative_path, bool case_insensitive = true);
+  std::vector<std::string> LocateMultiplePaths(const std::string &relative_path);
+
+  // Check if file exists and where
+  int FileExists(const std::string &name); // Returns: 0=not found, 1=on disk, 2=in library
+
   std::map<std::string, std::unique_ptr<InMemoryFile>> files_;
   std::map<CFILE *, std::unique_ptr<MockCFILE>> open_files_;
+  std::map<int, std::unique_ptr<InMemoryLibrary>> libraries_;
+  std::vector<std::string> base_directories_;
+  std::vector<SearchPath> search_paths_;
   int next_handle_ = 1;
+  int next_lib_handle_ = 1;
+
+  // Case-insensitive helpers (public for external use)
+  static bool CaseInsensitiveCompare(const std::string &a, const std::string &b);
+  static std::string ToLower(const std::string &s);
+
+private:
 };
 
 // Global access for stub
@@ -95,24 +161,21 @@ public:
   MOCK_METHOD(void, cf_WriteDouble, (CFILE *, double));
   MOCK_METHOD(int, cf_WriteBytes, (const uint8_t *, int, CFILE *));
   MOCK_METHOD(int, cf_WriteString, (CFILE *, const char *));
-  // Note: cfprintf uses a custom implementation, not gMock
   MOCK_METHOD(int, cfexist, (const char *));
   MOCK_METHOD(void, cf_Rewind, (CFILE *));
   MOCK_METHOD(int, cfgetc, (CFILE *));
+  MOCK_METHOD(int, cf_OpenLibrary, (const char *));
+  MOCK_METHOD(void, cf_CloseLibrary, (int));
+  MOCK_METHOD(CFILE *, cf_OpenFileInLibrary, (const char *, int));
 };
 
 MockCFile *&GetMockCFile();
 
 // ============================================================================
 // C File API Declarations (standalone mock only)
-// When D3_MOCK_CFILE_STANDALONE is defined, this header provides the API so
-// tests can link only the mock. When undefined, include cfile.h first so
-// the real API is used and this header only provides mock infrastructure.
 // ============================================================================
 
 #if defined(D3_MOCK_CFILE_STANDALONE)
-
-#include <filesystem>
 
 // File operations
 CFILE *cfopen(const char *filename, const char *mode);
@@ -158,6 +221,14 @@ void cf_CloseLibrary(int handle);
 int cf_SetSearchPath(const char *path, ...);
 void cf_ClearAllSearchPaths();
 CFILE *cf_OpenFileInLibrary(const char *filename, int libhandle);
+
+// Base directory management
+void cf_AddBaseDirectory(const std::filesystem::path &base_directory);
+void cf_ClearBaseDirectories();
+
+// Path resolution
+std::filesystem::path cf_LocatePath(const std::filesystem::path &relative_path);
+std::vector<std::filesystem::path> cf_LocateMultiplePaths(const std::filesystem::path &relative_path);
 
 // Utility
 bool cf_CopyFile(const std::filesystem::path &dest, const std::filesystem::path &src, int copytime = 0);

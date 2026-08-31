@@ -277,32 +277,50 @@ Callgrind tool and serve them via a local Next.js app.
 
    ```sh
    sudo apt install valgrind
-   cd tests/callgraph-viewer
-   npm install
-   cd ../..
+   yarn install   # installs all workspace dependencies including callgraph-viewer
    ```
 
 2. Run the render tests with the viewer enabled:
 
    ```sh
-   python3 tests/render/run_render_tests.py \
-     --build-dir build \
-     --output-dir build/tests/render_output \
-     --serve
+   yarn render-tests -- --build-dir build --output-dir build/tests/render_output --serve
    ```
 
    This will:
 
    - Run the render tests (including Callgrind passes when available).
    - Generate `*__graph.json` files under `build/tests/render_output/`.
-   - Generate/update `render_report.html`.
+   - Generate the combined `tests_report.html`.
    - Start the Next.js viewer on `http://localhost:3000` and open it in a browser.
 
-From the report, each render test row will include:
+From the report (Render tab), each render test row will include:
 
-- A link to a per-test **call tree** (function enter/exit timeline).
-- A link to the static **call graph** HTML.
+- A **Trace** button that opens an inline call tree visualization.
+- Call graph links when available.
 - A “View in Call Graph Viewer” link that deep-links into the Next.js app.
+
+### Unit tests
+
+Unit tests are now included in the combined report. Run all tests together:
+
+```sh
+yarn tests
+```
+
+Or run only unit tests:
+
+```sh
+yarn unit-tests -- --build-dir build --output-dir build/tests
+```
+
+This will:
+
+- Configure and build all unit test executables (physics_tests, cfile_mock_tests, manage_tests, *_constants_tests, etc.).
+- Run each executable and parse GTest output.
+- Write `build/tests/unit_results.json`.
+- Generate the combined `build/tests/tests_report.html` with Unit/Render tabs.
+
+Use `--no-build` to skip the configure/build steps and only run tests. Use `--verbose` for detailed output.
 
 ### Running Individual Tests
 

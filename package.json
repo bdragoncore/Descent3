@@ -1,8 +1,14 @@
 {
   "name": "descent-3-tools",
   "private": true,
+  "workspaces": [
+    "tests/report-tools-ts",
+    "tests/callgraph-viewer"
+  ],
   "scripts": {
-    "render-tests": "tsx tests/render/run_render_tests.ts"
+    "tests": "tsx tests/run_tests.ts --build-dir build",
+    "render-tests": "tsx tests/render/run_render_tests.ts",
+    "unit-tests": "tsx tests/run_unit_tests.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

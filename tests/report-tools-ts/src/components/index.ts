@@ -6,3 +6,4 @@
 
 export {ReportPage} from './ReportPage';
 export {TestResultCard} from './TestResultCard';
+export {CombinedReportPage} from './CombinedReportPage';

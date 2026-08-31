@@ -104,8 +104,8 @@ export interface TestReportData {
   renderFunctions: string[];
   /** PNG filename (if test produced image) */
   pngFilename: string | null;
-  /** Trace HTML filename (if tracing enabled) */
-  traceHtmlFilename: string | null;
+  /** Trace data object (if tracing enabled) */
+  traceData: object | null;
   /** List of callgraph HTML files */
   callgraphs: string[];
   /** Whether test passed */
@@ -143,15 +143,37 @@ export interface ReportConfig {
 }
 
 /**
+ * Unit test result (non-render): minimal fields for unit_report.html.
+ */
+export interface UnitTestReportData {
+  /** Executable name */
+  executable: string;
+  /** Test suite/class name */
+  testSuite: string;
+  /** Test name */
+  testName: string;
+  /** Duration in milliseconds */
+  durationMs: number;
+  /** Test status */
+  status: 'PASSED' | 'FAILED';
+  /** Whether test passed */
+  passed: boolean;
+}
+
+/**
  * CLI arguments for the generate script.
  */
 export interface CliArgs {
   /** Generation mode */
-  mode: 'report' | 'trace' | 'all';
+  mode: 'report' | 'trace' | 'unit-report' | 'combined' | 'all';
   /** Output directory */
   outputDir: string;
   /** Path to results JSON file */
   resultsJson?: string;
   /** List of trace JSON files */
   traceFiles?: string[];
+  /** Path to unit test results JSON (for combined mode) */
+  unitResultsJson?: string;
+  /** Path to render test results JSON (for combined mode) */
+  renderResultsJson?: string;
 }

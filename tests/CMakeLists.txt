@@ -100,6 +100,96 @@ target_link_libraries(cfile_coverage_tests PRIVATE
 gtest_discover_tests(cfile_coverage_tests)
 
 # ============================================================================
+# CFile Full Mock Library (enhanced with HOG library and path support)
+# ============================================================================
+
+add_library(mock_cfile_full OBJECT
+    mock_cfile_full.cpp
+)
+target_include_directories(mock_cfile_full PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/cfile
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# ============================================================================
+# CFile Integration Tests (using full mock with HOG library support)
+# ============================================================================
+
+add_executable(cfile_integration_tests
+    cfile_integration_tests.cpp
+)
+
+target_compile_definitions(cfile_integration_tests PRIVATE D3_MOCK_CFILE_STANDALONE)
+target_link_libraries(cfile_integration_tests PRIVATE
+    $<TARGET_OBJECTS:mock_cfile_full>
+    GTest::gtest_main
+    GTest::gmock
+)
+
+gtest_discover_tests(cfile_integration_tests)
+
+# ============================================================================
+# CFile Real Tests with Linker-Wrapped C IO Functions
+# Tests the REAL cfile library with intercepted C stdio functions
+# ============================================================================
+
+# Compile cfile sources directly so linker wrapping applies to them
+add_executable(cfile_real_tests
+    cfile_real_tests.cpp
+    cfile_io_wrappers.cpp
+    # Don't compile stubs.c - we link real ddebug library instead
+    ${PROJECT_SOURCE_DIR}/cfile/cfile.cpp
+    ${PROJECT_SOURCE_DIR}/cfile/hogfile.cpp
+    ${PROJECT_SOURCE_DIR}/cfile/inffile.cpp
+    # Compile ddio file functions directly so they use wrapped C functions
+    ${PROJECT_SOURCE_DIR}/ddio/lnxfile.cpp
+)
+
+target_include_directories(cfile_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/cfile
+    ${PROJECT_SOURCE_DIR}/ddio
+    ${PROJECT_SOURCE_DIR}/linux
+    ${PROJECT_SOURCE_DIR}/logger
+    ${PROJECT_SOURCE_DIR}/mem
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc  # For pstring.h
+    ${PROJECT_BINARY_DIR}/cfile
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Need to link libraries for cfile dependencies
+target_link_libraries(cfile_real_tests PRIVATE
+    ddebug
+    ddio
+    mem
+    misc
+    GTest::gtest_main
+    GTest::gmock
+)
+
+# Linker wrapping for C stdio functions - applies to cfile/ddio sources compiled above
+target_link_options(cfile_real_tests PRIVATE
+    "LINKER:--wrap=fopen"
+    "LINKER:--wrap=fclose"
+    "LINKER:--wrap=fread"
+    "LINKER:--wrap=fwrite"
+    "LINKER:--wrap=fseek"
+    "LINKER:--wrap=ftell"
+    "LINKER:--wrap=feof"
+    "LINKER:--wrap=rewind"
+    "LINKER:--wrap=fputc"
+    "LINKER:--wrap=vfprintf"
+    "LINKER:--wrap=fileno"
+    "LINKER:--wrap=fstat"
+)
+
+gtest_discover_tests(cfile_real_tests)
+
+# ============================================================================
 # Stub libraries for dependencies (ddebug, ddio, args)
 # ============================================================================
 
