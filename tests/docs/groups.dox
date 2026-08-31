@@ -1,0 +1,101 @@
+/**
+ * @defgroup descent3_tests Descent 3 Tests — Whole-Game-Linked Coverage
+ * @brief 2536 GTests covering all 112 Descent3/*.cpp + utility libs.
+ *
+ * @details
+ * This group aggregates every harness added in commit `821b9cd`
+ * (squash of 187 commits on `bdragoncore/feat/testing` ahead of
+ * `origin/main`). Coverage summary:
+ *
+ * - **Total**: 2536 Passed, 0 Failed (`npm run unit-tests -- --no-build`).
+ * - **112 per-module suites** (`tests/cpp_src/*_real_tests.cpp`) — one per
+ *   `Descent3/*.cpp`, discovered by `p.stem.lower()` in `tests/CMakeLists.txt`.
+ * - **43 whole-game-linked suites** (`*_linked_real_tests.cpp`) via the
+ *   `descent3` static archive + `LINKER:--wrap,_ZN5pilot10initializeEv`.
+ * - **Utility suites** (`lib_util_tests`, `vecmat_util_tests`,
+ *   `ddio_file_tests`, `psrand_real_tests`, `fix_real_tests`, `mem_real_tests`,
+ *   `list_real_tests`, `small_game_real_tests`, `door_ship_vclip_real_tests`,
+ *   plus `ddio/tests`, `md5/tests`, `misc/tests`).
+ *
+ * Each file header documents:
+ * - `@par Source` — the real `Descent3/*.cpp` (or `lib`/`misc` header) under test.
+ * - `@par Harness` — the test file itself.
+ * - `@par Framework` — GoogleTest (`TEST`/`TEST_F`).
+ * - `@par Isolation` (real) vs `@par Linkage` (linked) — stub inventory or
+ *   whole-game link details.
+ *
+ * @see tests/CMakeLists.txt
+ * @see Doxyfile
+ * @see TESTING.md
+ */
+
+/**
+ * @defgroup descent3_real_tests Isolated Real Tests (`*_real_tests.cpp`)
+ * @ingroup descent3_tests
+ * @brief Compile the real `Descent3/<module>.cpp` against stubbed subsystems.
+ *
+ * @details
+ * Each executable links exactly one real source file (plus minimal deps like
+ * `mem`, `logger`, `cfile`, `fix`, `vecmat`) and provides fakes for every
+ * other subsystem. `RELEASE` is defined so `Int3()`/`ASSERT` macros become
+ * no-ops rather than aborting the test process. Test cases either replicate
+ * internal logic (when file-static) or call the real public API through the
+ * compiled object.
+ *
+ * Example: `tests/cpp_src/aiambient_real_tests.cpp` — `aiambient.cpp:208`,
+ * `ambient_life::ALReset`, `SetALValue`/`GetALValue`, `InitForLevel`,
+ * `ComputeNextSize` via `ps_rand`.
+ *
+ * @see tests/cpp_src/*_real_tests.cpp
+ */
+
+/**
+ * @defgroup descent3_linked_tests Whole-Game-Linked Tests (`*_linked_real_tests.cpp`)
+ * @ingroup descent3_tests
+ * @brief Link the `descent3` static library for integration coverage.
+ *
+ * @details
+ * These suites exercise code that cannot be isolated to a single translation
+ * unit (global state, cross-module singletons). They link the entire
+ * `descent3` archive via `--start-group` and wrap `pilot::initialize` to
+ * inject a headless `Video_res_list` before the real initializer runs:
+ *
+ * @code{.cpp}
+ * extern std::vector<tVideoResolution> Video_res_list;
+ * extern "C" void __wrap__ZN5pilot10initializeEv(void *self) {
+ *   if (Video_res_list.empty()) {
+ *     Video_res_list.push_back({640,480});
+ *     Current_video_resolution_id = 0;
+ *   }
+ *   __real__ZN5pilot10initializeEv(self);
+ * }
+ * @endcode
+ *
+ * Representative: `CtlCfgElem.cpp:479 cfg_binding_text`,
+ * `multi_dll_mgr.cpp:387/577`, `mission_download.cpp:626/647/676`,
+ * `multisafe_server.cpp:43`, `OsirisLoadandBind.cpp:3934`,
+ * `soar_helpers.cpp:348`, `multi_client`/`multi_connect`/`controls`/`gauges`.
+ *
+ * @see tests/cpp_src/*_linked_real_tests.cpp
+ * @see Descent3/pilot_class.cpp
+ */
+
+/**
+ * @defgroup descent3_standalone_tests Standalone / Utility Tests
+ * @ingroup descent3_tests
+ * @brief Header-only and library smoke tests with zero engine dependencies.
+ *
+ * @details
+ * Pure logic tests for `lib/byteswap.h`, `lib/IOOps.h`, `misc/holder.h`,
+ * `lib/crossplat.h`, `lib/Macros.h`, `lib/vecmat_external.h`,
+ * `fix/fix.h`, `psclass`, `pstring`, `psrand`, `md5`, `ddio`, etc.
+ * They compile without linking `Descent3/*.cpp` and are useful as
+ * fast, portable sanity checks in CI.
+ *
+ * @see tests/cpp_src/*_tests_standalone.cpp
+ * @see tests/cpp_src/lib_util_tests.cpp
+ * @see tests/cpp_src/vecmat_util_tests.cpp
+ * @see ddio/tests/ddio_tests.cpp
+ * @see md5/tests/md5_tests.cpp
+ * @see misc/tests/misc_util_tests.cpp
+ */

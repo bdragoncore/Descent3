@@ -286,6 +286,9 @@ bool D3RenderTestBase::AddSearchPath(const char *path) { return D3Core_AddSearch
 // ---------------------------------------------------------------------------
 
 void D3RenderTestBase::RenderTestNameOverlay() {
+  if (getenv("D3_SKIP_OVERLAY"))
+    return;
+
   // Get current test name from gtest
   const ::testing::TestInfo *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
   if (!test_info)

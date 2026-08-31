@@ -58,17 +58,11 @@ target_compile_definitions(d3_render_test_base PRIVATE
 )
 
 set(D3_RENDER_SUITES
-    egl
-    gl
     game
-    hud
 )
 
 set(D3_RENDER_SUITE_SOURCES
-    egl               d3_render_tests_egl.cpp
-    gl                d3_render_tests_gl.cpp
     game              d3_render_tests_game.cpp
-    hud               d3_render_tests_hud.cpp
 )
 
 function(add_d3_render_test_executable suite_name)
@@ -83,27 +77,10 @@ function(add_d3_render_test_executable suite_name)
         ${SUITE_SOURCE}
     )
 
-    # Frame pointer and debug for unwinding/symbols; -finstrument-functions only on suite sources
-    target_compile_options(${target_name} PRIVATE
-        -fno-omit-frame-pointer
-        -g
-    )
-
-    # Apply -finstrument-functions only to the suite source (not main or base)
-    set_property(SOURCE ${SUITE_SOURCE}
-        APPEND PROPERTY COMPILE_OPTIONS "-finstrument-functions"
-    )
-
-    # Export symbols to .dynsym so dladdr() can resolve names at runtime for tracing
-    target_link_options(${target_name} PRIVATE
-        -rdynamic
-    )
-
     # Note: We link mesaopengl to override renderer symbols from descent3.
     # MesaOpenGL uses EGL pbuffer for headless rendering.
     # Use --allow-multiple-definition to let first definition win (mesaopengl)
     target_link_libraries(${target_name} PRIVATE
-        tracer
         GTest::gtest
         -Wl,--allow-multiple-definition
         -Wl,--start-group
@@ -166,9 +143,6 @@ endforeach()
 
 # Convenience target that builds all render test binaries
 add_custom_target(d3_render_tests_all DEPENDS
-    d3_render_tests_egl
-    d3_render_tests_gl
     d3_render_tests_game
-    d3_render_tests_hud
 )
 

@@ -44,9 +44,10 @@ inline char *_strlwr(char *string) {
 }
 
 inline char *_strupr(char *string) {
-  while (string && *string) {
-    *string = toupper(*string);
-    string++;
+  char *ptr = string;
+  while (ptr && *ptr) {
+    *ptr = toupper(*ptr);
+    ptr++;
   }
   return string;
 }

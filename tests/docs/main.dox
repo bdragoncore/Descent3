@@ -1,0 +1,80 @@
+/**
+ * @mainpage Descent 3 Test Harness — Whole-Game-Linked Coverage
+ *
+ * @section overview Overview
+ *
+ * This build achieves **whole-game-linked coverage**: 2536 GoogleTest cases
+ * covering all 112 `Descent3/*.cpp` modules plus the portable utility
+ * libraries (`lib`, `fix`, `cfile`, `ddio`, `misc`, `md5`, `vecmat`,
+ * `physics`). See `tests/CMakeLists.txt` for the per-module executable
+ * matrix and `TESTING.md` for the CI workflow (`npm run tests`,
+ * `npm run unit-tests`, `npm run render-tests`).
+ *
+ * @subsection added Added in commit 821b9cd — 187 squashed commits
+ *
+ * - **43 whole-game-linked suites** via the `descent3` static library with
+ *   `LINKER:--wrap,_ZN5pilot10initializeEv` and a `Video_res_list` headless
+ *   fixup (see `pilot::initialize` wrapping in `_linked_real_tests.cpp`
+ *   harnesses).
+ * - **112 per-module `*_real_tests.cpp` harnesses** (one per
+ *   `Descent3/*.cpp`, keyed by `p.stem.lower()` in `tests/CMakeLists.txt`).
+ * - **Utility coverage**: `lib`, `fix`, `vecmat`, `psclass`, `pstring`,
+ *   `md5`, `ddio`, `misc`, `crossplat`, `IOOps`, `holder`, `byteswap`.
+ * - Final batch (representative):
+ *   `CtlCfgElem.cpp:479 cfg_binding_text`,
+ *   `multi_dll_mgr.cpp:387 GetMultiAPI / 577 FreeMultiDLL`,
+ *   `mission_download.cpp:626 ClipURLToWidth, 647 SecondsToString, 676 _get_zipfilename`,
+ *   `multisafe_server.cpp:43 VerifyMSafeObject`,
+ *   `OsirisLoadandBind.cpp:3934 (SOAR-disabled stubs)`,
+ *   `soar_helpers.cpp:348`, `multi_client` timeout, `ctlconfig`, `controls`,
+ *   `gauges`, `GameLoop`, etc.
+ *
+ * @subsection build Build & Run
+ *
+ * @code{.sh}
+ * mkdir -p build && cd build
+ * cmake .. -DCMAKE_CXX_COMPILER=clang++ -DBUILD_TESTING=ON
+ * cmake --build . -j$(nproc)
+ * npm run unit-tests -- --build-dir build --output-dir build/tests/unit_output  # no-build after first
+ * npm run tests        # unit + render, artifacts under build/tests/
+ * @endcode
+ *
+ * Artifacts:
+ * - `build/tests/tests_report.html` (Unit + Render tabs)
+ * - `build/tests/unit_output/unit_results.json`
+ * - `build/tests/render_output/render_results.json` + PNGs/MD5s
+ *
+ * @section groups Test Groups
+ *
+ * All harnesses are tagged with `@ingroup descent3_tests` so Doxygen
+ * groups them under this module:
+ *
+ * - @ref descent3_real_tests — isolated `*_real_tests.cpp` (one source file
+ *   + stubbed dependencies, `RELEASE` suppresses `Int3()`).
+ * - @ref descent3_linked_tests — whole-game-linked
+ *   `*_linked_real_tests.cpp` (link `descent3` static, wrap
+ *   `pilot::initialize`).
+ * - @ref descent3_standalone_tests — portable header-only / utility tests
+ *   (`*_tests_standalone.cpp`, `lib_util_tests`, `ddio_file_tests`, etc.).
+ *
+ * @section conventions Conventions
+ *
+ * - **File header**: `@file`, `@brief`, `@details`, `@par Source/Harness/Framework/Isolation|Linkage`,
+ *   `@ingroup descent3_tests`, `@see Source.cpp`.
+ * - **Test case**: `@test Suite.Case`, `@brief`, `@details`, `@see Source.cpp`,
+ *   `@ingroup descent3_tests`.
+ * - **Fixture**: `@brief GTest fixture for XTest`, `@details SetUp()` baseline.
+ * - **Stubs**: file body documents the stub inventory (globals, `REPLACE` vs `WRAP`).
+ * - **Quirks**: documented inline (`// quirk:`) and in `@details` when the
+ *   harness preserves intentional divergence from the spec.
+ *
+ * @section headless Headless / CI
+ *
+ * `Video_res_list` headless fix + `pilot::initialize` wrapping allow the
+ * linked suites to run without a display server or pilot files.
+ * The render tests separately use `llvmpipe` via Mesa; see `TESTING.md`.
+ *
+ * @see TESTING.md
+ * @see tests/CMakeLists.txt
+ * @see Descent3/
+ */

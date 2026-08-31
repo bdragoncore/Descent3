@@ -268,37 +268,6 @@ python3 tests/render/run_render_tests.py \
   --update-baseline
 ```
 
-#### Call graph viewer
-
-The render test harness can also generate per-test call graphs using Valgrind’s
-Callgrind tool and serve them via a local Next.js app.
-
-1. Install Valgrind and Node.js/npm (once):
-
-   ```sh
-   sudo apt install valgrind
-   yarn install   # installs all workspace dependencies including callgraph-viewer
-   ```
-
-2. Run the render tests with the viewer enabled:
-
-   ```sh
-   yarn render-tests -- --build-dir build --output-dir build/tests/render_output --serve
-   ```
-
-   This will:
-
-   - Run the render tests (including Callgrind passes when available).
-   - Generate `*__graph.json` files under `build/tests/render_output/`.
-   - Generate the combined `tests_report.html`.
-   - Start the Next.js viewer on `http://localhost:3000` and open it in a browser.
-
-From the report (Render tab), each render test row will include:
-
-- A **Trace** button that opens an inline call tree visualization.
-- Call graph links when available.
-- A “View in Call Graph Viewer” link that deep-links into the Next.js app.
-
 ### Unit tests
 
 Unit tests are now included in the combined report. Run all tests together:

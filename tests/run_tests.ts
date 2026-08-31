@@ -4,12 +4,11 @@
  * Uses the same --build-dir (and optionally --no-build, --verbose) for both.
  *
  * Usage:
- *   npm run tests [-- --no-build] [-- --verbose] [-- --tracing]
- *   --tracing  enable render test tracing (default: off)
+ *   npm run tests [-- --no-build] [-- --verbose]
  *
  * Output:
- *   build-dir/tests/tests_report.html  — combined report with Unit/Render tabs
- *   build-dir/tests/render_output/     — PNGs, traces, etc.
+ *   build-dir/tests/render_output/render_report.html — render report + PNGs
+ *   build-dir/tests/unit_output/                     — unit test results
  */
 
 import path from "node:path";
@@ -20,13 +19,11 @@ function parseArgs(argv: string[]): {
   buildDir: string;
   noBuild: boolean;
   verbose: boolean;
-  tracing: boolean;
 } {
   const args = {
     buildDir: "build",
     noBuild: false,
     verbose: false,
-    tracing: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -43,9 +40,6 @@ function parseArgs(argv: string[]): {
       case "--verbose":
       case "-v":
         args.verbose = true;
-        break;
-      case "--tracing":
-        args.tracing = true;
         break;
       default:
         break;
@@ -95,7 +89,6 @@ async function main() {
     ...(argv.verbose ? ["--verbose"] : []),
   ];
 
-  // Tracing is opt-in: pass --tracing to enable; otherwise pass --skip-trace (default fast).
   const renderArgs = [
     "--build-dir",
     buildDir,
@@ -103,14 +96,13 @@ async function main() {
     renderOutputDir,
     ...(argv.noBuild ? ["--no-build"] : []),
     ...(argv.verbose ? ["--verbose"] : []),
-    ...(argv.tracing ? ["--tracing"] : ["--skip-trace"]),
   ];
 
-  const mainReportPath = path.join(testsDir, "tests_report.html");
+  const renderReportPath = path.join(renderOutputDir, "render_report.html");
 
   console.log("\n\u001b[35m\u001b[1mRun all tests (unit + render)\u001b[22m\u001b[39m\n");
-  console.log(`Build directory: ${buildDir}`);
-  console.log(`Main report:     ${mainReportPath}`);
+  console.log(`Build directory:  ${buildDir}`);
+  console.log(`Render report:    ${renderReportPath}`);
   console.log();
 
   const unitPath = path.join(scriptDir, "run_unit_tests.ts");
@@ -137,45 +129,14 @@ async function main() {
     process.exitCode = 1;
   }
 
-  // Generate combined report
-  const reportToolsDir = path.join(scriptDir, "report-tools-ts");
-  let genRes: { code: number | null } | null = null;
-
-  if (unitResultsUpdated && renderResultsUpdated) {
-    console.log("\n\u001b[35m\u001b[1mGenerate combined report\u001b[22m\u001b[39m");
-
-    genRes = await runScript(
-      path.join(reportToolsDir, "scripts", "generate.ts"),
-      [
-        "--mode", "combined",
-        "--output-dir", testsDir,
-        "--unit-results", unitResultsJson,
-        "--render-results", renderResultsJson,
-      ]
-    );
-  } else {
-    console.log("\n\u001b[33m\u001b[1mSkip combined report\u001b[22m\u001b[39m");
-    if (!unitResultsUpdated) {
-      console.log("  Unit results were not updated in this run.");
-    }
-    if (!renderResultsUpdated) {
-      console.log("  Render results were not updated in this run.");
-    }
-  }
-
-  if (genRes && genRes.code !== 0) {
-    console.log("\u001b[31m\u001b[1mFailed to generate combined report\u001b[22m\u001b[39m");
-    process.exitCode = 1;
-  }
-
-  const allPassed = unitOk && renderOk && (!genRes || genRes.code === 0);
+  const allPassed = unitOk && renderOk;
   const statusColor = allPassed ? "\u001b[32m" : "\u001b[31m";
   const statusText = allPassed ? "All tests completed successfully." : "Some tests failed.";
 
   console.log(`\n${statusColor}\u001b[1m${statusText}\u001b[22m\u001b[39m`);
-  console.log(`  Unit:   ${unitOk ? "PASSED" : "FAILED"} (tests_report.html - Unit tab)`);
-  console.log(`  Render: ${renderOk ? "PASSED" : "FAILED"} (tests_report.html - Render tab)`);
-  console.log(`  Main:   ${mainReportPath}`);
+  console.log(`  Unit:   ${unitOk ? "PASSED" : "FAILED"} (build/tests/unit_output/)`);
+  console.log(`  Render: ${renderOk ? "PASSED" : "FAILED"} (build/tests/render_output/render_report.html)`);
+  console.log(`  Report: ${renderReportPath}`);
 }
 
 main().catch((err) => {
