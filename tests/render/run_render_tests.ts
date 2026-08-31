@@ -553,13 +553,20 @@ async function main() {
 
       status.log(dim(`   ${exec.tests.length} tests found`));
       for (const t of exec.tests) {
+        // Filter PNGs for this specific test based on new naming pattern
+        // PNG format: Test{Suite}_{Test}_{custom}.png
+        const testPngPattern = `Test${t.suite}_${t.name}_`;
+        const testPngs = exec.pngs.filter((png) =>
+          path.basename(png).startsWith(testPngPattern)
+        );
+
         allResults.push({
           exe: bin.name,
           test_name: t.name,
           test_suite: t.suite,
           passed: t.status === "PASSED",
           duration_ms: t.duration_ms,
-          pngs: exec.pngs,
+          pngs: testPngs,
           md5s: exec.md5s,
           traces: exec.traces,
           environment: env,

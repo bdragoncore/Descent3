@@ -226,8 +226,19 @@ bool D3RenderTestBase::SavePNG(const char *filename) {
     return false;
   }
 
-  // Build the final filename: "Test" prefix + .png extension if not present
-  std::string name = "Test";
+  // Get current test info from Google Test
+  const ::testing::TestInfo *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+  std::string test_prefix = "Test";
+  if (test_info) {
+    // Include suite name and test name in filename for unique identification
+    test_prefix += test_info->test_suite_name();
+    test_prefix += "_";
+    test_prefix += test_info->name();
+    test_prefix += "_";
+  }
+
+  // Build the final filename: "Test{Suite}_{Test}_{filename}.png"
+  std::string name = test_prefix;
   name += filename;
   if (name.length() < 4 || name.substr(name.length() - 4) != ".png") {
     name += ".png";

@@ -99,7 +99,9 @@ class HTMLReportGenerator:
                 return f.read().strip()
         return None
 
-    def _load_callgraph_for_report(self, top_n: int = 200) -> Tuple[Optional[str], Optional[str]]:
+    def _load_callgraph_for_report(
+        self, top_n: int = 200
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Load call graph JSON from callgraph_path, limit to top_n nodes by total call count.
         Returns (json_str_for_embed, truncation_note_str_or_None).
@@ -134,9 +136,7 @@ class HTMLReportGenerator:
 
         nodes_top = [n for n in nodes if n.get("id") in keep]
         links_top = [
-            L
-            for L in links
-            if L.get("source") in keep and L.get("target") in keep
+            L for L in links if L.get("source") in keep and L.get("target") in keep
         ]
 
         out = {"nodes": nodes_top, "links": links_top}
@@ -163,7 +163,7 @@ class HTMLReportGenerator:
         # Determine baseline update message
         baseline_msg = ""
         if self.update_baseline:
-            baseline_msg = '<div style="margin-top:10px;padding:8px;background:#d4edda;border-radius:4px;">Baseline updated with current MD5 hashes</div>'
+            baseline_msg = '<div class="baseline-msg">Baseline updated with current MD5 hashes</div>'
 
         # Call graph section: always show button; panel shows graph when data exists, else message
         cg_json, cg_note = self._load_callgraph_for_report()
@@ -256,44 +256,281 @@ class HTMLReportGenerator:
     <meta charset="utf-8">
     <title>Render Test Report</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-               margin: 0; padding: 20px; background: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        h1 {{ color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }}
-        .summary {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;
-                   box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        .summary-stats {{ display: flex; gap: 30px; }}
-        .stat {{ text-align: center; }}
-        .stat-value {{ font-size: 2em; font-weight: bold; }}
-        .stat-label {{ color: #666; }}
-        .passed {{ color: #28a745; }}
-        .failed {{ color: #dc3545; }}
-        .regression {{ color: #ffc107; }}
-        .header-info {{ margin-bottom: 15px; }}
-        .header-info span {{ margin-right: 20px; color: #666; }}
-        .test-result {{ background: white; margin-bottom: 20px; border-radius: 8px;
-                      box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }}
-        .test-header {{ background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #eee;
-                       display: flex; justify-content: space-between; align-items: center; }}
-        .test-name {{ font-weight: bold; font-size: 1.1em; }}
-        .test-status {{ padding: 4px 12px; border-radius: 4px; font-weight: bold; }}
-        .test-status.passed {{ background: #d4edda; color: #155724; }}
-        .test-status.failed {{ background: #f8d7da; color: #721c24; }}
-        .test-details {{ padding: 20px; }}
-        .detail-table {{ width: 100%; border-collapse: collapse; }}
-        .detail-table th, .detail-table td {{ padding: 8px 12px; text-align: left; 
-                                             border-bottom: 1px solid #eee; }}
-        .detail-table th {{ color: #666; font-weight: 500; width: 150px; }}
-        .md5-match {{ color: #28a745; }}
-        .md5-mismatch {{ background: #fff3cd; padding: 4px 8px; border-radius: 4px; }}
-        .md5-no-baseline {{ color: #ffc107; }}
-        .trace-link {{ display: inline-block; margin-top: 10px; padding: 8px 16px; 
-                      background: #007acc; color: white; text-decoration: none; 
-                      border-radius: 4px; font-size: 0.9em; }}
-        .trace-link:hover {{ background: #005a9e; }}
-        .test-image {{ margin-top: 15px; text-align: center; }}
-        .test-image img {{ max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }}
-        .timestamp {{ color: #666; font-size: 0.9em; }}
+        :root {{
+            --bg-primary:     #0f1117;
+            --bg-secondary:   #161b22;
+            --bg-tertiary:    #21262d;
+            --text-primary:   #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted:     #94a3b8;
+            --accent:         #8b5cf6;
+            --accent-hover:   #a78bfa;
+            --accent-primary: #58a6ff;
+            --accent-hover-blue: #79c0ff;
+            --border:         #2d3748;
+            --success:        #56d364;
+            --success-bg:     rgba(35, 134, 54, 0.2);
+            --error:          #ff7b72;
+            --error-bg:       rgba(218, 54, 51, 0.2);
+            --warning:        #d29922;
+            --warning-bg:     rgba(158, 106, 3, 0.2);
+            --shadow:         rgba(0,0,0,0.4);
+        }}
+        
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0; 
+            padding: 20px; 
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }}
+        
+        .container {{ 
+            max-width: 1200px; 
+            margin: 0 auto;
+        }}
+        
+        h1 {{ 
+            color: var(--text-primary); 
+            border-bottom: 2px solid var(--accent); 
+            padding-bottom: 15px;
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 30px;
+        }}
+        
+        .summary {{ 
+            background: var(--bg-secondary); 
+            padding: 30px; 
+            border-radius: 16px; 
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px var(--shadow);
+            border: 1px solid var(--border);
+        }}
+        
+        .summary-stats {{ 
+            display: flex; 
+            gap: 40px;
+            margin-top: 20px;
+        }}
+        
+        .stat {{ 
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            flex: 1;
+        }}
+        
+        .stat-value {{ 
+            font-size: 2.5em; 
+            font-weight: 700;
+            color: var(--text-primary);
+        }}
+        
+        .stat-label {{ 
+            color: var(--text-muted);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 8px;
+        }}
+        
+        .passed {{ color: var(--success); }}
+        .failed {{ color: var(--error); }}
+        .regression {{ color: var(--warning); }}
+        
+        .header-info {{ 
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+        }}
+        
+        .header-info span {{ 
+            margin-right: 25px;
+            display: inline-block;
+        }}
+        
+        .test-result {{ 
+            background: var(--bg-secondary); 
+            margin-bottom: 25px; 
+            border-radius: 16px;
+            box-shadow: 0 10px 40px var(--shadow); 
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }}
+        
+        .test-header {{ 
+            background: var(--bg-tertiary); 
+            padding: 20px 25px; 
+            border-bottom: 1px solid var(--border);
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }}
+        
+        .test-name {{ 
+            font-weight: 600; 
+            font-size: 1.2em;
+            color: var(--text-primary);
+        }}
+        
+        .test-status {{ 
+            padding: 8px 16px; 
+            border-radius: 8px; 
+            font-weight: 600;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        
+        .test-status.passed {{ 
+            background: var(--success-bg); 
+            color: var(--success);
+            border: 1px solid var(--success);
+        }}
+        
+        .test-status.failed {{ 
+            background: var(--error-bg); 
+            color: var(--error);
+            border: 1px solid var(--error);
+        }}
+        
+        .test-details {{ 
+            padding: 25px; 
+        }}
+        
+        .detail-table {{ 
+            width: 100%; 
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }}
+        
+        .detail-table th, .detail-table td {{ 
+            padding: 12px 15px; 
+            text-align: left; 
+            border-bottom: 1px solid var(--border);
+        }}
+        
+        .detail-table th {{ 
+            color: var(--text-muted); 
+            font-weight: 500; 
+            width: 150px; 
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 1px;
+        }}
+        
+        .detail-table td {{
+            color: var(--text-secondary);
+        }}
+        
+        .md5-match {{ 
+            color: var(--success); 
+            font-weight: 500;
+        }}
+        
+        .md5-mismatch {{ 
+            background: var(--warning-bg); 
+            padding: 6px 12px; 
+            border-radius: 6px;
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }}
+        
+        .md5-no-baseline {{ 
+            color: var(--warning);
+            font-weight: 500;
+        }}
+        
+        .trace-link {{ 
+            display: inline-block; 
+            margin-top: 15px; 
+            padding: 10px 20px; 
+            background: var(--accent); 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-size: 0.95em;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+        }}
+        
+        .trace-link:hover {{ 
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }}
+        
+        .test-image {{ 
+            margin-top: 20px; 
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }}
+        
+        .test-image img {{ 
+            max-width: 100%; 
+            border: 1px solid var(--border); 
+            border-radius: 8px;
+            box-shadow: 0 4px 12px var(--shadow);
+        }}
+        
+        .timestamp {{ 
+            color: var(--text-muted); 
+            font-size: 0.9em; 
+        }}
+        
+        .callgraph-toggle {{
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px var(--shadow);
+        }}
+        
+        .callgraph-btn {{
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }}
+        
+        .callgraph-btn:hover {{
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }}
+        
+        .baseline-msg {{
+            background: var(--success-bg);
+            color: var(--success);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid var(--success);
+            font-weight: 500;
+        }}
+        
+        a[href^="http"], a[href^="trace__"], a[href^="#"] {{
+            color: var(--accent-primary);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }}
+        
+        a[href^="http"]:hover, a[href^="trace__"]:hover {{
+            color: var(--accent-hover-blue);
+        }}
     </style>
 </head>
 <body>
@@ -302,7 +539,7 @@ class HTMLReportGenerator:
         
         <div class="summary">
             <div class="header-info">
-                <span>Generated: {self.generated_at}</span>
+                <span class="timestamp">Generated: {self.generated_at}</span>
                 <span>Tracing: {"Enabled" if self.tracing_enabled else "Disabled"}</span>
             </div>
             {baseline_msg}
@@ -379,6 +616,12 @@ class HTMLReportGenerator:
                 <div class="test-image">
                     <img src="{result.png_filename}" alt="{result.test_name}">
                 </div>"""
+        else:
+            # No PNG produced by this test
+            img_html = """
+                <div class="test-image" style="color:#8b949e; font-style:italic; padding:20px; text-align:center;">
+                    No render output (test did not produce image)
+                </div>"""
 
         # Build environment HTML
         env_items = [f"{k}={v}" for k, v in result.environment.items()]
@@ -445,11 +688,28 @@ def generate(
         duration_ms = result.get("duration_ms", 0)
         status = "PASSED" if result.get("passed", False) else "FAILED"
 
-        # Find PNG file
+        # Find PNG file - match against test name with new naming format
+        # New format: Test{Suite}_{Test}_{custom}.png
         png_filename = None
+        test_name = result.get("test_name", "")
+        test_suite = result.get("test_suite", "")
+
         for png in result.get("pngs", []):
-            png_filename = os.path.basename(png)
-            break
+            basename = os.path.basename(png)
+            # Match new format: Test{Suite}_{Test}_*.png
+            if f"Test{test_suite}_{test_name}_" in basename:
+                png_filename = basename
+                break
+            # Also try old patterns for backwards compatibility
+            possible_patterns = [
+                f"Test{test_name}.png",
+                f"Test{test_name}Test.png",
+                f"Test{test_name.replace('Render', '')}.png",
+                f"Test{test_name.replace('Test', '')}.png",
+            ]
+            if basename in possible_patterns:
+                png_filename = basename
+                break
 
         # Find MD5 file and load baseline
         md5_hash = None
