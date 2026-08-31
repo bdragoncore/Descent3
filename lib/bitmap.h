@@ -85,6 +85,8 @@ void bm_ShutdownBitmaps(void);
 int bm_AllocBitmap(int w, int h, int add_mem);
 // Given a handle, frees the bitmap memory and flags this bitmap as unused
 void bm_FreeBitmap(int handle);
+// Returns true if the handle is valid and the bitmap slot is in use
+bool bm_used(int handle);
 // Allocs and loads a bitmap
 // Loads either regular TGAs or OUTRAGE_TGA_TYPEs
 // Returns the handle of the loaded bitmap
