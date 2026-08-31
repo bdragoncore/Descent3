@@ -14,3 +14,5 @@
 void mesa_GetInformation();
 int mesa_GetFramebufferWidth();
 int mesa_GetFramebufferHeight();
+// Set logical size so viewport/projection match (e.g. test frame size); call before rend_StartFrame.
+void mesa_SetLogicalSize(int w, int h);

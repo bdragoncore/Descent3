@@ -57,9 +57,9 @@ public:
   void SetTextAlpha(uint8_t alpha);
   void SetFontScale(float scale);
 
-  // Frame and rendering functions
-  void BeginFrame();
-  void EndFrame();
+  // Frame and rendering functions (virtual so game suite can wrap with g3_StartFrame/g3_EndFrame)
+  virtual void BeginFrame();
+  virtual void EndFrame();
   bool SavePNG(const char *filename);
   void ReadPixels();
   bool AddSearchPath(const char *path);

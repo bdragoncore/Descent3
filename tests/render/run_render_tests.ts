@@ -20,6 +20,7 @@ type RenderArgs = {
   rebuild: boolean;
   noBuild: boolean;
   tracingFlag: boolean | null;
+  skipTrace: boolean;
   updateBaseline: boolean;
   serve: boolean;
   port: number;
@@ -52,10 +53,10 @@ type CommandResult = {
 };
 
 const RENDER_BINARIES = [
-  { name: "d3_render_tests_basic", description: "Basic render tests" },
-  { name: "d3_render_tests_egl", description: "EGL context tests" },
-  { name: "d3_render_tests_gl", description: "GL tests" },
-  { name: "d3_render_tests_text", description: "Text/HUD render tests" },
+  { name: "d3_render_tests_egl", description: "EGL tests" },
+  { name: "d3_render_tests_gl", description: "Standard GL tests" },
+  { name: "d3_render_tests_game", description: "D3 game rendering (polymodel, etc.)" },
+  { name: "d3_render_tests_hud", description: "D3 game rendering (HUD, text)" },
 ] as const;
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -175,6 +176,7 @@ function parseArgs(argv: string[]): RenderArgs {
     rebuild: false,
     noBuild: false,
     tracingFlag: null,
+    skipTrace: false,
     updateBaseline: false,
     serve: false,
     port: 3000,
@@ -209,6 +211,10 @@ function parseArgs(argv: string[]): RenderArgs {
       case "--tracing":
         args.tracingFlag = true;
         break;
+      case "--skip-trace":
+        args.skipTrace = true;
+        args.tracingFlag = false;
+        break;
       case "--update-baseline":
         args.updateBaseline = true;
         break;
@@ -235,9 +241,10 @@ async function runCommand(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     verbose?: boolean;
+    timeoutMs?: number;
   } = {}
 ): Promise<CommandResult> {
-  const { cwd, env, verbose } = options;
+  const { cwd, env, verbose, timeoutMs } = options;
 
   if (verbose) {
     console.log(dim(`   $ ${cmd} ${args.join(" ")}`));
@@ -248,29 +255,59 @@ async function runCommand(
     const child = spawn(cmd, args, {
       cwd,
       env,
-      stdio: verbose ? "inherit" : "pipe",
+      stdio: "pipe", // always pipe so we can parse results (even when verbose)
     });
 
     let stdout = "";
     let stderr = "";
 
-    if (!verbose && child.stdout) {
+    if (child.stdout) {
       child.stdout.on("data", (d) => {
-        stdout += d.toString();
+        const s = d.toString();
+        stdout += s;
+        if (verbose) process.stdout.write(s);
       });
     }
-    if (!verbose && child.stderr) {
+    if (child.stderr) {
       child.stderr.on("data", (d) => {
-        stderr += d.toString();
+        const s = d.toString();
+        stderr += s;
+        if (verbose) process.stderr.write(s);
       });
     }
 
+    let settled = false;
+    const settle = (code: number | null, out: string, err: string) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      resolve({ code, stdout: out, stderr: err });
+    };
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (timeoutMs != null && timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill("SIGTERM");
+        const msg = `[runner] timeout after ${timeoutMs}ms, killed ${cmd}`;
+        resolve({
+          code: null,
+          stdout,
+          stderr: stderr + "\n" + msg,
+        });
+      }, timeoutMs);
+    }
+
     child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
       reject(err);
     });
 
     child.on("close", (code) => {
-      resolve({ code, stdout, stderr });
+      settle(code ?? null, stdout, stderr);
     });
   });
 }
@@ -282,6 +319,35 @@ async function detectTracingAvailable(buildDir: string): Promise<boolean> {
   if (!content.toLowerCase().includes("clang")) return false;
   const tracerLib = path.join(buildDir, "tests", "libtracer.a");
   return existsSync(tracerLib);
+}
+
+async function clearPreviousArtifacts(outputDir: string): Promise<void> {
+  if (!existsSync(outputDir)) {
+    return;
+  }
+  const entries = await fs.readdir(outputDir);
+  const toDelete = entries.filter((name) => {
+    if (name.startsWith("Test") && (name.endsWith(".png") || name.endsWith(".md5"))) {
+      return true;
+    }
+    if (name.startsWith("trace__") && name.endsWith(".json")) {
+      return true;
+    }
+    if (name === "render_results.json" || name === "render_report.html" || name === "callgraph.json") {
+      return true;
+    }
+    return false;
+  });
+  await Promise.all(
+    toDelete.map(async (name) => {
+      const full = path.join(outputDir, name);
+      try {
+        await fs.unlink(full);
+      } catch {
+        // Best-effort cleanup; ignore failures so tests still run.
+      }
+    })
+  );
 }
 
 async function ensureCmakeConfigured(
@@ -382,6 +448,7 @@ async function runTestsExecutable(
   outputDir: string,
   verbose: boolean,
   tracing: boolean,
+  binaryArgs: string[],
   onFinished?: (executable: string, durationMs: number) => void
 ): Promise<{
   tests: ParsedTestResult[];
@@ -389,10 +456,11 @@ async function runTestsExecutable(
   md5s: string[];
   traces: string[];
   passed: boolean;
+  timedOut: boolean;
 }> {
   const binaryPath = path.join(buildDir, "tests", executable);
   if (!existsSync(binaryPath)) {
-    return { tests: [], pngs: [], md5s: [], traces: [], passed: false };
+    return { tests: [], pngs: [], md5s: [], traces: [], passed: false, timedOut: false };
   }
 
   const fullEnv = {
@@ -407,12 +475,14 @@ async function runTestsExecutable(
   };
 
   const start = Date.now();
-  const res = await runCommand(binaryPath, [], {
+  const res = await runCommand(binaryPath, binaryArgs, {
     cwd: outputDir,
     env: fullEnv,
     verbose,
+    timeoutMs: 2 * 60 * 1000,
   });
   const durationMs = Date.now() - start;
+  const timedOut = res.code === null && res.stderr.includes("[runner] timeout");
   if (onFinished) {
     onFinished(executable, durationMs);
   } else if (!verbose) {
@@ -440,6 +510,7 @@ async function runTestsExecutable(
     md5s,
     traces,
     passed: res.code === 0,
+    timedOut,
   };
 }
 
@@ -489,8 +560,8 @@ async function main() {
     : path.join(testsDir, "render_output_baseline");
 
   const tracingAvailable = await detectTracingAvailable(buildDir);
-  const tracingEnabled =
-    args.tracingFlag !== null ? args.tracingFlag : tracingAvailable;
+  // Tracing is opt-in: only enable when --tracing is passed (default: off for speed).
+  const tracingEnabled = args.tracingFlag === true;
   const callgrindAvailable = await checkValgrindAvailable();
 
   console.log("\n" + purple.bold("Render Test Runner (TypeScript)\n"));
@@ -501,7 +572,9 @@ async function main() {
   kv("Baseline directory:", baselineDir);
   kv(
     "Tracing:",
-    `${tracingEnabled ? "enabled" : "disabled"} (${tracingAvailable ? "available" : "not available"})`
+    tracingEnabled
+      ? "enabled (--tracing)"
+      : `disabled (default; use --tracing to enable, ${tracingAvailable ? "available" : "not available"})`
   );
   kv("Callgrind:", callgrindAvailable ? "enabled" : "disabled");
   console.log();
@@ -515,6 +588,7 @@ async function main() {
   }
 
   await fs.mkdir(outputDir, { recursive: true });
+  await clearPreviousArtifacts(outputDir);
 
   if (!args.noBuild) {
     await runTask("Configure CMake", async () => {
@@ -542,11 +616,15 @@ async function main() {
   let totalFailed = 0;
 
   await runTask("Run render tests", { statusLine: true }, async (status) => {
+    status.log(dim("   (each suite may take several minutes with software rendering; 2min timeout per suite)"));
     for (const bin of RENDER_BINARIES) {
       const binaryPath = path.join(buildDir, "tests", bin.name);
       status.update(`Running ${bin.name} (${bin.description})...`);
       status.update(`$ ${binaryPath}`);
       const env = { SDL_VIDEODRIVER: "offscreen" };
+      // Pass --skip-trace to the binary whenever we're not collecting traces, so the
+      // C++ doesn't run the trace listener (and stays fast).
+      const binaryArgs = !tracingEnabled ? ["--skip-trace"] : [];
       const exec = await runTestsExecutable(
         bin.name,
         buildDir,
@@ -554,11 +632,16 @@ async function main() {
         outputDir,
         args.verbose,
         tracingEnabled,
+        binaryArgs,
         (exe, durationMs) => status.update(`${exe} finished in ${durationMs}ms`)
       );
 
       if (!exec.tests.length) {
-        status.log(red("   No tests found or execution failed"));
+        if (exec.timedOut) {
+          status.log(red("   Timed out after 2 minutes (render tests use software GL; try --verbose to see progress)"));
+        } else {
+          status.log(red("   No tests found or execution failed"));
+        }
         continue;
       }
 
@@ -653,6 +736,46 @@ async function main() {
     const resultsJson = path.join(outputDir, "render_results.json");
     await fs.writeFile(resultsJson, JSON.stringify(allResults, null, 2), "utf8");
     console.log(dim(`   Results: ${resultsJson}`));
+  });
+
+  await runTask("Generate render report", async () => {
+    const reportToolsDir = path.join(testsDir, "report-tools-ts");
+    const nodeModulesPath = path.join(reportToolsDir, "node_modules");
+    if (!existsSync(nodeModulesPath)) {
+      console.log(dim("   Installing report tools dependencies..."));
+      const installRes = await runCommand("npm", ["install"], {
+        cwd: reportToolsDir,
+        verbose: args.verbose,
+      });
+      if (installRes.code !== 0) {
+        throw new Error(
+          `Failed to install report tools dependencies: ${installRes.stderr || ""}`
+        );
+      }
+    }
+    const resultsJson = path.join(outputDir, "render_results.json");
+    const res = await runCommand(
+      "npm",
+      [
+        "run", "generate", "--",
+        "--mode", "report",
+        "--output-dir", outputDir,
+        "--results", resultsJson,
+      ],
+      {
+        cwd: reportToolsDir,
+        verbose: args.verbose,
+      }
+    );
+    if (res.code !== 0) {
+      throw new Error(
+        `Render report generation failed with code ${res.code}${
+          res.stderr ? `: ${res.stderr}` : ""
+        }`
+      );
+    }
+    const reportPath = path.join(outputDir, "render_report.html");
+    console.log(dim(`   Report: ${reportPath}`));
   });
 
   if (args.serve) {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "generate": "tsx scripts/generate.ts",
+    "generate": "node --import tsx scripts/generate.ts",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "eslint src --ext .ts,.tsx",

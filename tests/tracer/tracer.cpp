@@ -11,6 +11,7 @@
 #include <cxxabi.h>     // abi::__cxa_demangle
 #include <dlfcn.h>      // dladdr
 #include <string>
+#include <unordered_map>
 
 // Fixed-size trace buffer — 2M events (~64 MB)
 // Using a simple lock-free ring buffer to avoid STL in instrumented code
@@ -49,6 +50,46 @@ void trace_reset() {
     g_trace_idx.store(0, std::memory_order_relaxed);
 }
 
+// Resolve fn_addr to a JSON-safe display name; cache by address to avoid
+// repeated dladdr + demangle (was the main bottleneck with 100k+ events).
+static std::string resolve_and_escape_name(const void* fn_addr,
+                                           std::unordered_map<const void*, std::string>& cache) {
+    auto it = cache.find(fn_addr);
+    if (it != cache.end())
+        return it->second;
+
+    Dl_info info;
+    memset(&info, 0, sizeof(info));
+    bool resolved = (dladdr(fn_addr, &info) != 0);
+    const char* raw_name = (resolved && info.dli_sname && info.dli_sname[0])
+                           ? info.dli_sname : "??";
+
+    int status = -1;
+    char* demangled = abi::__cxa_demangle(raw_name, nullptr, nullptr, &status);
+    const char* display_name = (status == 0 && demangled) ? demangled : raw_name;
+
+    std::string safe_name;
+    for (const char* p = display_name; *p; p++) {
+        unsigned char c = static_cast<unsigned char>(*p);
+        if      (c == '"')  safe_name += "\\\"";
+        else if (c == '\\') safe_name += "\\\\";
+        else if (c == '\n') safe_name += "\\n";
+        else if (c == '\r') safe_name += "\\r";
+        else if (c == '\t') safe_name += "\\t";
+        else if (c < 0x20) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "\\u%04x", c);
+            safe_name += buf;
+        } else {
+            safe_name += static_cast<char>(c);
+        }
+    }
+    free(demangled);
+
+    cache[fn_addr] = safe_name;
+    return safe_name;
+}
+
 void trace_dump_json(const char* output_path) {
     FILE* f = fopen(output_path, "w");
     if (!f) {
@@ -59,38 +100,14 @@ void trace_dump_json(const char* output_path) {
     size_t count = g_trace_idx.load(std::memory_order_relaxed);
     if (count > TRACE_BUFFER_SIZE) count = TRACE_BUFFER_SIZE;
 
+    std::unordered_map<const void*, std::string> name_cache;
+    name_cache.reserve(4096);  // typical unique function count per test
+
     fprintf(f, "[\n");
 
     for (size_t i = 0; i < count; i++) {
         const CallEvent& e = g_trace_buffer[i];
-
-        Dl_info info;
-        memset(&info, 0, sizeof(info));
-        bool resolved = (dladdr(e.fn_addr, &info) != 0);
-
-        const char* raw_name = (resolved && info.dli_sname && info.dli_sname[0])
-                               ? info.dli_sname : "??";
-
-        int status = -1;
-        char* demangled = abi::__cxa_demangle(raw_name, nullptr, nullptr, &status);
-        const char* display_name = (status == 0 && demangled) ? demangled : raw_name;
-
-        std::string safe_name;
-        for (const char* p = display_name; *p; p++) {
-            unsigned char c = static_cast<unsigned char>(*p);
-            if      (c == '"')  safe_name += "\\\"";
-            else if (c == '\\') safe_name += "\\\\";
-            else if (c == '\n') safe_name += "\\n";
-            else if (c == '\r') safe_name += "\\r";
-            else if (c == '\t') safe_name += "\\t";
-            else if (c < 0x20) {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "\\u%04x", c);
-                safe_name += buf;
-            } else {
-                safe_name += static_cast<char>(c);
-            }
-        }
+        const std::string& safe_name = resolve_and_escape_name(e.fn_addr, name_cache);
 
         fprintf(f,
             "  {\"type\":\"%s\",\"fn\":\"%s\",\"addr\":\"%p\",\"ts_ns\":%" PRId64 "}%s\n",
@@ -100,8 +117,6 @@ void trace_dump_json(const char* output_path) {
             e.ts_ns,
             (i + 1 < count) ? "," : ""
         );
-
-        free(demangled);
     }
 
     fprintf(f, "]\n");

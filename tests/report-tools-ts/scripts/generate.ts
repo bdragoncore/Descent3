@@ -9,8 +9,9 @@
  * @module scripts/generate
  */
 
-import {readFile, writeFile, mkdir} from 'fs/promises';
-import {basename, join} from 'path';
+import {readFile, writeFile, mkdir, readdir} from 'fs/promises';
+import {basename, join, resolve} from 'path';
+import {findMatchingPng} from '../src/utils/fileHelpers';
 import {
   buildTree,
   pruneStdNodes,
@@ -101,11 +102,23 @@ async function readMd5Hash(md5Path: string): Promise<string | null> {
 /**
  * Transforms raw JSON data from runner format to TestReportData format.
  * Converts snake_case field names to camelCase.
+ * When the runner didn't attach a PNG path, tries to find one in outputDir by pattern Test{Suite}_{Test}_*.png.
  */
 async function transformResults(
   rawData: unknown[],
   outputDir: string
 ): Promise<TestReportData[]> {
+  // List PNGs in outputDir once for fallback when item.pngs is empty
+  let outputPngPaths: string[] = [];
+  try {
+    const names = await readdir(outputDir);
+    outputPngPaths = names
+      .filter((f) => f.startsWith('Test') && f.endsWith('.png'))
+      .map((f) => join(outputDir, f));
+  } catch {
+    // outputDir may not exist
+  }
+
   return Promise.all(
     rawData.map(async (item: any) => {
       // Build expected trace filename pattern
@@ -141,6 +154,19 @@ async function transformResults(
         md5Hash = await readMd5Hash(item.md5s[0]);
       }
 
+      // PNG: resolve from outputDir first (so we use files that exist on disk), then fall back to JSON
+      let pngFilename: string | null = null;
+      if (outputPngPaths.length > 0) {
+        pngFilename = findMatchingPng(
+          item.test_suite || '',
+          item.test_name || '',
+          outputPngPaths
+        );
+      }
+      if (!pngFilename && item.pngs && item.pngs.length > 0) {
+        pngFilename = basename(item.pngs[0]);
+      }
+
       return {
         testName: item.test_name || '',
         testSuite: item.test_suite || '',
@@ -152,7 +178,7 @@ async function transformResults(
         outputText: '',
         environment: item.environment || {},
         renderFunctions: [],
-        pngFilename: item.pngs && item.pngs.length > 0 ? basename(item.pngs[0]) : null,
+        pngFilename,
         traceData,
         callgraphs: item.callgraphs || [],
         passed: item.passed || false,
@@ -264,7 +290,9 @@ async function generateCombinedReport(args: CliArgs): Promise<void> {
   console.log('Reading render results...');
   const renderResultsData = await readFile(args.renderResultsJson, 'utf-8');
   const rawRenderResults = JSON.parse(renderResultsData);
-  const renderResults = await transformResults(rawRenderResults, join(args.outputDir, 'render_output'));
+  // Resolve to absolute path so PNG lookup works regardless of script cwd
+  const renderOutputDir = resolve(args.outputDir, 'render_output');
+  const renderResults = await transformResults(rawRenderResults, renderOutputDir);
 
   const unitPassed = unitResults.filter((r) => r.passed).length;
   const unitFailed = unitResults.length - unitPassed;

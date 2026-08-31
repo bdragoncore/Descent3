@@ -1,6 +1,6 @@
 /*
- * D3EGLContextTest - Basic EGL context tests (clear, depth, SavePNG).
- * Linked into d3_render_tests executable.
+ * EGL tests: context creation, surface, clear, depth, SavePNG.
+ * Suite: d3_render_tests_egl.
  */
 
 #include "render_test_base.h"

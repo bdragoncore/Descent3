@@ -14,6 +14,7 @@ add_custom_command(
 set(HEADERS
   dyna_gl.h
   HardwareInternal.h
+  HardwareOpenGL.h
   ShaderProgram.h
   ${SHADERS_H}
 )

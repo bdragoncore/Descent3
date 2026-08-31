@@ -192,7 +192,7 @@ void D3RenderTestBase::BeginFrame() {
   glViewport(0, 0, width_, height_);
   glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glDisable(GL_DEPTH_TEST);
+  rend_SetZBufferState(0);
 
   // Set grtext clipping parameters to the full viewport so text isn't clipped
   grtext_SetParameters(0, 0, width_, height_, 4);

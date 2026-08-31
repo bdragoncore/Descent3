@@ -1,10 +1,10 @@
 #!/usr/bin/env tsx
 /**
  * Unit test runner: runs all non-render GTest executables and writes unit_results.json.
- * HTML report generation is now handled by the combined report in run_tests.ts.
+ * It also republishes a compatibility copy under build/tests/ and generates unit_report.html.
  *
  * Usage:
- *   npx tsx tests/run_unit_tests.ts [--build-dir build] [--output-dir build/tests] [--no-build] [--verbose]
+ *   npx tsx tests/run_unit_tests.ts [--build-dir build] [--output-dir build/tests/unit_output] [--no-build] [--verbose]
  */
 
 import path from "node:path";
@@ -138,20 +138,28 @@ async function runCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd,
-      stdio: verbose ? "inherit" : "pipe",
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
     let stderr = "";
 
-    if (!verbose && child.stdout) {
+    if (child.stdout) {
       child.stdout.on("data", (d) => {
-        stdout += d.toString();
+        const chunk = d.toString();
+        stdout += chunk;
+        if (verbose) {
+          process.stdout.write(chunk);
+        }
       });
     }
-    if (!verbose && child.stderr) {
+    if (child.stderr) {
       child.stderr.on("data", (d) => {
-        stderr += d.toString();
+        const chunk = d.toString();
+        stderr += chunk;
+        if (verbose) {
+          process.stderr.write(chunk);
+        }
       });
     }
 
@@ -197,6 +205,27 @@ async function ensureBuilt(
     cwd: buildDir,
     verbose,
   });
+  return res.code === 0;
+}
+
+async function generateUnitReport(
+  projectRoot: string,
+  testsDir: string,
+  resultsPath: string,
+  verbose: boolean
+): Promise<boolean> {
+  const reportScript = path.join(
+    projectRoot,
+    "tests",
+    "report-tools-ts",
+    "scripts",
+    "generate.ts"
+  );
+  const res = await runCommand(
+    process.execPath,
+    ["--import", "tsx", reportScript, "--mode", "unit-report", "--results", resultsPath, "--output-dir", testsDir],
+    { cwd: projectRoot, verbose }
+  );
   return res.code === 0;
 }
 
@@ -250,6 +279,7 @@ async function main() {
   const allResults: UnitResult[] = [];
   let totalPassed = 0;
   let totalFailed = 0;
+  const zeroParsedExecutables: string[] = [];
 
   const runSpinner = ora({
     text: purple("Run unit tests"),
@@ -282,16 +312,39 @@ async function main() {
       else totalFailed += 1;
     }
 
-    if (parsed.length === 0 && res.code !== 0 && !argv.verbose) {
-      runSpinner.warn(dim(`   ${exe} exited with code ${res.code} (no parsed tests)`));
+    if (parsed.length === 0) {
+      zeroParsedExecutables.push(exe);
+      if (!argv.verbose) {
+        const suffix = res.code === 0 ? "exited successfully" : `exited with code ${res.code}`;
+        runSpinner.warn(dim(`   ${exe} ${suffix} (no parsed tests)`));
+      }
     }
   }
 
   runSpinner.succeed(green("Run unit tests"));
 
   const resultsPath = path.join(outputDir, "unit_results.json");
-  await fs.writeFile(resultsPath, JSON.stringify(allResults, null, 2), "utf8");
+  const serializedResults = JSON.stringify(allResults, null, 2);
+  await fs.writeFile(resultsPath, serializedResults, "utf8");
   console.log(dim(`   Results: ${resultsPath}`));
+
+  const legacyResultsPath = path.join(testsBinDir, "unit_results.json");
+  if (legacyResultsPath !== resultsPath) {
+    await fs.writeFile(legacyResultsPath, serializedResults, "utf8");
+    console.log(dim(`   Compatibility results: ${legacyResultsPath}`));
+  }
+
+  const unitReportOk = await generateUnitReport(
+    projectRoot,
+    testsBinDir,
+    legacyResultsPath,
+    argv.verbose
+  );
+  if (unitReportOk) {
+    console.log(dim(`   Unit report: ${path.join(testsBinDir, "unit_report.html")}`));
+  } else {
+    console.log(dim("   Warning: failed to generate unit_report.html"));
+  }
 
   const total = totalPassed + totalFailed;
   const summaryWidth = 50;
@@ -308,7 +361,16 @@ async function main() {
   console.log(green.bold("╚" + border + "╝"));
   console.log();
 
-  process.exitCode = totalFailed === 0 ? 0 : 1;
+  if (zeroParsedExecutables.length > 0) {
+    console.log(
+      dim(
+        `Unparsed executables: ${zeroParsedExecutables.join(", ")}`
+      )
+    );
+  }
+
+  const noResultsParsed = allResults.length === 0 && zeroParsedExecutables.length > 0;
+  process.exitCode = totalFailed === 0 && unitReportOk && !noResultsParsed ? 0 : 1;
 }
 
 main().catch((err) => {

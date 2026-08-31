@@ -80,6 +80,7 @@
 #include "config.h"
 #include "rtperformance.h"
 #include "HardwareInternal.h"
+#include "HardwareOpenGL.h"
 #include "args.h"
 #include "NewBitmap.h"
 
@@ -148,11 +149,67 @@ uint16_t *opengl_packed_4444_translate_table = nullptr;
 extern rendering_state gpu_state;
 extern renderer_preferred_state gpu_preferred_state;
 
+void opengl_GetInformation();
+
 bool OpenGL_multitexture_state = false;
 int Already_loaded = 0;
 bool opengl_Blending_on = false;
 
-static oeApplication *ParentApplication = nullptr;
+namespace {
+class MesaOpenGL final : public HardwareOpenGL {
+public:
+  bool SetupContext(int width, int height) override {
+    EGLDisplay dpy = eglGetCurrentDisplay();
+    EGLContext ctx = eglGetCurrentContext();
+    if (dpy == EGL_NO_DISPLAY || ctx == EGL_NO_CONTEXT) {
+      LOG_ERROR << "Mesa: No current EGL context — call OffscreenGL::Init() first";
+      return false;
+    }
+
+    LOG_INFO << "Mesa: Attaching to existing EGL context";
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DITHER);
+    glShadeModel(GL_SMOOTH);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glViewport(0, 0, width, height);
+
+    LOG_INFO.printf("Mesa: Renderer attached at %d x %d", width, height);
+    opengl_GetInformation();
+    return true;
+  }
+
+  void DestroyContext(bool just_resizing) override {}
+
+  void PresentFrame() const override { glFlush(); }
+
+  std::unique_ptr<NewBitmap> Screenshot(int width, int height) const override {
+    auto result = std::make_unique<NewBitmap>(width, height, PixelDataFormat::RGBA32, true);
+    if (!result || result->getData() == nullptr) {
+      return nullptr;
+    }
+
+    auto *tmp = new uint8_t[width * height * 4];
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+
+    uint8_t *dst = static_cast<uint8_t *>(result->getData());
+    for (int y = 0; y < height; y++) {
+      memcpy(dst + y * width * 4, tmp + (height - 1 - y) * width * 4, width * 4);
+    }
+    delete[] tmp;
+    return result;
+  }
+
+  void SetFullScreen(bool fullscreen) override { LOG_DEBUG.printf("Fullscreen not supported in Mesa soft device"); }
+
+  bool InitWindowMode() override { return true; }
+};
+
+MesaOpenGL g_mesa_backend;
+} // namespace
 
 // NOTE: EGL context is owned by OffscreenGL (tests/render/offscreen_gl.h).
 // MesaOpenGL attaches to the already-current context; it does NOT
@@ -260,6 +317,7 @@ void opengl_SetDefaults() {
 
   glActiveTexture(GL_TEXTURE0_ARB + 1);
   glDisable(GL_TEXTURE_2D); // Disable texturing on unit 1
+  glEnable(GL_CULL_FACE);
   glEnable(GL_BLEND);
   glEnable(GL_DITHER);
   glBlendFunc(GL_DST_COLOR, GL_ZERO);
@@ -270,35 +328,10 @@ void opengl_SetDefaults() {
 extern renderer_preferred_state Render_preferred_state;
 
 int opengl_Setup(oeApplication *app, const int *width, const int *height) {
-  const int w = *width;
-  const int h = *height;
-
-  // Verify that an EGL context is already current.
-  // OffscreenGL::Init() must have been called before rend_Init().
-  EGLDisplay dpy = eglGetCurrentDisplay();
-  EGLContext ctx = eglGetCurrentContext();
-  if (dpy == EGL_NO_DISPLAY || ctx == EGL_NO_CONTEXT) {
-    LOG_ERROR << "Mesa: No current EGL context — call OffscreenGL::Init() first";
+  g_mesa_backend.SetParentApplication(app);
+  if (!g_mesa_backend.SetupContext(*width, *height)) {
     return 0;
   }
-
-  LOG_INFO << "Mesa: Attaching to existing EGL context";
-
-  // Set up OpenGL state
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LEQUAL);
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glEnable(GL_DITHER);
-  glShadeModel(GL_SMOOTH);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-  glViewport(0, 0, w, h);
-
-  LOG_INFO.printf("Mesa: Renderer attached at %d x %d", w, h);
-
-  opengl_GetInformation();
-
   Already_loaded = 1;
   return 1;
 }
@@ -315,9 +348,7 @@ int opengl_Init(oeApplication *app, renderer_preferred_state *pref_state) {
     gpu_preferred_state = *pref_state;
   }
 
-  if (app != nullptr) {
-    ParentApplication = app;
-  }
+  g_mesa_backend.SetParentApplication(app);
 
   width = gpu_preferred_state.width;
   height = gpu_preferred_state.height;
@@ -438,7 +469,7 @@ void opengl_Close(const bool just_resizing) {
     textures_.clear();
   }
 
-  // NOTE: EGL context is owned by OffscreenGL — do NOT destroy it here.
+  g_mesa_backend.DestroyContext(just_resizing);
 
   if (OpenGL_packed_pixels) {
     if (opengl_packed_Upload_data)
@@ -810,9 +841,9 @@ void rend_SetGammaValue(float val) {
   LOG_DEBUG.printf("Setting gamma to %f", val);
 }
 
-void rend_SetFullScreen(bool fullscreen) { LOG_DEBUG.printf("Fullscreen not supported in Mesa soft device"); }
+void rend_SetFullScreen(bool fullscreen) { g_mesa_backend.SetFullScreen(fullscreen); }
 
-bool rend_InitWindowMode() { return true; }
+bool rend_InitWindowMode() { return g_mesa_backend.InitWindowMode(); }
 
 void opengl_ResetCache() {
   if (OpenGL_cache_initted) {
@@ -887,7 +918,14 @@ void gpu_BindTexture(int handle, int map_type, int slot) {
 }
 
 void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
-  glEnable(GL_TEXTURE_2D);
+  bool was_blend = (glIsEnabled(GL_BLEND) != GL_FALSE);
+  if (gpu_state.cur_texture_quality > 0) {
+    glEnable(GL_TEXTURE_2D);
+  } else {
+    glDisable(GL_TEXTURE_2D);
+    // Flat path: avoid GL_DST_COLOR multiplicative blend (clears to black → all black)
+    if (was_blend) glDisable(GL_BLEND);
+  }
   glBegin(GL_TRIANGLE_FAN);
   for (uint32_t i = 0; i < nv; i++) {
     glColor4f(vData[i].color.r, vData[i].color.g, vData[i].color.b, vData[i].color.a);
@@ -895,6 +933,9 @@ void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
     glVertex3f(vData[i].pos.x(), vData[i].pos.y(), vData[i].pos.z());
   }
   glEnd();
+
+  // Restore blend state if we disabled it above
+  if (was_blend) glEnable(GL_BLEND);
 
   OpenGL_polys_drawn++;
   OpenGL_verts_processed += nv;
@@ -937,6 +978,11 @@ void rend_SetLighting(light_state state) {
 void rend_SetColorModel(color_model state) { gpu_state.cur_color_model = state; }
 
 void rend_SetTextureType(texture_type state) {
+  if (state == TT_FLAT) {
+    gpu_state.cur_texture_quality = 0;
+  } else {
+    gpu_state.cur_texture_quality = 2;
+  }
   if (state == gpu_state.cur_texture_type)
     return;
   glActiveTexture(GL_TEXTURE0_ARB + 0);
@@ -975,6 +1021,8 @@ void rend_Flip() {
   OpenGL_uploads = 0;
   OpenGL_polys_drawn = 0;
   OpenGL_verts_processed = 0;
+
+  g_mesa_backend.PresentFrame();
 }
 
 void rend_EndFrame() {}
@@ -997,7 +1045,7 @@ void rend_ClearScreen(ddgr_color color) {
   int r = (color >> 16 & 0xFF);
   int g = (color >> 8 & 0xFF);
   int b = (color & 0xFF);
-  glClearColor((float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f, 0);
+  glClearColor((float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
@@ -1019,7 +1067,25 @@ ddgr_color rend_GetPixel(int x, int y) {
   return (pixel[0] << 16) | (pixel[1] << 8) | pixel[2];
 }
 
-void rend_DrawLine(int x1, int y1, int x2, int y2) {}
+void rend_DrawLine(int x1, int y1, int x2, int y2) {
+  // Pixel space: match rend_TransformSetToPassthru() ortho (0,w x 0,h, top=0)
+  const float r = (float)((gpu_state.cur_color >> 16) & 0xFF) / 255.0f;
+  const float g = (float)((gpu_state.cur_color >> 8) & 0xFF) / 255.0f;
+  const float b = (float)(gpu_state.cur_color & 0xFF) / 255.0f;
+  const float x1f = (float)(x1 + gpu_state.clip_x1);
+  const float y1f = (float)(y1 + gpu_state.clip_y1);
+  const float x2f = (float)(x2 + gpu_state.clip_x1);
+  const float y2f = (float)(y2 + gpu_state.clip_y1);
+
+  glDisable(GL_TEXTURE_2D);
+  glColor4f(r, g, b, 1.0f);
+  glLineWidth(2.0f);
+  glBegin(GL_LINES);
+  glVertex2f(x1f, y1f);
+  glVertex2f(x2f, y2f);
+  glEnd();
+  glLineWidth(1.0f);
+}
 
 void rend_SetFogColor(ddgr_color color) {}
 
@@ -1076,26 +1142,14 @@ void rend_SetAlphaType(int8_t atype) {
 void rend_DrawSpecialLine(g3Point *p0, g3Point *p1) {}
 
 std::unique_ptr<NewBitmap> rend_Screenshot() {
-  const int w = gpu_state.screen_width;
-  const int h = gpu_state.screen_height;
-  auto result = std::make_unique<NewBitmap>(w, h, PixelDataFormat::RGBA32, true);
-  if (!result || result->getData() == nullptr) {
-    return nullptr;
-  }
-
-  // Read from GL pbuffer and flip vertically
-  auto *tmp = new uint8_t[w * h * 4];
-  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
-
-  uint8_t *dst = (uint8_t *)result->getData();
-  for (int y = 0; y < h; y++) {
-    memcpy(dst + y * w * 4, tmp + (h - 1 - y) * w * 4, w * 4);
-  }
-  delete[] tmp;
-
-  return result;
+  return g_mesa_backend.Screenshot(gpu_state.screen_width, gpu_state.screen_height);
 }
 
 int mesa_GetFramebufferWidth() { return gpu_state.screen_width; }
 
 int mesa_GetFramebufferHeight() { return gpu_state.screen_height; }
+
+void mesa_SetLogicalSize(int w, int h) {
+  gpu_state.screen_width = w;
+  gpu_state.screen_height = h;
+}
