@@ -600,6 +600,13 @@ void bm_FreeBitmap(int handle) {
     bm_FreeBitmapMain(handle);
   }
 }
+
+bool bm_used(int handle) {
+  if (handle < 0 || handle >= MAX_BITMAPS)
+    return false;
+  return GameBitmaps[handle].used != 0;
+}
+
 //	simply frees up a bitmap
 void bm_FreeBitmapData(int handle) {
   if (GameBitmaps[handle].data16 != NULL && !(GameBitmaps[handle].flags & BF_NOT_RESIDENT)) {

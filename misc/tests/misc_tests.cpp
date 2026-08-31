@@ -15,6 +15,34 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/**
+ * @file misc_tests.cpp
+ * @brief Unit tests for misc/pstring.cpp.
+ *
+ * @details
+ * Covers the public contract of `misc/pstring.cpp` — construction, state transitions, error handling and edge cases exercised through the GoogleTest harness.
+ *
+ * This harness validates the behavior of `misc/pstring.cpp`. It compiles the real
+ * implementation (or a minimal replica when isolation is required) against
+ * stubbed engine subsystems and checks the observable contract documented
+ * in the source headers and in-game behavior.
+ *
+ * @par Source
+ * `misc/pstring.cpp`
+ * @par Harness
+ * `misc_tests.cpp`
+ * @par Framework
+ * GoogleTest (gtest) — `TEST` / `TEST_F` macros
+ * @par Isolation
+ * Stubs and fakes for engine globals not under test; see the file body
+ * for the full stub inventory. `RELEASE` is defined to suppress
+ * `Int3()` aborts that would otherwise terminate the test process.
+ *
+ * @ingroup descent3_tests
+ * @see misc/pstring.cpp
+ */
+
+
 
 #include <utility>
 
@@ -22,6 +50,18 @@
 
 #include "pstring.h"
 
+/**
+ * @test D3.CleanupStr
+ * @brief Verifies cleanup Str.
+ *
+ * @details
+ * Exercises the D3 code path and asserts observable
+ * post-conditions. Stubbed subsystems provide deterministic
+ * inputs; no external I/O is performed.
+ *
+ * @see misc/pstring.cpp
+ * @ingroup descent3_tests
+ */
 TEST(D3, CleanupStr) {
   std::vector<std::pair<const char*, const char*>> test_data = {
       {"String with tails \t \n   ", "String with tails"},
@@ -42,6 +82,18 @@ TEST(D3, CleanupStr) {
   }
 }
 
+/**
+ * @test D3.StringJoinSplit
+ * @brief Verifies string Join Split.
+ *
+ * @details
+ * Exercises the D3 code path and asserts observable
+ * post-conditions. Stubbed subsystems provide deterministic
+ * inputs; no external I/O is performed.
+ *
+ * @see misc/pstring.cpp
+ * @ingroup descent3_tests
+ */
 TEST(D3, StringJoinSplit) {
   std::string test = "Joined text;Another text;And more;";
   std::vector<std::string> parts = {"Joined text", "Another text", "And more", ""};

@@ -62,8 +62,15 @@ int AddListItem(listnode **listp, void *item) {
     for (curr = *listp; curr->next != NULL; curr = curr->next) {
       if (curr->data == item) {
         Int3();
+        mem_free(newnode);
         return 0;
       }
+    }
+    // tail duplicate was previously missed (curr is tail)
+    if (curr->data == item) {
+      Int3();
+      mem_free(newnode);
+      return 0;
     }
 
     newnode->data = item;
@@ -119,6 +126,8 @@ void DestroyList(listnode **listp) {
     next = node->next;
     mem_free(node);
   }
+  if (listp)
+    *listp = nullptr;
 }
 
 // Returns the number of items in a list

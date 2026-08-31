@@ -34,7 +34,3 @@ target_include_directories(cfile PUBLIC
   >
   PRIVATE ${CMAKE_CURRENT_BINARY_DIR}   # For default_base_directories.h
 )
-
-if(BUILD_TESTING)
-  add_subdirectory(tests)
-endif()

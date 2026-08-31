@@ -1,5 +1,5 @@
 /*
-* Descent 3 
+* Descent 3
 * Copyright (C) 2024 Parallax Software
 *
 * This program is free software: you can redistribute it and/or modify
@@ -219,7 +219,7 @@ static bool grtext_FilterProfanity = false;
 void grtext_SetProfanityFilter(bool enabled) { grtext_FilterProfanity = enabled; }
 // Right now this just decrypts the bad words
 void grtext_Init() {
-  for (auto & bad_word : bad_words) {
+  for (auto &bad_word : bad_words) {
     int pos = 0;
 
     while (bad_word[pos]) {
@@ -467,7 +467,7 @@ void grtext_Puts(int x, int y, const char *str) {
 
     lowerstr[slen] = '\0';
 
-    for (auto & bad_word : bad_words) {
+    for (auto &bad_word : bad_words) {
       char *p = strstr(lowerstr, (char *)bad_word);
       while (p) {
         int len = strlen((char *)bad_word);
@@ -716,7 +716,6 @@ void grtext_RenderString(int x, int y, char *str) {
       *save_pos++ = '\n';
 
     line = save_pos;
-
   } while (line);
 }
 
