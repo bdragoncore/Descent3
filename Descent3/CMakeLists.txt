@@ -352,6 +352,55 @@ target_link_libraries(Descent3 PRIVATE
 target_include_directories(Descent3 PRIVATE ${PROJECT_BINARY_DIR}/lib ${SDL3_INCLUDE_DIRS})
 target_link_options(Descent3 PRIVATE $<$<PLATFORM_ID:Windows>:/DEBUG:FULL>)
 set_target_properties(Descent3 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/build")
+
+# =============================================================================
+# Static library version of game code for test linking
+# Excludes sdlmain.cpp which contains main()/WinMain() entry points
+# =============================================================================
+
+set(D3_LIB_SOURCES ${CPPS})
+list(REMOVE_ITEM D3_LIB_SOURCES "sdlmain.cpp")
+
+add_library(descent3 STATIC ${D3_LIB_SOURCES} ${HEADERS} ${INCS})
+
+target_link_libraries(descent3 PRIVATE
+  SDL3::SDL3
+  2dlib
+  AudioEncode
+  bitmap
+  cfile
+  ddebug
+  ddio
+  fix
+  grtext
+  inetfile
+  libmve
+  libacm
+  linux
+  logger
+  manage
+  mem
+  md5
+  misc
+  model
+  module
+  music
+  networking
+  physics
+  renderer
+  rtperformance
+  sndlib
+  stream_audio
+  ui
+  unzip
+  vecmat
+  ${PLATFORM_LIBS})
+
+target_include_directories(descent3 PRIVATE 
+  ${PROJECT_BINARY_DIR}/lib 
+  ${SDL3_INCLUDE_DIRS}
+)
+
 add_dependencies(Descent3
   get_git_hash
   Direct_TCP_IP_Hog

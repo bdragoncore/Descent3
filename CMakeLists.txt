@@ -47,6 +47,17 @@ option(ENABLE_MEM_RTL "Enable Real-time library memory management functions (dis
 option(FATAL_GL_ERRORS "Check OpenGL calls and raise exceptions on errors." OFF)
 option(FORCE_COLORED_OUTPUT "Always produce ANSI-colored compiler warnings/errors (GCC/Clang only; esp. useful with Ninja)." OFF)
 option(FORCE_PORTABLE_INSTALL "Install all files into local directory defined by CMAKE_INSTALL_PREFIX" ON)
+option(ENABLE_COVERAGE "Build with LLVM source-based coverage" OFF)
+
+if(ENABLE_COVERAGE)
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+    add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+  else()
+    message(FATAL_ERROR "ENABLE_COVERAGE requires Clang")
+  endif()
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   option(BUILD_EDITOR "Build internal editor" OFF)
 endif()
@@ -184,21 +195,31 @@ find_package(httplib QUIET)
 if (TARGET httplib::httplib)
   add_library(httplib ALIAS httplib::httplib)
 else()
-  # Some Linux distributions do not package httplibConfig.cmake, so find the header manually
-  find_file(CPP_HTTPLIB_HEADER httplib.h REQUIRED)
-  find_library(CPP_HTTPLIB_LIB cpp-httplib QUIET)
-
-  # The target httplib::httplib cannot be created manually, so rename it
-  add_library(httplib INTERFACE ${CPP_HTTPLIB_HEADER})
-
-  # And some Linux distributions build httplib as header-only,
-  # and some as header+library. What a mess!
-  if (NOT ${CPP_HTTPLIB_LIB} STREQUAL "CPP_HTTPLIB_LIB-NOTFOUND")
-    target_link_libraries(httplib INTERFACE ${CPP_HTTPLIB_LIB})
-  endif ()
+  # Use external httplib if available
+  if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../externals/httplib)
+    add_library(httplib INTERFACE)
+    target_include_directories(httplib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../externals/httplib)
+  else()
+    find_file(CPP_HTTPLIB_HEADER httplib.h REQUIRED)
+    find_library(CPP_HTTPLIB_LIB cpp-httplib QUIET)
+    add_library(httplib INTERFACE ${CPP_HTTPLIB_HEADER})
+    if (NOT ${CPP_HTTPLIB_LIB} STREQUAL "CPP_HTTPLIB_LIB-NOTFOUND")
+      target_link_libraries(httplib INTERFACE ${CPP_HTTPLIB_LIB})
+    endif ()
+  endif()
 endif()
+
 find_package(ZLIB REQUIRED)
-find_package(plog REQUIRED)
+
+find_package(plog QUIET)
+if (NOT plog_FOUND)
+  if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../externals/plog)
+    add_library(plog INTERFACE)
+    target_include_directories(plog INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../externals/plog/include)
+  else()
+    find_package(plog REQUIRED)
+  endif()
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   message("Building for Linux")

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Call Graph</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+    #toolbar { padding: 8px 12px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; gap: 12px; align-items: center; }
+    #toolbar button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+    #toolbar button:hover { background: #30363d; }
+    #stats { color: #8b949e; font-size: 12px; }
+    #canvas { width: 100%; height: calc(100vh - 40px); }
+    .node-box { fill: #161b22; stroke: #58a6ff; stroke-width: 2px; }
+    .node-box.endpoint { stroke: #f0883e; }
+    .node-header { fill: #1c2128; }
+    .node-header.endpoint { fill: #f0883e; }
+    .node-divider { stroke: #30363d; stroke-width: 1px; }
+    .node-text { fill: #c9d1d9; font-size: 11px; }
+    .node-text.fn { fill: #79c0ff; font-weight: bold; }
+    .node-text.cost { fill: #56d364; }
+    .node-text.orange { fill: #f0883e; }
+    .node-text.secondary { fill: #8b949e; }
+    .edge { fill: none; stroke: #58a6ff; stroke-width: 1.5px; }
+    .edge.endpoint { stroke: #f0883e; }
+    .edge-label { fill: #8b949e; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button type="button" id="reset-layout">Reset Layout</button>
+    <button type="button" id="fit-view">Fit View</button>
+    <span id="stats">Loading...</span>
+  </div>
+  <div id="canvas"></div>
+
+  <script>
+(function() {
+  const NODE_W = 230, NODE_H = 96, HDR_H = 24, COL_GAP = 120, ROW_GAP = 30;
+  const DEPTH_COLORS = ["#58a6ff", "#79c0ff", "#56d364", "#3fb950", "#d29922", "#bc8cff", "#ff7b72"];
+  const START_X = 40, START_Y = 60;
+
+  function fmtCost(n) {
+    if (n === 0) return "0 ir";
+    if (n < 1000) return n + " ir";
+    if (n < 1000000) return (n / 1000).toFixed(1) + "K ir";
+    return (n / 1000000).toFixed(2) + "M ir";
+  }
+
+  let graphData = null;
+  let svg, g, zoomBehavior, nodeGroup, linkGroup, linkLabelGroup;
+  let nodeElements, linkElements;
+  let depthMap = {};
+  let initialPositions = {};
+
+  function init(graph) {
+    graphData = graph;
+    if (!graph || !graph.nodes || Object.keys(graph.nodes).length === 0) {
+      document.getElementById("stats").textContent = "No nodes in graph.";
+      return;
+    }
+    document.getElementById("stats").textContent =
+      "Root: " + (graph.root || "?") + " | Nodes: " + Object.keys(graph.nodes).length + " | Edges: " + (graph.edges ? graph.edges.length : 0);
+
+    const container = document.getElementById("canvas");
+    const width = container.clientWidth, height = container.clientHeight;
+
+    svg = d3.select("#canvas").append("svg").attr("width", width).attr("height", height);
+    g = svg.append("g");
+
+    linkGroup = g.append("g").attr("class", "links");
+    linkLabelGroup = g.append("g").attr("class", "link-labels");
+    nodeGroup = g.append("g").attr("class", "nodes");
+
+    const nodes = Object.entries(graph.nodes).map(([id, d]) => ({ id, ...d }));
+    const links = (graph.edges || []).map(e => ({ ...e, source: e.from, target: e.to }));
+
+    depthMap = {};
+    const adj = {};
+    (graph.edges || []).forEach(ed => {
+      adj[ed.from] = adj[ed.from] || []; adj[ed.from].push(ed.to);
+    });
+    const q = [{ id: graph.root, d: 0 }];
+    const visited = new Set([graph.root]);
+    while (q.length) {
+      const { id, d } = q.shift();
+      depthMap[id] = d;
+      (adj[id] || []).forEach(to => {
+        if (!visited.has(to)) { visited.add(to); q.push({ id: to, d: d + 1 }); }
+      });
+    }
+    nodes.forEach(n => { if (depthMap[n.id] === undefined) depthMap[n.id] = 0; });
+
+    const depthToNodes = {};
+    nodes.forEach(n => {
+      const d = depthMap[n.id] || 0;
+      depthToNodes[d] = depthToNodes[d] || [];
+      depthToNodes[d].push(n);
+    });
+    const maxDepth = Math.max(...Object.keys(depthToNodes).map(Number), 0);
+    nodes.forEach(n => {
+      const d = depthMap[n.id] || 0;
+      const col = depthToNodes[d];
+      const idx = col.indexOf(n);
+      const x = START_X + d * (NODE_W + COL_GAP);
+      const colHeight = col.length * (NODE_H + ROW_GAP) - ROW_GAP;
+      const y = START_Y + idx * (NODE_H + ROW_GAP);
+      n.x = x;
+      n.y = y;
+      initialPositions[n.id] = { x, y };
+    });
+
+    const linkData = links.map(l => {
+      const src = nodes.find(n => n.id === l.from);
+      const tgt = nodes.find(n => n.id === l.to);
+      return { ...l, source: src, target: tgt };
+    }).filter(l => l.source && l.target);
+
+    linkElements = linkGroup.selectAll("path").data(linkData).join("path")
+      .attr("class", d => (d.target && graph.nodes[d.target.id] && graph.nodes[d.target.id].endpoint) ? "edge endpoint" : "edge")
+      .attr("marker-end", "url(#arrowhead)")
+      .attr("d", linkPath);
+
+    linkLabelGroup.selectAll("text").data(linkData).join("text")
+      .attr("class", "edge-label")
+      .attr("dy", -4)
+      .text(d => "×" + (d.calls || 1))
+      .attr("text-anchor", "middle")
+      .each(function(d) {
+        const M = getLinkMid(d);
+        d3.select(this).attr("x", M[0]).attr("y", M[1]);
+      });
+
+    nodeElements = nodeGroup.selectAll("g").data(nodes).join("g")
+      .attr("transform", d => "translate(" + d.x + "," + d.y + ")")
+      .call(d3.drag()
+        .on("start", dragStarted)
+        .on("drag", dragged)
+        .on("end", dragEnded));
+
+    nodeElements.each(function(d) {
+      const g = d3.select(this);
+      const depth = depthMap[d.id] || 0;
+      const borderColor = DEPTH_COLORS[depth % DEPTH_COLORS.length];
+      const isEndpoint = d.endpoint;
+      g.append("rect").attr("class", "node-box" + (isEndpoint ? " endpoint" : ""))
+        .attr("width", NODE_W).attr("height", NODE_H).attr("rx", 4)
+        .style("stroke", isEndpoint ? "#f0883e" : borderColor);
+      g.append("rect").attr("class", "node-header" + (isEndpoint ? " endpoint" : ""))
+        .attr("y", 0).attr("width", NODE_W).attr("height", HDR_H).attr("rx", 4).attr("ry", 0);
+      g.append("line").attr("class", "node-divider").attr("x1", 0).attr("y1", HDR_H).attr("x2", NODE_W).attr("y2", HDR_H);
+      g.append("text").attr("class", "node-text fn").attr("x", 8).attr("y", 16)
+        .attr("title", d.fn).text((d.short_fn || d.fn || d.id).slice(0, 28));
+      if (isEndpoint) {
+        g.append("text").attr("class", "node-text orange").attr("x", NODE_W - 8).attr("y", 16)
+          .attr("text-anchor", "end").text("[ENDPOINT]");
+      }
+      let row = HDR_H + 14;
+      g.append("text").attr("class", "node-text secondary").attr("x", 8).attr("y", row).text("calls in: " + (d.calls_in || 0));
+      row += 14;
+      g.append("text").attr("class", "node-text cost").attr("x", 8).attr("y", row).text("self: " + fmtCost(d.self_cost || 0));
+      row += 14;
+      g.append("text").attr("class", "node-text cost").attr("x", 8).attr("y", row).text("total: " + fmtCost(d.total_cost || 0));
+      row += 14;
+      const fileStr = (d.file || "").split("/").pop() || "";
+      g.append("text").attr("class", "node-text secondary").attr("x", 8).attr("y", row).attr("overflow", "hidden").text(fileStr.slice(0, 32));
+    });
+
+    svg.append("defs").append("marker")
+      .attr("id", "arrowhead").attr("viewBox", "0 -5 10 10").attr("refX", 8).attr("refY", 0)
+      .attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#58a6ff");
+
+    zoomBehavior = d3.zoom().scaleExtent([0.05, 5]).on("zoom", (ev) => g.attr("transform", ev.transform));
+    svg.call(zoomBehavior);
+
+    document.getElementById("reset-layout").onclick = () => {
+      nodes.forEach(n => {
+        const p = initialPositions[n.id];
+        if (p) { n.x = p.x; n.y = p.y; }
+      });
+      nodeElements.attr("transform", d => "translate(" + d.x + "," + d.y + ")");
+      linkElements.attr("d", linkPath);
+      linkLabelGroup.selectAll("text").each(function(d) {
+        const M = getLinkMid(d);
+        d3.select(this).attr("x", M[0]).attr("y", M[1]);
+      });
+    };
+
+    document.getElementById("fit-view").onclick = () => {
+      const padding = 40;
+      const xs = nodes.map(n => n.x);
+      const ys = nodes.map(n => n.y);
+      const x0 = Math.min(...xs) - padding, x1 = Math.max(...xs) + NODE_W + padding;
+      const y0 = Math.min(...ys) - padding, y1 = Math.max(...ys) + NODE_H + padding;
+      const w = x1 - x0, h = y1 - y0;
+      const scale = Math.min((width - 20) / w, (height - 20) / h, 2);
+      const tx = (width - (x0 + x1) * scale) / 2, ty = (height - (y0 + y1) * scale) / 2;
+      svg.transition().duration(300).call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    };
+  }
+
+  function linkPath(d) {
+    const sx = d.source.x + NODE_W, sy = d.source.y + NODE_H / 2;
+    const tx = d.target.x, ty = d.target.y + NODE_H / 2;
+    const mx = (sx + tx) / 2;
+    return "M" + sx + "," + sy + " C" + (mx + 80) + "," + sy + " " + (mx - 80) + "," + ty + " " + tx + "," + ty;
+  }
+
+  function getLinkMid(d) {
+    const sx = d.source.x + NODE_W, sy = d.source.y + NODE_H / 2;
+    const tx = d.target.x, ty = d.target.y + NODE_H / 2;
+    return [(sx + tx) / 2, (sy + ty) / 2];
+  }
+
+  function dragStarted() { d3.select(this).raise(); }
+  function dragged(ev, d) {
+    d.x = ev.x; d.y = ev.y;
+    d3.select(this).attr("transform", "translate(" + ev.x + "," + ev.y + ")");
+    linkElements.attr("d", linkPath);
+    linkLabelGroup.selectAll("text").each(function(ed) {
+      const M = getLinkMid(ed);
+      d3.select(this).attr("x", M[0]).attr("y", M[1]);
+    });
+  }
+  function dragEnded() {}
+
+  fetch("graph.json")
+    .then(r => {
+        if (!r.ok) throw new Error("graph.json not found");
+        return r.json();
+    })
+    .then(graph => {
+        init(graph);
+    })
+    .catch(err => {
+        document.getElementById("stats").textContent =
+            "Error loading graph.json: " + err.message;
+    });
+})();
+  </script>
+</body>
+</html>

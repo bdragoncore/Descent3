@@ -208,5 +208,142 @@ You can also use the [cmake-gui](https://cmake.org/cmake/help/latest/manual/cmak
       | `OFF`                                                                                        |
 | `USE_VCPKG`               | Explicitly control whether or not to use vcpkg for dependency resolution. `ON` requires the environment variable `VCPKG_ROOT` to be set.                                                                                                                                                                                                                                                                                                                       | Determined by the existence of `VCPKG_ROOT` in the environment: If it exists, vcpkg is used. |
 | `CODESIGN_IDENTITY`       | Sets the macOS code signing identity. If set to something besides the empty string, then the dynamic libraries put into the hog files will be signed using this identity.                                                                                                                                                                                                                                                                                      | The empty string, `""`.                                                                      |
+| `ENABLE_COVERAGE`         | Build with LLVM source-based coverage. Requires Clang. Generates coverage data that can be viewed with `llvm-cov`.                                                                                                                                                                                                                                                                                                                                              | `OFF`                                                                                        |
+
+## Testing
+
+To build and run tests, first enable testing during configuration:
+
+```sh
+cmake --preset linux -DBUILD_TESTING=ON
+cmake --build --preset linux
+ctest --test-dir build --preset linux
+```
+
+Or run tests for a specific build config:
+
+```sh
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+### Render tests and call graph viewer
+
+The render tests are a headless test suite that exercises the renderer and can
+optionally generate an interactive call graph viewer for profiling.
+
+To build **only** the render test executable (and its dependencies), you can
+target `d3_render_tests` explicitly:
+
+```sh
+cmake --preset linux -DBUILD_TESTING=ON
+cmake --build build --target d3_render_tests
+```
+
+To build and run all tests (including render tests), use the commands in the
+section above instead.
+
+Once the project is configured and built, you can run the render tests from the
+repository root:
+
+```sh
+python3 tests/render/run_render_tests.py \
+  --build-dir build \
+  --output-dir build/tests/render_output
+```
+
+This will:
+
+- Run `d3_render_tests`.
+- Write PNG and `.md5` files under `build/tests/render_output/`.
+- Generate an HTML report at `build/tests/render_output/render_report.html`.
+
+The first time you run the render tests, you may want to establish MD5
+baselines so future runs can detect visual regressions:
+
+```sh
+python3 tests/render/run_render_tests.py \
+  --build-dir build \
+  --output-dir build/tests/render_output \
+  --update-baseline
+```
+
+#### Call graph viewer
+
+The render test harness can also generate per-test call graphs using Valgrind’s
+Callgrind tool and serve them via a local Next.js app.
+
+1. Install Valgrind and Node.js/npm (once):
+
+   ```sh
+   sudo apt install valgrind
+   cd tests/callgraph-viewer
+   npm install
+   cd ../..
+   ```
+
+2. Run the render tests with the viewer enabled:
+
+   ```sh
+   python3 tests/render/run_render_tests.py \
+     --build-dir build \
+     --output-dir build/tests/render_output \
+     --serve
+   ```
+
+   This will:
+
+   - Run the render tests (including Callgrind passes when available).
+   - Generate `*__graph.json` files under `build/tests/render_output/`.
+   - Generate/update `render_report.html`.
+   - Start the Next.js viewer on `http://localhost:3000` and open it in a browser.
+
+From the report, each render test row will include:
+
+- A link to a per-test **call tree** (function enter/exit timeline).
+- A link to the static **call graph** HTML.
+- A “View in Call Graph Viewer” link that deep-links into the Next.js app.
+
+### Running Individual Tests
+
+List all available tests:
+
+```sh
+ctest --test-dir build -N
+```
+
+Run a specific test:
+
+```sh
+ctest --test-dir build -R test_name
+```
+
+## Code Coverage
+
+To generate code coverage reports, you need Clang as your compiler:
+
+```sh
+# Use Clang compiler
+export CC=clang CXX=clang++
+
+# Configure with coverage enabled
+cmake --preset linux -DENABLE_COVERAGE=ON
+
+# Build the project
+cmake --build --preset linux
+
+# Run tests to generate coverage data
+ctest --test-dir build --preset linux
+
+# Generate coverage report
+llvm-cov show ./build/Descent3/CMakeFiles/descent3.dir \
+  --sources=/run/host/home/bperris/base/dev/flare.rs/d3src/Descent3 > coverage.txt
+
+# Or generate HTML report
+llvm-cov report ./build/Descent3/CMakeFiles/descent3.dir \
+  --sources=/run/host/home/bperris/base/dev/flare.rs/d3src/Descent3
+```
+
+**Note:** Coverage requires building with Clang. GCC coverage is not supported.
 
 [1]: ./USAGE.md#base-directories

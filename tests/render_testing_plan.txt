@@ -1,0 +1,488 @@
+================================================================================
+DESCENT 3 HEADLESS TEXT RENDERING TEST - CURSOR SETUP INSTRUCTIONS
+Mesa llvmpipe + EGL offscreen framebuffer - Linux Only
+================================================================================
+
+BEFORE YOU START
+----------------
+These instructions assume you have already cloned the Descent3 repo at:
+  https://github.com/DescentDevelopers/Descent3
+
+All steps below must be run from the repo root unless stated otherwise.
+Read each VERIFY step before moving to the next section.
+Do not skip steps. Do not assume a step succeeded without verifying it.
+
+
+================================================================================
+STEP 1 - INSTALL SYSTEM DEPENDENCIES
+================================================================================
+
+On Ubuntu (CI / Docker):
+
+  sudo apt update
+  sudo apt install -y \
+    libegl-mesa0 \
+    libgl1-mesa-dri \
+    libegl-dev \
+    libgl-dev \
+    mesa-utils \
+    cmake \
+    ninja-build \
+    gcc \
+    g++ \
+    pkg-config \
+    git
+
+On Arch Linux (dev machine):
+
+  sudo pacman -S \
+    mesa \
+    gcc \
+    cmake \
+    ninja \
+    git \
+    pkg-config
+
+NOTE: Do NOT install mesa via vcpkg. Use the system package manager only.
+      Building Mesa from source via vcpkg takes 25+ minutes and 2GB disk.
+
+
+VERIFY:
+  pkg-config --exists egl && echo "EGL OK" || echo "EGL MISSING"
+  pkg-config --exists gl  && echo "GL OK"  || echo "GL MISSING"
+
+  On Ubuntu, llvmpipe driver path:
+    ls /usr/lib/x86_64-linux-gnu/dri/ | grep llvmpipe
+
+  On Arch, llvmpipe driver path:
+    ls /lib/dri/ | grep llvmpipe
+
+  Expected output in both cases: llvmpipe_dri.so
+
+
+================================================================================
+STEP 2 - AUDIT THE RENDERER BEFORE TOUCHING ANYTHING
+================================================================================
+
+The renderer was refactored after the original 1.5 release into multiple files.
+SDL context creation and SwapBuffers may NOT be in HardwareOpenGL.cpp.
+You MUST read these three files before writing any MesaOpenGL.cpp code.
+
+  cat renderer/HardwareOpenGL.cpp  | grep -n "SDL_GL\|SDL_Create\|SDL_Destroy"
+  cat renderer/HardwareSetup.cpp   | grep -n "SDL_GL\|SDL_Create\|SDL_Destroy"
+  cat renderer/HardwareBaseGPU.cpp | grep -n "SDL_GL\|SDL_Create\|SDL_Destroy"
+
+Goal: find which file contains:
+  - SDL_GL_CreateContext  (or SDL_GL_CreateContextWithProperties in SDL3)
+  - SDL_CreateWindow
+  - SDL_GL_MakeCurrent
+  - SDL_GL_SwapWindow
+  - SDL_GL_DestroyContext  (NOTE: SDL3 uses DestroyContext, NOT DeleteContext)
+  - SDL_DestroyWindow
+
+ALSO verify the rend_Init signature:
+
+  grep -n "rend_Init" lib/renderer.h Descent3/init.cpp renderer/*.cpp
+
+ALSO verify g3_Init exists as a standalone call:
+
+  grep -rn "g3_Init\b" 3d/ Descent3/
+
+ALSO verify cfile init function name:
+
+  grep -n "^bool\|^void\|^int" cfile/cfile.h | grep -i init
+
+Write down your findings. The MesaOpenGL.cpp plan depends on them.
+
+
+================================================================================
+STEP 3 - CHECK EXISTING TESTS DIRECTORY
+================================================================================
+
+The repo already has a tests/ folder. Inspect it before adding anything:
+
+  ls -la tests/
+  cat tests/CMakeLists.txt
+
+If tests/CMakeLists.txt already exists, you will EXTEND it, not replace it.
+If it is empty or absent, you will create it from scratch.
+
+
+================================================================================
+STEP 4 - GET THE CORRECT VCPKG BASELINE
+================================================================================
+
+The builtin-baseline in vcpkg.json must match the repo's current value exactly.
+Do NOT use a hardcoded baseline from documentation or AI suggestions.
+
+  cat vcpkg.json
+
+Copy the "builtin-baseline" value from that output.
+Use that exact value in any vcpkg.json modifications you make.
+
+Also note the current sdl3 version and features in vcpkg.json.
+The SDL3 entry will look something like:
+
+  {
+    "name": "sdl3",
+    "version>=": "3.x.x",
+    "features": ["x11", "wayland", "alsa"]
+  }
+
+Do not change the sdl3 version or features when modifying vcpkg.json.
+
+
+================================================================================
+STEP 5 - SETUP VCPKG
+================================================================================
+
+If VCPKG_ROOT is not already set:
+
+  git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
+  $HOME/vcpkg/bootstrap-vcpkg.sh
+  export VCPKG_ROOT=$HOME/vcpkg
+
+Add to your shell profile if you want it persistent:
+
+  echo 'export VCPKG_ROOT=$HOME/vcpkg' >> ~/.bashrc
+  echo 'export PATH=$VCPKG_ROOT:$PATH'  >> ~/.bashrc
+
+VERIFY:
+  $VCPKG_ROOT/vcpkg --version
+
+
+================================================================================
+STEP 6 - CREATE MesaOpenGL.cpp
+================================================================================
+
+Using your findings from Step 2, identify which file contains SDL context init.
+That file is your clone source. It may be HardwareSetup.cpp, not HardwareOpenGL.cpp.
+
+  # Example - adjust source file based on Step 2 findings:
+  cp renderer/HardwareSetup.cpp renderer/MesaOpenGL.cpp
+
+Changes to make in MesaOpenGL.cpp (and ONLY these changes):
+
+  A. Replace SDL includes at the top:
+
+     REMOVE:
+       #include <SDL3/SDL.h>
+       #include <SDL3/SDL_opengl.h>
+
+     ADD:
+       #include <EGL/egl.h>
+       #include <EGL/eglext.h>
+       #include <GL/gl.h>
+       #include <GL/glext.h>
+
+  B. Replace SDL window/context globals with EGL globals:
+
+     REMOVE:
+       static SDL_Window*   gl_window  = nullptr;
+       static SDL_GLContext  gl_context = nullptr;
+
+     ADD:
+       static EGLDisplay  mesa_display = EGL_NO_DISPLAY;
+       static EGLSurface  mesa_surface = EGL_NO_SURFACE;
+       static EGLContext  mesa_context = EGL_NO_CONTEXT;
+
+  C. Replace the renderer init body (SDL window creation section only):
+
+     The new init body sets llvmpipe env vars, then calls:
+       eglGetPlatformDisplayEXT  (prefer) or eglGetDisplay (fallback)
+       eglInitialize
+       eglBindAPI(EGL_OPENGL_API)
+       eglChooseConfig  with EGL_PBUFFER_BIT | EGL_OPENGL_BIT
+       eglCreatePbufferSurface  with width/height
+       eglCreateContext  requesting OpenGL 3.3 core
+       eglMakeCurrent
+
+     Everything after that (glViewport, glEnable, state setup) is UNCHANGED.
+
+     llvmpipe env vars to set at top of init:
+       setenv("GALLIUM_DRIVER",             "llvmpipe", 1);
+       setenv("LIBGL_ALWAYS_SOFTWARE",      "1",        1);
+       setenv("MESA_GL_VERSION_OVERRIDE",   "3.3",      1);
+       setenv("MESA_GLSL_VERSION_OVERRIDE", "330",      1);
+
+  D. Replace SwapBuffers:
+
+     REMOVE the SDL_GL_SwapWindow call.
+     REPLACE with a no-op comment:
+       // No-op: framebuffer read via glReadPixels
+
+  E. Replace shutdown:
+
+     REMOVE SDL_GL_DestroyContext and SDL_DestroyWindow calls.
+     REPLACE with:
+       eglMakeCurrent(mesa_display, EGL_NO_SURFACE,
+                      EGL_NO_SURFACE, EGL_NO_CONTEXT);
+       eglDestroyContext(mesa_display, mesa_context);
+       eglDestroySurface(mesa_display, mesa_surface);
+       eglTerminate(mesa_display);
+       mesa_display = EGL_NO_DISPLAY;
+       mesa_surface = EGL_NO_SURFACE;
+       mesa_context = EGL_NO_CONTEXT;
+
+  IMPORTANT - DO NOT CHANGE:
+    - Any glBindTexture, glTexImage2D, glTexSubImage2D calls
+    - Any glDrawArrays, glDrawElements, VAO/VBO setup
+    - Any glEnable, glDisable, glBlendFunc calls
+    - Any shader code, uniform uploads, attribute bindings
+    - Any state caching or texture management code
+    - Any glViewport, glScissor, glClear, glClearColor calls
+    - Any glMatrixMode, glLoadIdentity, glOrtho calls (if still present)
+
+
+================================================================================
+STEP 7 - MODIFY renderer/CMakeLists.txt
+================================================================================
+
+Add a BUILD_TESTING branch to renderer/CMakeLists.txt.
+
+The test branch must:
+  - Include MesaOpenGL.cpp instead of HardwareOpenGL.cpp (or HardwareSetup.cpp)
+  - Define MESA_SOFT_RENDERER compile definition
+  - Link against PkgConfig::EGL and PkgConfig::GL
+
+  if(BUILD_TESTING)
+      target_sources(renderer PRIVATE
+          MesaOpenGL.cpp
+          # include all other shared renderer .cpp files that are normally
+          # in the production build, EXCEPT the SDL-window-owning file
+      )
+      target_compile_definitions(renderer PUBLIC MESA_SOFT_RENDERER)
+
+      find_package(PkgConfig REQUIRED)
+      pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
+      pkg_check_modules(GL  REQUIRED IMPORTED_TARGET gl)
+      target_link_libraries(renderer PUBLIC
+          PkgConfig::EGL
+          PkgConfig::GL
+      )
+  else()
+      target_sources(renderer PRIVATE
+          HardwareOpenGL.cpp   # or HardwareSetup.cpp - whichever owns SDL init
+          # ... rest of production renderer files
+      )
+  endif()
+
+NOTE: Identify all other .cpp files in renderer/ that are shared between
+production and test builds (not the SDL-windowing file) and include them
+in BOTH branches.
+
+  ls renderer/*.cpp
+
+
+================================================================================
+STEP 8 - ADD tests/render/ SOURCE FILES
+================================================================================
+
+Create a new tests/render/ directory containing all render test infrastructure.
+
+Directory structure:
+
+  tests/render/
+  ├── CMakeLists.txt           -- Build config for render tests
+  ├── core_init.cpp            -- D3 core initialization
+  ├── core_init.h
+  ├── render_test_base.cpp     -- GTest base class for render tests
+  ├── render_test_base.h
+  ├── offscreen_gl.cpp         -- EGL pbuffer context wrapper
+  ├── offscreen_gl.h
+  ├── stb_image_write.h        -- PNG output (single-header)
+  └── d3_render_tests.cpp     -- ALL test cases consolidated
+
+Tests/render/CMakeLists.txt must:
+  - find_package PkgConfig, EGL, GL, GTest (or inherit from parent)
+  - add_executable d3_render_tests from the above .cpp files
+  - target_include_directories covering all D3 subsystem headers
+  - target_link_libraries: d3_render_test_base, mesaopengl, cfile, bitmap,
+      mem, fix, ddebug, ddio, logger, tracer, descent3, linux, PNG, EGL, GL, GLU
+  - add_test NAME d3_render_tests COMMAND d3_render_tests
+  - NO set_tests_properties needed - env vars are hardcoded in d3_render_tests.cpp
+
+Environment variables are HARDCODED in d3_render_tests.cpp main():
+  setenv("GALLIUM_DRIVER", "llvmpipe", 1);
+  setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+  setenv("MESA_GL_VERSION_OVERRIDE", "3.3", 1);
+  setenv("MESA_GLSL_VERSION_OVERRIDE", "330", 1);
+  setenv("SDL_VIDEODRIVER", "offscreen", 1);
+
+Main tests/CMakeLists.txt should include:
+  add_subdirectory(render)
+
+
+================================================================================
+STEP 9 - MODIFY TOP-LEVEL CMakeLists.txt
+================================================================================
+
+Add the BUILD_TESTING option and tests subdirectory:
+
+  option(BUILD_TESTING "Build unit tests with Mesa soft renderer" OFF)
+
+  # ... existing add_subdirectory calls ...
+
+  if(BUILD_TESTING)
+      enable_testing()
+      add_subdirectory(tests)
+  endif()
+
+VERIFY the option does not already exist:
+
+  grep -n "BUILD_TESTING\|enable_testing" CMakeLists.txt
+
+
+================================================================================
+STEP 10 - CONFIGURE AND BUILD
+================================================================================
+
+Create output directory:
+
+  mkdir -p build/tests/render_output
+
+Configure:
+
+  CC=gcc CXX=g++ cmake -B build -S . \
+      -DBUILD_TESTING=ON \
+      -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -G Ninja
+
+VERIFY configure succeeded:
+  The last lines should mention "-- Configuring done" and "-- Build files written"
+  Check for any MISSING package errors before proceeding.
+
+Build:
+
+  cmake --build build -j$(nproc)
+
+VERIFY build succeeded:
+  ls -la build/tests/d3_render_tests
+
+
+================================================================================
+STEP 11 - PLACE GAME DATA
+================================================================================
+
+The test harness needs d3.hog from a legitimate copy of Descent 3.
+Default location:  $HOME/Descent3/d3.hog
+
+To use a different path:
+  export D3_PATH=/path/to/your/Descent3/install
+
+VERIFY:
+  ls $HOME/Descent3/d3.hog
+  # or
+  ls $D3_PATH/d3.hog
+
+
+================================================================================
+STEP 12 - RUN THE TESTS
+================================================================================
+
+Run directly (verbose):
+
+  ./build/tests/d3_render_tests
+
+Run via ctest:
+
+  ctest --test-dir build --output-on-failure
+
+Expected output:
+  OffscreenGL: llvmpipe ready (640x480 EGL 1.5)
+  [==========] Running 32 tests from 6 test suites.
+  [ RUN      ] D3RenderTest.RenderSingleColoredQuad
+  [       OK ] D3RenderTest.RenderSingleColoredQuad
+  ...
+
+Check PNG output:
+
+  ls -la build/tests/render_output/*.png
+  # Should see: test_hud_green.png  test_hud_colors.png  test_hud_bounds.png
+
+
+================================================================================
+STEP 13 - TROUBLESHOOTING
+================================================================================
+
+PROBLEM: "EGL MISSING" from pkg-config
+FIX:     On Ubuntu: sudo apt install libegl-dev
+         On Arch:   sudo pacman -S mesa
+
+PROBLEM: "no EGL display" at runtime
+FIX:     Verify GALLIUM_DRIVER=llvmpipe and LIBGL_ALWAYS_SOFTWARE=1 are set.
+         Check that llvmpipe_dri.so exists (see Step 1 VERIFY).
+
+PROBLEM: eglCreateContext returns EGL_NO_CONTEXT
+FIX:     Mesa on some distros only supports OpenGL 3.1 via llvmpipe by default.
+         The MESA_GL_VERSION_OVERRIDE=3.3 env var should fix this.
+         If not, try MESA_GL_VERSION_OVERRIDE=3.1 and adjust context attrs.
+
+PROBLEM: "D3: lohud.fnt not found"
+FIX:     Confirm d3.hog is at $HOME/Descent3/d3.hog or set D3_PATH.
+         Confirm d3.hog is a valid Descent 3 HOG archive (not renamed zip).
+
+PROBLEM: "D3: rend_Init failed"
+FIX:     EGL context must be current BEFORE rend_Init is called.
+         OffscreenGL::Init() must run before D3TextTestHarness::Initialize().
+         Verify the GTest SetUpTestSuite order in test_main.cpp.
+
+PROBLEM: Framebuffer is entirely black (test_hud_green fails)
+FIX:     grtext_Stop() must be called before glReadPixels (it flushes batches).
+         Verify EndFrame() calls grtext_Stop() before rend_EndFrame().
+
+PROBLEM: "SDL_VIDEODRIVER" causes ddio_Init crash
+FIX:     SDL_VIDEODRIVER=offscreen must be set before ddio_Init is called.
+         It is set as a ctest env var and must also be set for direct runs.
+
+PROBLEM: Build fails because MesaOpenGL.cpp references missing SDL symbols
+FIX:     You did not replace all SDL calls. Re-audit the file you cloned.
+         Grep for any remaining SDL references:
+           grep -n "SDL_" renderer/MesaOpenGL.cpp
+
+PROBLEM: Duplicate symbol linker errors for renderer functions
+FIX:     Both HardwareOpenGL.cpp (or HardwareSetup.cpp) AND MesaOpenGL.cpp
+         are being compiled. Check renderer/CMakeLists.txt -- only ONE
+         should be compiled depending on BUILD_TESTING flag.
+
+
+================================================================================
+INITIALIZATION ORDER (DO NOT CHANGE)
+================================================================================
+
+This order is mandatory. Changing it will cause crashes or silent failures.
+
+  1.  OffscreenGL::Init()          -- EGL pbuffer + llvmpipe context current
+  2.  mem_Init()                   -- D3 memory system
+  3.  ddio_Init()                  -- D3 device I/O (needs SDL_VIDEODRIVER=offscreen)
+  4.  cfile_Init()                 -- D3 file/HOG system
+  5.  cfile_AddSearchPath(base)    -- Point at Descent3 data directory
+  6.  bm_Init()                    -- D3 bitmap/texture system
+  7.  g3_Init()    [if it exists]  -- D3 3D math/projection (verify in Step 2)
+  8.  rend_Init()                  -- D3 renderer (attaches to EGL context from 1)
+  9.  grtext_Init()                -- D3 font system
+  10. grtext_LoadFont("lohud.fnt") -- Load HUD font from d3.hog
+
+
+================================================================================
+KEY FACTS TO KEEP IN MIND
+================================================================================
+
+- SDL3 uses SDL_GL_DestroyContext, NOT SDL_GL_DeleteContext (deleted in SDL3).
+- The EGL context is created in OffscreenGL::Init(), NOT in MesaOpenGL.cpp.
+  MesaOpenGL.cpp attaches to the already-current context via rend_Init().
+  Do not create a second EGL context inside MesaOpenGL.cpp.
+- glReadPixels returns pixels with Y=0 at the BOTTOM (GL convention).
+  Flip vertically before writing PNG (Y=0 at top is PNG convention).
+- grtext batches draw calls. Always call grtext_Stop() before glReadPixels.
+- The overlays/dbus directory in the repo is a vcpkg overlay port.
+  It is needed for cross-compilation and should not be removed.
+- Tests require actual Descent 3 game data (d3.hog). This file is NOT in the
+  repo and must be provided by the user from a legitimate copy of the game.
+- The tests/ directory may already have content. Check before overwriting.
+
+
+================================================================================
+END OF SETUP INSTRUCTIONS
+================================================================================

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "gitnexus-local": {
+      "type": "local",
+      "command": ["gitnexus", "mcp"],
+      "enabled": true
+    }
+  }
+}
