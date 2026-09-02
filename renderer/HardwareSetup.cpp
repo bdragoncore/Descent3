@@ -60,7 +60,9 @@ void g3_GetProjectionMatrix(float zoom, float *projMat) {
   // setup the matrix
   memset(projMat, 0, sizeof(float) * 16);
 
-  // calculate 1/tan(fov)
+  // BUGFIX (PiccuEngine #2): Use constant near/far planes instead of
+  // dividing by zoom. The original code scaled znear and zfar by zoom,
+  // which caused depth range issues when FOV was changed.
   float oOT = 1.0f / vertical_fov;
 
   // fill in the matrix
@@ -114,7 +116,10 @@ void g3_StartFrame(vector *view_pos, matrix *view_matrix, float zoom) {
   View_zoom = zoom;
   Unscaled_matrix = *view_matrix;
 
-  // Scale x and y to zoom in or out;
+  // BUGFIX (PiccuEngine #2): Always scale x and y to apply FOV.
+  // The original code scaled Z when zooming in (View_zoom <= 1.0),
+  // which caused depth range problems. Scaling x and y uniformly
+  // applies FOV correctly regardless of zoom direction.
   float oOZ = 1.0f / View_zoom;
   Matrix_scale.x() = Matrix_scale.x() * oOZ;
   Matrix_scale.y() = Matrix_scale.y() * oOZ;

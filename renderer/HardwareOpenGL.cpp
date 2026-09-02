@@ -281,6 +281,22 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
+  // BUGFIX (PiccuEngine #4): MSAA support via -msaa <samples> command line flag.
+  // Enables multisample anti-aliasing for smoother edges. Default is 0 (off).
+  // Common values: 2, 4, 8.
+  int msaa_arg = FindArg("-msaa");
+  int msaa_samples = 0;
+  if (msaa_arg && msaa_arg + 1 < GameArgc) {
+    msaa_samples = atoi(GameArgs[msaa_arg + 1]);
+    if (msaa_samples < 0)
+      msaa_samples = 0;
+  }
+  if (msaa_samples > 0) {
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, msaa_samples);
+    LOG_INFO.printf("MSAA enabled with %d samples", msaa_samples);
+  }
+
   if (!window_) {
     // BUGFIX #685: In SDL3, SDL_CreateWindowWithProperties uses logical
     // coordinates and the display content scale is applied automatically
