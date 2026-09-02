@@ -37,6 +37,7 @@ uint16_t CurrentPalette[256];
 int Movie_bm_handle = -1;
 uint32_t Movie_current_framenum = 0;
 bool Movie_looping = false;
+bool Movie_vid_set = false;
 } // namespace
 
 static void *CallbackAlloc(uint32_t size);
@@ -144,6 +145,14 @@ int mve_PlayMovie(const std::filesystem::path &pMovieName, oeApplication *pApp) 
   // cleanup and shutdown
   MVE_rmEndMovie(mve);
 
+  // BUGFIX (PiccuEngine #12): Restore renderer state after movie.
+  // If we changed the renderer resolution for the movie, restore
+  // the original preferred state so the game renders correctly.
+  if (Movie_vid_set) {
+    rend_SetPreferredState(&Render_preferred_state);
+    Movie_vid_set = false;
+  }
+
   // reset sound
   mve_CloseSound();
 
@@ -202,16 +211,11 @@ void BlitToMovieBitmap(uint8_t *buf, uint32_t bufw, uint32_t bufh, uint32_t hico
   int drawWidth = bufw;
   int drawHeight = bufh;
 
-  if (usePow2Texture) {
-    int wPow2 = NextPow2(drawWidth);
-    int hPow2 = NextPow2(drawHeight);
-    int texSize = (wPow2 > hPow2) ? wPow2 : hPow2;
-    texW = texSize;
-    texH = texSize;
-  } else {
-    texW = drawWidth;
-    texH = drawHeight;
-  }
+  // BUGFIX (PiccuEngine #12): Remove pow2 texture restriction.
+  // Modern GPUs don't need power-of-two textures. Using the actual
+  // video dimensions eliminates unnecessary padding and stretching.
+  texW = drawWidth;
+  texH = drawHeight;
 
   if (Movie_bm_handle == -1) {
     // Allocate our bitmap
@@ -255,7 +259,17 @@ void CallbackShowFrame(uint8_t *buf, uint32_t bufw, uint32_t bufh, uint32_t sx, 
   float u = float(drawWidth - 1) / float(texW - 1);
   float v = float(drawHeight - 1) / float(texH - 1);
 
-  StartFrame(0, 0, 640, 480, false);
+  // BUGFIX (PiccuEngine #12): Use actual video dimensions instead of
+  // hardcoded 640x480. On the first frame, set the renderer to match
+  // the video resolution so the movie fills the screen properly.
+  if (!Movie_vid_set) {
+    Render_preferred_state.width = drawWidth;
+    Render_preferred_state.height = drawHeight;
+    Movie_vid_set = true;
+    rend_SetPreferredState(&Render_preferred_state);
+  }
+
+  StartFrame(0, 0, drawWidth, drawHeight, false);
 
   rend_ClearScreen(GR_BLACK);
   rend_SetAlphaType(AT_CONSTANT);
@@ -266,7 +280,8 @@ void CallbackShowFrame(uint8_t *buf, uint32_t bufw, uint32_t bufh, uint32_t sx, 
   rend_SetWrapType(WT_CLAMP);
   rend_SetFiltering(0);
   rend_SetZBufferState(0);
-  rend_DrawScaledBitmap(dstx, dsty, dstx + drawWidth, dsty + drawHeight, Movie_bm_handle, 0.0f, 0.0f, u, v);
+  // BUGFIX (PiccuEngine #12): Draw at (0,0) to fill the screen.
+  rend_DrawScaledBitmap(0, 0, drawWidth, drawHeight, Movie_bm_handle, 0.0f, 0.0f, u, v);
   rend_SetFiltering(1);
   rend_SetZBufferState(1);
 
@@ -294,7 +309,16 @@ void CallbackShowFrameNoFlip(unsigned char *buf, unsigned int bufw, unsigned int
   float u = float(drawWidth - 1) / float(texW - 1);
   float v = float(drawHeight - 1) / float(texH - 1);
 
-  StartFrame(0, 0, 640, 480, false);
+  // BUGFIX (PiccuEngine #12): Use actual video dimensions instead of
+  // hardcoded 640x480.
+  if (!Movie_vid_set) {
+    Render_preferred_state.width = drawWidth;
+    Render_preferred_state.height = drawHeight;
+    Movie_vid_set = true;
+    rend_SetPreferredState(&Render_preferred_state);
+  }
+
+  StartFrame(0, 0, drawWidth, drawHeight, false);
 
   rend_ClearScreen(GR_BLACK);
   rend_SetAlphaType(AT_CONSTANT);
@@ -305,7 +329,8 @@ void CallbackShowFrameNoFlip(unsigned char *buf, unsigned int bufw, unsigned int
   rend_SetWrapType(WT_CLAMP);
   rend_SetFiltering(0);
   rend_SetZBufferState(0);
-  rend_DrawScaledBitmap(dstx, dsty, dstx + drawWidth, dsty + drawHeight, Movie_bm_handle, 0.0f, 0.0f, u, v);
+  // BUGFIX (PiccuEngine #12): Draw at (0,0) to fill the screen.
+  rend_DrawScaledBitmap(0, 0, drawWidth, drawHeight, Movie_bm_handle, 0.0f, 0.0f, u, v);
   rend_SetFiltering(1);
   rend_SetZBufferState(1);
 
