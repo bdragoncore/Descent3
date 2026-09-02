@@ -945,6 +945,7 @@
 #include "appdatabase.h"
 #include "room.h"
 #include "game.h"
+#include "cockpit_factory.h"
 #include "gamefile.h"
 #include "gamespy.h"
 #include "TelCom.h"
@@ -1168,6 +1169,7 @@ void SaveGameSettings() {
   Database->write("RS_resolution", Current_video_resolution_id);
   Database->write("RS_fov", static_cast<int>(Render_FOV_setting));
   Database->write("RS_fullscreen", static_cast<int>(Game_fullscreen));
+  Database->write("RS_cockpit_mode", GetCockpitMode());
 
   Database->write("RS_bitdepth", Render_preferred_bitdepth);
   Database->write("RS_bilear", Render_preferred_state.filtering);
@@ -1319,6 +1321,11 @@ void LoadGameSettings() {
   Render_FOV_setting = static_cast<float>(tempval);
   Render_FOV = Render_FOV_setting;
 
+  int cockpit_mode = COCKPIT_MODE_WIDESCREEN;
+  Database->read_int("RS_cockpit_mode", &cockpit_mode);
+  cockpit_mode = std::clamp(cockpit_mode, COCKPIT_MODE_LEGACY, COCKPIT_MODE_WIDESCREEN);
+  SetCockpitMode(cockpit_mode);
+
   Database->read_int("RS_fullscreen", &tempval);
   Game_fullscreen = tempval != 0;
 
@@ -1415,6 +1422,9 @@ void InitIOSystems(bool editor) {
   // Read in stuff from the registry
   INIT_MESSAGE(("Reading settings."));
   LoadGameSettings();
+
+  // Initialize the active cockpit implementation based on saved settings
+  CreateCockpit(GetCockpitMode());
 
   /*
    * Populate base directories. In result, we have the following list of directories (in priority order):

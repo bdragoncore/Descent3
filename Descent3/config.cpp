@@ -304,6 +304,7 @@
 #include "ctlconfig.h"
 #include "d3music.h"
 #include "gameloop.h"
+#include "cockpit_factory.h"
 #include "args.h"
 
 #include <SDL3/SDL.h>
@@ -772,6 +773,7 @@ struct video_menu {
   bool *vsync = nullptr;
   char *resolution_string = nullptr;
   short *fov = nullptr;
+  short *cockpit_mode = nullptr;
   bool resolution_changed = false;
 
   int *bitdepth = nullptr; // bitdepths
@@ -789,6 +791,12 @@ struct video_menu {
     sheet->AddLongButton("Change", IDV_CHANGE_RES_WINDOW);
 
     fullscreen = sheet->AddLongCheckBox("Fullscreen", Game_fullscreen);
+
+    // Cockpit mode: Legacy (4:3) or Widescreen (aspect-corrected)
+    sheet->NewGroup("Cockpit", 0, 50);
+    cockpit_mode = sheet->AddFirstRadioButton("Legacy");
+    sheet->AddRadioButton("Widescreen");
+    *cockpit_mode = (GetCockpitMode() == COCKPIT_MODE_WIDESCREEN) ? 1 : 0;
 
     // FOV setting 72deg -> 90deg
     tSliderSettings settings = {};
@@ -864,6 +872,13 @@ struct video_menu {
     Render_FOV_setting = static_cast<float>(fov[0]) + D3_DEFAULT_FOV;
     if (Render_FOV != Render_FOV_setting) {
       Render_FOV = Render_FOV_setting; // ISB: this may cause discontinuities if FOV is changed while zoomed.
+    }
+
+    // Cockpit mode: recreate the active cockpit if the mode changed.
+    // The cockpit is re-initialized on the next level load or ship change.
+    int new_cockpit_mode = (*cockpit_mode) ? COCKPIT_MODE_WIDESCREEN : COCKPIT_MODE_LEGACY;
+    if (new_cockpit_mode != GetCockpitMode()) {
+      CreateCockpit(new_cockpit_mode);
     }
 
     sheet = NULL;

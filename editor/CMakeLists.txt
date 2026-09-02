@@ -18,6 +18,7 @@ set(HEADERS
     ../descent3/buddymenu.h
     ../descent3/cinematics.h
     ../descent3/cockpit.h
+    ../descent3/cockpit_factory.h
     ../descent3/config.h
     ../descent3/ConfigItem.h
     ../descent3/controls.h
@@ -60,6 +61,7 @@ set(HEADERS
     ../descent3/Inventory.h
     ../descent3/levelgoal.h
     ../descent3/levelgoal_external.h
+    ../descent3/LegacyCockpit.h
     ../descent3/lighting.h
     ../descent3/lightmap_info.h
     ../descent3/list.h
@@ -138,6 +140,7 @@ set(HEADERS
     ../descent3/weapon.h
     ../descent3/weapon_external.h
     ../descent3/weather.h
+    ../descent3/WidescreenCockpit.h
     AddScriptDialog.h
     AISettingsDlg.h
     AmbientSoundElement.h
@@ -303,6 +306,7 @@ set(SOURCE
     ../descent3/buddymenu.cpp
     ../descent3/cinematics.cpp
     ../descent3/cockpit.cpp
+    ../descent3/cockpit_factory.cpp
     ../descent3/config.cpp
     ../descent3/ConfigItem.cpp
     ../descent3/Controls.cpp
@@ -345,6 +349,7 @@ set(SOURCE
     ../descent3/init.cpp
     ../descent3/Inventory.cpp
     ../descent3/levelgoal.cpp
+    ../descent3/LegacyCockpit.cpp
     ../descent3/lighting.cpp
     ../descent3/lightmap_info.cpp
     ../descent3/list.cpp
@@ -416,6 +421,7 @@ set(SOURCE
     ../descent3/weapon.cpp
     ../descent3/WeaponFire.cpp
     ../descent3/weather.cpp
+    ../descent3/WidescreenCockpit.cpp
     AddScriptDialog.cpp
     AISettingsDlg.cpp
     AmbientSoundElement.cpp
