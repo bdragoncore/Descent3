@@ -1090,7 +1090,10 @@ void PreInitD3Systems() {
   }
   iframelmtarg = FindArg("-framecap");
   if (iframelmtarg) {
-    Min_allowed_frametime = ((float)1.0 / (float)atoi(GameArgs[iframelmtarg + 1])) * 1000;
+    // BUGFIX #549: Prevent framecap from truncating to 0 for high FPS values.
+    // The old code stored a float result in an int, causing values like
+    // (1/10000)*1000=0.1 to truncate to 0, effectively disabling the cap.
+    Min_allowed_frametime = std::max(1, (int)(((float)1.0 / (float)atoi(GameArgs[iframelmtarg + 1])) * 1000 + 0.5f));
     LOG_INFO.printf("Using %d as a minimum frametime", Min_allowed_frametime);
   } else {
     // Default to a framecap of 60

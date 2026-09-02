@@ -42,6 +42,10 @@ void ResetWeather() {
 
 // Makes droplets appear on the windshield, plus makes rain fall in the distance
 void DoRainEffect() {
+  // BUGFIX (PiccuEngine #19): Guard against null Viewer_object.
+  if (!Viewer_object)
+    return;
+
   // See how many droplets to create on the windshield
   // This is dependant on how fast the player is moving forward
   int randval = 1 + ((1.0 - Weather.rain_intensity_scalar) * MAX_RAIN_INTENSITY);
@@ -166,6 +170,10 @@ void DoRainEffect() {
 
 // Creates snow for this frame
 void DoSnowEffect() {
+  // BUGFIX (PiccuEngine #19): Guard against null Viewer_object.
+  if (!Viewer_object)
+    return;
+
   if (OBJECT_OUTSIDE(Viewer_object)) {
     int num = 20 + (ps_rand() % 15);
 

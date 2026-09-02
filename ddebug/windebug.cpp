@@ -332,13 +332,22 @@ long WINAPI RecordExceptionInfo(PEXCEPTION_POINTERS data) {
   exceptInfo.ClientPointers = TRUE;
 
   if (MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile, MiniDumpNormal, &exceptInfo, nullptr, nullptr)) {
+    // BUGFIX #595: Close the file handle before showing the dialog to prevent
+    // ERROR_SHARING_VIOLATION (0x20) if the handler is re-entered during
+    // process termination. The old code left the handle open, and after the
+    // success dialog was dismissed, BeenHere was reset to false, allowing
+    // re-entry which then failed with "error code: 20".
+    CloseHandle(hDumpFile);
     OutrageMessageBox("Crash dump file written to: %s\nYou can attach it to a bug report.", dumFilePath.u8string().c_str());
   } else {
+    CloseHandle(hDumpFile);
     OutrageMessageBox("Could not write crash dump file, error code: %x", GetLastError());
     exit(1);
   }
 
-  BeenHere = false;
-
+  // BUGFIX #595: Do NOT reset BeenHere to false. After a successful crash dump,
+  // the process is about to terminate. Resetting this flag allows the handler
+  // to be re-entered if ExitProcess triggers another crash during cleanup,
+  // producing a confusing second "error code: 20" dialog.
   return Debug_break ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_EXECUTE_HANDLER;
 }

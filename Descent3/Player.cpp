@@ -1419,6 +1419,14 @@ void InitPlayerNewLevel(int slot) {
   Players[slot].keys = 0;
   Players[slot].num_deaths_level = 0;
 
+  // BUGFIX (PiccuEngine #15): Reset level-time-based sound counters
+  // across level changes. Without this, the homing missile warning
+  // and wall hit sounds wouldn't play until enough gametime elapsed
+  // after a level transition, since Gametime resets but these counters
+  // retained their old values.
+  Players[slot].last_homing_warning_sound_time = 0.0f;
+  Players[slot].last_hit_wall_sound_time = 0.0f;
+
   if (Game_mode & GM_MULTI)
     NetPlayers[slot].packet_time = 0;
 
@@ -1555,6 +1563,15 @@ void InitPlayerNewShip(int slot, int inven_reset) {
 
   ResetWeaponSelectStates(); // reset storage of current weapon class selected per slot.
   ResetReticle();
+
+  // BUGFIX (PiccuEngine #24): Reset FOV on a new ship.
+  // Holding the Mass Driver zoom during a level transition or respawn
+  // would leave Render_FOV stuck at the zoomed value, since the zoom
+  // state was never reset. Restore the desired FOV so the player
+  // doesn't spawn still zoomed in.
+  if (slot == Player_num) {
+    Render_FOV = Render_FOV_setting;
+  }
 
   // add his guidebot (if it is a guidebot game)
   // this is here in case DMFC calls this function (which would remove the guidebot)

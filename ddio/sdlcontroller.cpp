@@ -914,6 +914,7 @@ bool sdlgameController::enum_controllers() {
       m_ControlList[num_devs].normalizer[3] = (jc.maxr - jc.minr) / 2.0f;
       m_ControlList[num_devs].normalizer[4] = (jc.maxu - jc.minu) / 2.0f;
       m_ControlList[num_devs].normalizer[5] = (jc.maxv - jc.minv) / 2.0f;
+      m_ControlList[num_devs].axis_is_trigger = jc.trigger_axis_mask; // BUGFIX #496
 
       for (i = 0; i < CT_NUM_AXES; i++) {
         m_ControlList[num_devs].sens[i] = 1.0f;
@@ -1167,7 +1168,8 @@ float sdlgameController::get_axis_value(int8_t controller, uint8_t axis, ct_form
     Int3(); // NOT A VALID AXIS
   }
 
-  // create normalizer
+  //	create normalizer
+  int orig_axis = axis; // BUGFIX #496: save 1-based axis for trigger check
   axis--;
   if (ctldev->id == CTID_MOUSE) {
     if (m_frame_time < 0.005f)
@@ -1197,13 +1199,30 @@ float sdlgameController::get_axis_value(int8_t controller, uint8_t axis, ct_form
   val = std::clamp(val, 0.0f, 2.0f);
 
   // determine value based off requested format.
+  // BUGFIX #496: Remap trigger axes from bipolar [-1,1] to unipolar [0,1].
+  // Triggers (like Xbox LT/RT) report the full [-32768,32767] SDL range but
+  // represent a physical control that goes from 0 (released) to 1 (pressed).
+  bool is_trigger = (ctldev->axis_is_trigger & (1 << (orig_axis - 1))) != 0;
+
   if (format == ctDigital) {
-    if (val < 0.5f)
-      val = 0.0f;
-    else
-      val = 1.0f;
+    if (is_trigger) {
+      // For triggers, the normalized value is already in [0, 1] range
+      // before the format conversion (val is in [0, 2] after +1.0 shift)
+      // so we use a different threshold
+      val = (val > 1.05f) ? 1.0f : 0.0f;
+    } else {
+      if (val < 0.5f)
+        val = 0.0f;
+      else
+        val = 1.0f;
+    }
   } else if (format == ctAnalog) {
-    val = val - 1.0f;
+    if (is_trigger) {
+      // Remap [0, 2] => [0, 1] for triggers (released=0, pressed=1)
+      val = std::clamp(val / 2.0f, 0.0f, 1.0f);
+    } else {
+      val = val - 1.0f; // Remap [0, 2] => [-1, 1] for sticks
+    }
   } else {
     val = 0.0f;
     LOG_WARNING << "gameController::axis unsupported format for function.";

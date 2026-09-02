@@ -669,6 +669,9 @@
 #include "psrand.h"
 #include "polymodel.h"
 #include "init.h"
+#include "hlsoundlib.h"
+#include "objinfo.h"
+#include "demofile.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
 
@@ -1966,6 +1969,23 @@ void MultiCheckToRespawnPowerups() {
         MultiSendObject(&Objects[objnum], 1);
 
       InitObjectScripts(&Objects[objnum]);
+
+      // BUGFIX #586: Restart ambient sound for respawned powerups
+      // When a powerup respawns, its ambient/emissive looping sound was never
+      // re-created. This matches the sound startup pattern used by
+      // osipf_ObjCreate() (osiris_predefs.cpp) and matcen spawning (matcen.cpp),
+      // both of which play the ambient sound and send it to multiplayer clients.
+      if (objnum > -1 && IS_GENERIC(Objects[objnum].type)) {
+        int ambient_sound = Object_info[Powerup_timer[i].id].sounds[GSI_AMBIENT];
+        if (ambient_sound != SOUND_NONE_INDEX) {
+          Sound_system.Play3dSound(ambient_sound, SND_PRIORITY_LOWEST, &Objects[objnum]);
+          if (Game_mode & GM_MULTI)
+            MultiPlay3dSound(ambient_sound, objnum, SND_PRIORITY_LOW);
+          if (Demo_flags == DF_RECORDING)
+            DemoWrite3DSound(ambient_sound, objnum, SND_PRIORITY_LOW);
+        }
+      }
+
       Powerup_respawn[t].objnum = objnum;
 
       // Now erase this powerup from our timer info
