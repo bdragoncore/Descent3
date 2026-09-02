@@ -578,6 +578,7 @@
 #include "ship.h"
 #include "difficulty.h"
 #include "demofile.h"
+#include "ddio.h"
 #include "d3music.h"
 #include "osiris_dll.h"
 #include "D3ForceFeedback.h"

@@ -111,6 +111,9 @@ void mem_free_sub(void *p){free(p);}
 char *mem_strdup_sub(const char *s,const char*,int){return strdup(s);}
 
 // input stubs
+// Stub for the renderer's global window pointer referenced by ddio/lnxmouse.cpp.
+struct SDL_Window;
+SDL_Window *GSDLWindow = nullptr;
 int ddio_GetAdjKeyState(int){return 0;}
 void ddio_KeyFlush(){}
 int ddio_KeyInKey(){return 0;}
@@ -165,6 +168,8 @@ void grtext_SetColor(ddgr_color){}
 void grtext_SetAlpha(uint8_t){}
 void grtext_SetFont(int){}
 void grtext_Flush(){}
+void grtext_SetFontScale(float){}
+void grtext_SetFontScaleImmediate(float){}
 int grfont_GetHeight(int){return 12;}
 int grfont_KeyToAscii(int,int){return 'a';}
 }

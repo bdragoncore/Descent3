@@ -122,6 +122,13 @@ char *mem_strdup_sub(const char *s, const char *, int) { return strdup(s); }
 // ---------------------------------------------------------------------------
 // input stubs: dead keyboard/mouse
 // ---------------------------------------------------------------------------
+// Stub for the renderer's global window pointer referenced by ddio/lnxmouse.cpp.
+struct SDL_Window;
+SDL_Window *GSDLWindow = nullptr;
+// Globals referenced by real libgrtext (pulled in via ui linkage).
+#include "bitmap.h"
+bms_bitmap GameBitmaps[MAX_BITMAPS];
+bool Game_fullscreen = false;
 int ddio_GetAdjKeyState(int) { return 0; }
 void ddio_KeyFlush() {}
 int ddio_KeyInKey() { return 0; }
@@ -154,6 +161,7 @@ void ddio_MouseSetVCoords(int, int) {}
 void rend_ClearScreen(ddgr_color) { REC("clearscreen"); }
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) {}
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -168,6 +176,8 @@ void rend_SetOverlayType(uint8_t) {}
 void rend_SetTextureType(texture_type) {}
 void rend_SetWrapType(wrap_type) {}
 void rend_SetZBufferState(int8_t) {}
+void rend_SetFiltering(int8_t) {}
+void rend_SetSharpening(float) {}
 
 void StartFrame(bool) { REC("startframe"); }
 void StartFrame(int, int, int, int, bool, bool) { REC("startframe"); }
@@ -194,6 +204,9 @@ void grtext_SetColor(ddgr_color) {}
 void grtext_SetAlpha(uint8_t) {}
 void grtext_SetFont(int) {}
 void grtext_Flush() {}
+void grtext_Reset() {}
+void grtext_SetFontScale(float) {}
+void grtext_SetFontScaleImmediate(float) {}
 int grfont_GetHeight(int) { return 12; }
 int grfont_KeyToAscii(int, int) { return 'a'; }
 }

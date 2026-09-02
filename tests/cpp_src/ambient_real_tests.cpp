@@ -30,7 +30,6 @@
 #include <gtest/gtest.h>
 #include <cstring>
 #include <cstdio>
-#include <unistd.h>
 #include <vector>
 
 #include "ambient.h"

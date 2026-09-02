@@ -408,7 +408,7 @@ TEST(DdioFile, GetFileLength_MatchesWrittenBytes) {
     std::string data(123, 'x');
     f.write(data.data(), data.size());
   }
-  FILE *fp = fopen(tmp.c_str(), "rb");
+  FILE *fp = fopen(tmp.string().c_str(), "rb");
   ASSERT_NE(fp, nullptr);
   EXPECT_EQ(ddio_GetFileLength(fp), 123);
   fclose(fp);
@@ -432,7 +432,7 @@ TEST(DdioFile, GetFileLength_EmptyFile) {
   {
     std::ofstream f(tmp, std::ios::binary);
   }
-  FILE *fp = fopen(tmp.c_str(), "rb");
+  FILE *fp = fopen(tmp.string().c_str(), "rb");
   ASSERT_NE(fp, nullptr);
   EXPECT_EQ(ddio_GetFileLength(fp), 0);
   fclose(fp);
@@ -516,6 +516,6 @@ TEST(DdioFile, DeleteFile_RemovesFile) {
     f.write("x", 1);
   }
   ASSERT_TRUE(std::filesystem::exists(tmp));
-  EXPECT_EQ(ddio_DeleteFile(tmp.c_str()), 1);
+  EXPECT_EQ(ddio_DeleteFile(tmp.string().c_str()), 1);
   EXPECT_FALSE(std::filesystem::exists(tmp));
 }

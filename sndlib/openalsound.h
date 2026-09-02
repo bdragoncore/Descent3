@@ -25,8 +25,13 @@
 #define OPENALSOUND_H
 
 #include "ssl_lib.h"
+#ifdef __APPLE__
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
+#else
 #include <AL/al.h>
 #include <AL/alc.h>
+#endif
 
 #define OPENAL_MAX_SOURCES 256
 

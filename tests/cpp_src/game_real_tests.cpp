@@ -95,6 +95,7 @@ static Rec g_addhud, g_closehud, g_inithud, g_showprogress, g_error, g_loadgamed
 bool Dedicated_server = false;
 uint32_t Demo_flags = 0;
 bool Game_fullscreen = false;
+int GetCockpitMode() { return 0; } // COCKPIT_MODE_LEGACY stub (cockpit lib not linked)
 float Frametime = 0.1f;
 float Gametime = 0.0f;
 int Clear_screen = 0;

@@ -2619,6 +2619,7 @@ void newuiSlider::OnNotifySelect(UIGadget *g) {
 //	CLASS a new listbox. uses less memory than the old listbox hopefully.
 
 newuiListBox::newuiListBox() {
+  m_Flags = 0; // BUGFIX: initialize parent's m_Flags to avoid UB from uninitialized reads
   m_ItemList = NULL;
   m_Virt2Real = NULL;
   m_Real2Virt = NULL;
@@ -3935,6 +3936,11 @@ void newuiEditBox::OnDraw() {
     m_title->draw(0, 0);
   }
 
+  // BUGFIX: Windows wingdi.h defines DrawText as a macro (DrawTextA/DrawTextW)
+  // which collides with the UIEdit::DrawText() member function.
+#ifdef DrawText
+#undef DrawText
+#endif
   DrawText();
 }
 

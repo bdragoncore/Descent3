@@ -156,6 +156,7 @@ void ddio_ff_GetInfo(bool *found, bool *) {
 void rend_ClearScreen(ddgr_color) {}
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) { REC("drawpoly2d"); }
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -175,6 +176,13 @@ int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferred
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
 renderer_preferred_state Render_preferred_state{};
+// Stubs for cockpit factory (config.cpp calls these; real impl pulls in
+// LegacyCockpit/WidescreenCockpit which need the full renderer chain).
+class ICockpit;
+static int s_cockpit_mode = 0;
+void SetCockpitMode(int mode) { s_cockpit_mode = mode; }
+int GetCockpitMode() { return s_cockpit_mode; }
+ICockpit *CreateCockpit(int) { return nullptr; }
 
 void StartFrame(bool) {}
 void StartFrame(int, int, int, int, bool, bool) {}
@@ -201,6 +209,8 @@ void grtext_SetColor(ddgr_color) {}
 void grtext_SetAlpha(uint8_t) {}
 void grtext_SetFont(int) {}
 void grtext_Flush() {}
+void grtext_SetFontScale(float) {}
+void grtext_SetFontScaleImmediate(float) {}
 int grfont_GetHeight(int) { return 12; }
 int grfont_KeyToAscii(int, int) { return 'a'; }
 }
