@@ -655,6 +655,7 @@
 #include "ObjScript.h"
 #include "marker.h"
 #include "findintersection.h"
+#include "sounds.h"
 #include "weapon.h"
 #include "weather.h"
 #include "doorway.h"

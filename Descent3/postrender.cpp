@@ -99,10 +99,10 @@ static int Viewer_roomnum;
 void ResetPostrenderList() { Num_postrenders = 0; }
 
 // Compare function for room face sort
-static int Postrender_sort_func(const postrender_struct *a, const postrender_struct *b) {
-  if (a->z < b->z)
+static int Postrender_sort_func(const postrender_struct &a, const postrender_struct &b) {
+  if (a.z < b.z)
     return -1;
-  else if (a->z > b->z)
+  else if (a.z > b.z)
     return 1;
   else
     return 0;

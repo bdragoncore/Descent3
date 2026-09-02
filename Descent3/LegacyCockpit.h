@@ -24,9 +24,37 @@
 #define LEGACYCOCKPIT_H
 
 #include "ICockpit.h"
+#include "polymodel.h"
 
-struct tCockpitInfo;
-struct tCockpitCfgInfo;
+#define LC_NUM_SHIELD_GAUGE_FRAMES 5
+
+struct tCockpitCfgInfo {
+  char modelname[PSFILENAME_LEN + 1];
+  char shieldrings[LC_NUM_SHIELD_GAUGE_FRAMES][PSFILENAME_LEN + 1];
+  char shipimg[PSFILENAME_LEN + 1];
+  char burnimg[PSFILENAME_LEN + 1];
+  char energyimg[PSFILENAME_LEN + 1];
+  char invpulseimg[PSFILENAME_LEN + 1];
+};
+
+struct tCockpitInfo {
+  int state;
+  int ship_index;
+  int model_num;
+  int snd_open, snd_close;
+  float frame_time;
+  float next_keyframe, this_keyframe;
+  poly_model *model;
+  unsigned nonlayered_mask;
+  unsigned layered_mask;
+  bool animating;
+  bool resized;
+  vector buffet_vec;
+  float buffet_amp;
+  float buffet_wave;
+  float buffet_time;
+  matrix orient;
+};
 
 class LegacyCockpit : public ICockpit {
 public:
