@@ -281,10 +281,12 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
   if (!window_) {
+    // BUGFIX #685: In SDL3, SDL_CreateWindowWithProperties uses logical
+    // coordinates and the display content scale is applied automatically
+    // by the windowing system. Multiplying manually creates a window that
+    // is 'scale' times too large in logical coordinates on HiDPI displays.
     float scale = SDL_GetDisplayContentScale(Display_id);
     LOG_WARNING.printf("Using content scale %f", scale);
-    winw = std::floor(static_cast<float>(winw) * scale);
-    winh = std::floor(static_cast<float>(winh) * scale);
 
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Descent 3");

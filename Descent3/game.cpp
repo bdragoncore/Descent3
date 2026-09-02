@@ -941,8 +941,15 @@ void SetScreenMode(int sm, bool force_res_change) {
       scr_height = Video_res_list[Current_video_resolution_id].height;
       scr_bitdepth = Render_preferred_bitdepth;
     } else {
-      scr_width = FIXED_SCREEN_WIDTH;
-      scr_height = FIXED_SCREEN_HEIGHT;
+      // BUGFIX #685: Use the user-selected resolution for non-game screen modes
+      // instead of hardcoded 640x480. Previously, menu/UI modes always rendered
+      // at FIXED_SCREEN_WIDTH x FIXED_SCREEN_HEIGHT regardless of the resolution
+      // selected in the Video Menu. This caused the menu to render into a 640x480
+      // framebuffer that was then scaled up by PresentFrame to fit the larger SDL
+      // window, resulting in the content appearing smaller than the selected
+      // resolution with black bars on widescreen displays.
+      scr_width = Video_res_list[Current_video_resolution_id].width;
+      scr_height = Video_res_list[Current_video_resolution_id].height;
       scr_bitdepth = 32;
     }
 
