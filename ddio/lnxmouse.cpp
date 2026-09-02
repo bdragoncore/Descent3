@@ -226,27 +226,28 @@ bool sdlMouseButtonDownFilter(SDL_Event const *event) {
     //		mprintf(0, "MOUSE Button 2: Down\n");
   }
 
-  // buttons 4 and 5 are reserved for the mouse wheel...that's how the engine works...adjust in here.
+  // BUGFIX (PiccuEngine #8): Remap SDL side buttons to MOUSE_B4/MOUSE_B5
+  // (engine buttons 3/4) instead of MOUSE_B6/MOUSE_B7. This separates
+  // side buttons from the scroll wheel, fixing the conflict where both
+  // SDL button 4 and scroll-down wrote to the same engine button slot.
 
   else if (ev->button == 4) {
-    DDIO_mouse_state.btn_mask |= MOUSE_B6;
-    DIM_buttons.down_count[5]++;
-    DIM_buttons.time_down[5] = timer_GetTime();
-    DIM_buttons.is_down[5] = true;
-    mevt.btn = 5;
+    DDIO_mouse_state.btn_mask |= MOUSE_B4;
+    DIM_buttons.down_count[3]++;
+    DIM_buttons.time_down[3] = timer_GetTime();
+    DIM_buttons.is_down[3] = true;
+    mevt.btn = 3;
     mevt.state = true;
     MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Button 5: Down\n");
   }
   else if (ev->button == 5) {
-    DDIO_mouse_state.btn_mask |= MOUSE_B7;
-    DIM_buttons.down_count[6]++;
-    DIM_buttons.time_down[6] = timer_GetTime();
-    DIM_buttons.is_down[6] = true;
-    mevt.btn = 6;
+    DDIO_mouse_state.btn_mask |= MOUSE_B5;
+    DIM_buttons.down_count[4]++;
+    DIM_buttons.time_down[4] = timer_GetTime();
+    DIM_buttons.is_down[4] = true;
+    mevt.btn = 4;
     mevt.state = true;
     MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Button 6: Down\n");
   }
   else if (ev->button == 6) {
     DDIO_mouse_state.btn_mask |= MOUSE_B8;
@@ -300,27 +301,26 @@ bool sdlMouseButtonUpFilter(SDL_Event const *event) {
 
   }
 
-  // buttons 4 and 5 are reserved for the mouse wheel...that's how the engine works...adjust in here.
+  // BUGFIX (PiccuEngine #8): Remap SDL side buttons to MOUSE_B4/MOUSE_B5
+  // (engine buttons 3/4) to match the button-down mapping.
 
   else if (ev->button == 4) {
-    DDIO_mouse_state.btn_mask &= (~MOUSE_B6);
-    DIM_buttons.up_count[5]++;
-    DIM_buttons.is_down[5] = false;
-    DIM_buttons.time_up[5] = timer_GetTime();
-    mevt.btn = 5;
+    DDIO_mouse_state.btn_mask &= (~MOUSE_B4);
+    DIM_buttons.up_count[3]++;
+    DIM_buttons.is_down[3] = false;
+    DIM_buttons.time_up[3] = timer_GetTime();
+    mevt.btn = 3;
     mevt.state = false;
     MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Button 5: Up\n");
   }
   else if (ev->button == 5) {
-    DDIO_mouse_state.btn_mask &= (~MOUSE_B7);
-    DIM_buttons.up_count[6]++;
-    DIM_buttons.is_down[6] = false;
-    DIM_buttons.time_up[6] = timer_GetTime();
-    mevt.btn = 6;
+    DDIO_mouse_state.btn_mask &= (~MOUSE_B5);
+    DIM_buttons.up_count[4]++;
+    DIM_buttons.is_down[4] = false;
+    DIM_buttons.time_up[4] = timer_GetTime();
+    mevt.btn = 4;
     mevt.state = false;
     MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Button 6: Up\n");
   }
   else if (ev->button == 6) {
     DDIO_mouse_state.btn_mask &= (~MOUSE_B8);
@@ -342,29 +342,11 @@ bool sdlMouseWheelFilter(SDL_Event const *event) {
   const SDL_MouseWheelEvent *ev = &event->wheel;
   t_mse_event mevt;
 
-  // !!! FIXME: this ignores horizontal wheels for now, since Descent3 doesn't currently have a concept of them
-  // !!! FIXME: (vertical mouse wheels are represented as mouse buttons 4 and 5, incorrectly, on all platforms).
-  // !!! FIXME: this will require improvements to the engine before this changes here, though.
+  // BUGFIX (PiccuEngine #8): Remap scroll wheel to MOUSE_B6/MOUSE_B7
+  // (engine buttons 5/6) to avoid conflict with side buttons which now
+  // use MOUSE_B4/MOUSE_B5. Each input source gets its own button slots.
 
   if (ev->y > 0) { /* Mouse scroll up */
-    DDIO_mouse_state.btn_mask |= MOUSE_B5;
-    DIM_buttons.down_count[4]++;
-    DIM_buttons.time_down[4] = timer_GetTime();
-    DIM_buttons.is_down[4] = true;
-    mevt.btn = 4;
-    mevt.state = true;
-    MB_queue.send(mevt);
-
-    // send an immediate release event, as if the "button" was clicked. !!! FIXME: this also needs improvements in the engine.
-    // don't remove from btn_mask
-    DIM_buttons.up_count[4]++;
-    DIM_buttons.is_down[4] = false;
-    DIM_buttons.time_up[4] = timer_GetTime();
-    mevt.btn = 4;
-    mevt.state = false;
-    MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Scrollwheel: Rolled Up\n");
-  } else if (ev->y < 0) { /* Mouse scroll down */
     DDIO_mouse_state.btn_mask |= MOUSE_B6;
     DIM_buttons.down_count[5]++;
     DIM_buttons.time_down[5] = timer_GetTime();
@@ -373,15 +355,29 @@ bool sdlMouseWheelFilter(SDL_Event const *event) {
     mevt.state = true;
     MB_queue.send(mevt);
 
-    // send an immediate release event, as if the "button" was clicked. !!! FIXME: this also needs improvements in the engine.
-    // don't remove from btn_mask
+    // send an immediate release event, as if the "button" was clicked.
     DIM_buttons.up_count[5]++;
     DIM_buttons.is_down[5] = false;
     DIM_buttons.time_up[5] = timer_GetTime();
     mevt.btn = 5;
     mevt.state = false;
     MB_queue.send(mevt);
-    //		mprintf(0, "MOUSE Scrollwheel: Rolled Down\n");
+  } else if (ev->y < 0) { /* Mouse scroll down */
+    DDIO_mouse_state.btn_mask |= MOUSE_B7;
+    DIM_buttons.down_count[6]++;
+    DIM_buttons.time_down[6] = timer_GetTime();
+    DIM_buttons.is_down[6] = true;
+    mevt.btn = 6;
+    mevt.state = true;
+    MB_queue.send(mevt);
+
+    // send an immediate release event, as if the "button" was clicked.
+    DIM_buttons.up_count[6]++;
+    DIM_buttons.is_down[6] = false;
+    DIM_buttons.time_up[6] = timer_GetTime();
+    mevt.btn = 6;
+    mevt.state = false;
+    MB_queue.send(mevt);
   }
 
   return false;
@@ -444,8 +440,12 @@ int ddio_MouseGetState(int *x, int *y, int *dx, int *dy, int *z, int *dz) {
   DDIO_mouse_state.dx = 0.0f;
   DDIO_mouse_state.dy = 0.0f;
 
-  // unset the mouse wheel "button" once it's been retrieved.
-  DDIO_mouse_state.btn_mask &= ~(MOUSE_B5|MOUSE_B6);
+  // BUGFIX (PiccuEngine #8): Only clear scroll wheel bits (MOUSE_B6/MOUSE_B7),
+  // not side button bits. Side buttons (MOUSE_B4/MOUSE_B5) should persist
+  // across reads like regular buttons. Previously, MOUSE_B6 was shared
+  // between side buttons and scroll-down, so clearing it also killed
+  // side button state.
+  DDIO_mouse_state.btn_mask &= ~(MOUSE_B6|MOUSE_B7);
 
   return btn_mask;
 }
@@ -513,9 +513,9 @@ char Ctltext_MseBtnBindings[N_MSEBTNS][32] = {"mse-1\0\0\0\0\0\0\0\0\0\0\0\0",
                                               "mse-2\0\0\0\0\0\0\0\0\0\0\0\0",
                                               "mse-3\0\0\0\0\0\0\0\0\0\0\0\0",
                                               "mse-4\0\0\0\0\0\0\0\0\0\0\0",
+                                              "mse-5\0\0\0\0\0\0\0\0\0\0\0",
                                               "msew-u\0\0\0\0\0\0\0\0\0\0\0",
                                               "msew-d\0\0\0\0\0\0\0\0\0\0\0",
-                                              "",
                                               ""};
 
 char Ctltext_MseAxisBindings[][32] = {"mse-X\0\0\0\0\0\0\0\0\0\0\0\0", "mse-Y\0\0\0\0\0\0\0\0\0\0\0\0",

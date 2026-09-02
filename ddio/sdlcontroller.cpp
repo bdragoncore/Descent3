@@ -94,7 +94,6 @@ void sdlgameController::resume() {
 }
 
 #define CONTROLLER_POLLING_TIME 50
-#define MOUSE_POLLING_TIME (1.0f / 20.0f)
 
 //	this functions polls the controllers if needed.  some systems may not need to implement
 //	this function.
@@ -117,18 +116,11 @@ void sdlgameController::poll() {
   m_frame_timer_ms = cur_frame_timer_ms;
   g_accum_frame_time += m_frame_time;
 
-  if (g_accum_frame_time >= MOUSE_POLLING_TIME) {
-    g_accum_frame_time = 0.0f;
-  }
-
   for (int ctl = 0; ctl < m_NumControls; ctl++) {
     if (m_ControlList[ctl].id >= CTID_EXTCONTROL0) {
       extctl_getpos(m_ControlList[ctl].id);
     } else if (m_ControlList[ctl].id == CTID_MOUSE) {
-      //	if ((cur_frame_timer_ms - g_last_frame_timer_ms) > CONTROLLER_POLLING_TIME) {
       mouse_geteval();
-      //		g_last_frame_timer_ms = cur_frame_timer_ms;
-      //	}
     }
   }
 }
@@ -836,8 +828,10 @@ void sdlgameController::mouse_geteval() {
     return;
   }
 
-  if (std::abs(g_accum_frame_time) > SDL_FLT_EPSILON)
-    return;
+  // BUGFIX (PiccuEngine #8): Removed 20Hz mouse polling rate limit.
+  // The original code gated mouse_geteval() behind a 50ms accumulator,
+  // limiting mouse input to 20Hz regardless of mouse native rate.
+  // Now polls at the system's native rate for smoother input.
 
   btnmask = (unsigned)ddio_MouseGetState(&x, &y, &dx, &dy);
 
@@ -914,6 +908,7 @@ bool sdlgameController::enum_controllers() {
       m_ControlList[num_devs].normalizer[3] = (jc.maxr - jc.minr) / 2.0f;
       m_ControlList[num_devs].normalizer[4] = (jc.maxu - jc.minu) / 2.0f;
       m_ControlList[num_devs].normalizer[5] = (jc.maxv - jc.minv) / 2.0f;
+      m_ControlList[num_devs].axis_is_trigger = jc.trigger_axis_mask; // BUGFIX #496
 
       for (i = 0; i < CT_NUM_AXES; i++) {
         m_ControlList[num_devs].sens[i] = 1.0f;
@@ -1167,7 +1162,8 @@ float sdlgameController::get_axis_value(int8_t controller, uint8_t axis, ct_form
     Int3(); // NOT A VALID AXIS
   }
 
-  // create normalizer
+  //	create normalizer
+  int orig_axis = axis; // BUGFIX #496: save 1-based axis for trigger check
   axis--;
   if (ctldev->id == CTID_MOUSE) {
     if (m_frame_time < 0.005f)
@@ -1197,13 +1193,30 @@ float sdlgameController::get_axis_value(int8_t controller, uint8_t axis, ct_form
   val = std::clamp(val, 0.0f, 2.0f);
 
   // determine value based off requested format.
+  // BUGFIX #496: Remap trigger axes from bipolar [-1,1] to unipolar [0,1].
+  // Triggers (like Xbox LT/RT) report the full [-32768,32767] SDL range but
+  // represent a physical control that goes from 0 (released) to 1 (pressed).
+  bool is_trigger = (ctldev->axis_is_trigger & (1 << (orig_axis - 1))) != 0;
+
   if (format == ctDigital) {
-    if (val < 0.5f)
-      val = 0.0f;
-    else
-      val = 1.0f;
+    if (is_trigger) {
+      // For triggers, the normalized value is already in [0, 1] range
+      // before the format conversion (val is in [0, 2] after +1.0 shift)
+      // so we use a different threshold
+      val = (val > 1.05f) ? 1.0f : 0.0f;
+    } else {
+      if (val < 0.5f)
+        val = 0.0f;
+      else
+        val = 1.0f;
+    }
   } else if (format == ctAnalog) {
-    val = val - 1.0f;
+    if (is_trigger) {
+      // Remap [0, 2] => [0, 1] for triggers (released=0, pressed=1)
+      val = std::clamp(val / 2.0f, 0.0f, 1.0f);
+    } else {
+      val = val - 1.0f; // Remap [0, 2] => [-1, 1] for sticks
+    }
   } else {
     val = 0.0f;
     LOG_WARNING << "gameController::axis unsupported format for function.";
