@@ -28,15 +28,16 @@ via SDL3 automatic scaling.
 - Automatic FOV expansion for widescreen monitors (prevents fish-eye)
 
 **PiccuEngine feature:** Listed in v1.0 features
-**Our status:** Not implemented. Our renderer uses fixed FOV.
+**Our status:** FOV slider already exists in video settings (72-90 deg),
+persisted via Database. Projection matrix already handles aspect ratio.
 
 ### 3. Widescreen Cockpit Support
 - Cockpit HUD elements properly render in widescreen resolutions
 - Unlike InjectD3, the cockpit actually works correctly
 
 **PiccuEngine feature:** Listed in v1.0 features
-**Our status:** Not implemented. Cockpit may have placement issues
-at non-4:3 resolutions.
+**Our status:** Not implemented. Cockpit positioning uses hardcoded
+values and requires deep changes to the cockpit rendering pipeline.
 
 ### 4. MSAA Support
 - Multi-Sample Anti-Aliasing support in the renderer
@@ -50,7 +51,8 @@ enables multisampling via SDL3 OpenGL attributes.
 - Core profile can improve performance on newer GPUs
 
 **PiccuEngine commit:** `0206047`, v1.2.1 release
-**Our status:** Not implemented. We use GL 3.2 Core by default.
+**Our status:** Not applicable. We already use GL 3.2 Core exclusively.
+PiccuEngine needed this because they maintained two renderer backends.
 
 ### 6. Gamma Correction via Shaders
 - Proper gamma correction using GPU shaders
@@ -193,7 +195,8 @@ HUD text scaling.
 - Message reminds player to unload ship modifications
 
 **PiccuEngine commit:** `646c0fb`
-**Our status:** Not implemented. Requires UI/messaging changes.
+**Our status:** Implemented. Added reminder text to the level mismatch
+error message in multiplayer.
 
 ### 24. Mass Driver Zoom Fix
 - MD zoom no longer sticks across new ships/levels
