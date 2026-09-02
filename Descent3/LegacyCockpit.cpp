@@ -44,34 +44,6 @@
 #define BUFFET_PERIOD 0.25f
 #define COCKPIT_SHIFT_DELTA 0.02f
 
-struct tCockpitCfgInfo {
-  char modelname[PSFILENAME_LEN + 1];
-  char shieldrings[NUM_SHIELD_GAUGE_FRAMES][PSFILENAME_LEN + 1];
-  char shipimg[PSFILENAME_LEN + 1];
-  char burnimg[PSFILENAME_LEN + 1];
-  char energyimg[PSFILENAME_LEN + 1];
-  char invpulseimg[PSFILENAME_LEN + 1];
-};
-
-struct tCockpitInfo {
-  int state;
-  int ship_index;
-  int model_num;
-  int snd_open, snd_close;
-  float frame_time;
-  float next_keyframe, this_keyframe;
-  poly_model *model;
-  unsigned nonlayered_mask;
-  unsigned layered_mask;
-  bool animating;
-  bool resized;
-  vector buffet_vec;
-  float buffet_amp;
-  float buffet_wave;
-  float buffet_time;
-  matrix orient;
-};
-
 LegacyCockpit::LegacyCockpit() { memset(&m_info, 0, sizeof(tCockpitInfo)); }
 
 LegacyCockpit::~LegacyCockpit() { Free(); }
@@ -82,7 +54,7 @@ void LegacyCockpit::Init(int ship_index) {
   int i;
   LOG_INFO << "Initializing cockpit.";
   LoadCockpitInfo(Ships[ship_index].cockpit_name, &cfginfo);
-  for (i = 0; i < NUM_SHIELD_GAUGE_FRAMES; i++) {
+  for (i = 0; i < LC_NUM_SHIELD_GAUGE_FRAMES; i++) {
     if (cfginfo.shieldrings[i][0])
       HUD_resources.shield_bmp[i] = bm_AllocLoadFileBitmap(IGNORE_TABLE(cfginfo.shieldrings[i]), 0);
   }
@@ -136,7 +108,7 @@ void LegacyCockpit::Free() {
   bm_FreeBitmap(HUD_resources.invpulse_bmp);
   bm_FreeBitmap(HUD_resources.afterburn_bmp);
   bm_FreeBitmap(HUD_resources.energy_bmp);
-  for (i = 0; i < NUM_SHIELD_GAUGE_FRAMES; i++)
+  for (i = 0; i < LC_NUM_SHIELD_GAUGE_FRAMES; i++)
     bm_FreeBitmap(HUD_resources.shield_bmp[i]);
   bm_FreeBitmap(HUD_resources.ship_bmp);
 }
@@ -151,7 +123,7 @@ bool LegacyCockpit::CockpitFileParse(const char *command, const char *operand, v
   } else if (!strncmp(command, "shieldimg", strlen("shieldimg"))) {
     char buf[16];
     int i;
-    for (i = 0; i < NUM_SHIELD_GAUGE_FRAMES; i++) {
+    for (i = 0; i < LC_NUM_SHIELD_GAUGE_FRAMES; i++) {
       snprintf(buf, sizeof(buf), "shieldimg%d", i);
       if (!stricmp(command, buf)) {
         if (cfginf)
@@ -183,7 +155,7 @@ bool LegacyCockpit::CockpitFileParse(const char *command, const char *operand, v
 void LegacyCockpit::LoadCockpitInfo(const char *ckt_file, tCockpitCfgInfo *cfginfo) {
   if (cfginfo) {
     memset(cfginfo, 0, sizeof(tCockpitCfgInfo));
-    ASSERT(NUM_SHIELD_GAUGE_FRAMES == 5);
+    ASSERT(LC_NUM_SHIELD_GAUGE_FRAMES == 5);
     strcpy(cfginfo->shieldrings[0], TBL_GAMEFILE("shieldring01.ogf"));
     strcpy(cfginfo->shieldrings[1], TBL_GAMEFILE("shieldring02.ogf"));
     strcpy(cfginfo->shieldrings[2], TBL_GAMEFILE("shieldring03.ogf"));

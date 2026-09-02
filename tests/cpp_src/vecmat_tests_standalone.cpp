@@ -129,7 +129,7 @@ void vm_MatrixMul(matrix* result, const matrix* a, const matrix* b) {
 }
 
 void vm_MakeIdentity(matrix* m) {
-    *m = (matrix)IDENTITY_MATRIX;
+    *m = IDENTITY_MATRIX;
 }
 
 void vm_TransposeMatrix(matrix* m) {

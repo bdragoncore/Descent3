@@ -815,8 +815,8 @@ TEST_F(VextTest, VectorNegate_Double) {
  */
 TEST_F(VextTest, MatrixAdd) {
     matrix a, b, c;
-    a.rvec = (vector){1,0,0}; a.uvec = (vector){0,1,0}; a.fvec = (vector){0,0,1};
-    b.rvec = (vector){2,0,0}; b.uvec = (vector){0,2,0}; b.fvec = (vector){0,0,2};
+    a.rvec = vector{1,0,0}; a.uvec = vector{0,1,0}; a.fvec = vector{0,0,1};
+    b.rvec = vector{2,0,0}; b.uvec = vector{0,2,0}; b.fvec = vector{0,0,2};
     c = a + b;
     
     EXPECT_FLOAT_EQ(c.rvec.x, 3.0f);

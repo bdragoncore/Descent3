@@ -773,7 +773,7 @@ struct video_menu {
   bool *vsync = nullptr;
   char *resolution_string = nullptr;
   short *fov = nullptr;
-  short *cockpit_mode = nullptr;
+  int *cockpit_mode = nullptr;
   bool resolution_changed = false;
 
   int *bitdepth = nullptr; // bitdepths

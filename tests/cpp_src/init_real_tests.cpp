@@ -174,6 +174,13 @@ renderer_preferred_state Render_preferred_state;
 int Render_preferred_bitdepth = 16;
 float Render_FOV_setting = D3_DEFAULT_FOV;
 float Render_FOV = D3_DEFAULT_FOV;
+// Stubs for cockpit factory (init.cpp calls these; real impl pulls in
+// LegacyCockpit/WidescreenCockpit which need the full renderer chain).
+class ICockpit;
+static int s_cockpit_mode = 0;
+void SetCockpitMode(int mode) { s_cockpit_mode = mode; }
+int GetCockpitMode() { return s_cockpit_mode; }
+ICockpit *CreateCockpit(int) { return nullptr; }
 int Game_window_x = 0, Game_window_y = 0, Game_window_w = 640, Game_window_h = 480;
 int Game_mode = 0;
 bool Game_paused = false;

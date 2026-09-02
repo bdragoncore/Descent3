@@ -27,6 +27,7 @@
 #include "room.h"
 #include "3d.h"
 #include "log.h"
+#include "gauges.h"
 
 extern float GetTerrainDynamicScalar(vector *pos, int seg);
 extern void GetRoomDynamicScalar(vector *pos, room *rp, float *r, float *g, float *b);

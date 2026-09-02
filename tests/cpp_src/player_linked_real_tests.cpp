@@ -90,6 +90,8 @@ float Gametime = 0;
 int Game_mode = 0;
 tGameState Game_state;
 tGameToggles Game_toggles;
+// player_linked_real_tests.cpp — stub for player-linked test harness
+float Render_FOV_setting = 72.0f;
 float Render_FOV = 0;
 float Render_zoom = 0;
 int Difficulty_level = 0;
