@@ -205,7 +205,7 @@ static bool joy_InitStick(tJoystick joy, char *server_adr) {
                             JOYFLAG_RVALID, JOYFLAG_UVALID, JOYFLAG_VVALID};
     for (int a = 0; a < axes && a < 6; a++) {
       int16_t initialVal = 0;
-      if (SDL_JoystickGetAxisInitialState(stick, a, &initialVal)) {
+      if (SDL_GetJoystickAxisInitialState(stick, a, &initialVal)) {
         if (initialVal < -32768 * 0.75) {
           caps.trigger_axis_mask |= axis_flags[a];
         }

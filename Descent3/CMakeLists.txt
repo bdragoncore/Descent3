@@ -36,6 +36,7 @@ set(HEADERS
   buddymenu.h
   cinematics.h
   cockpit.h
+  cockpit_factory.h
   config.h
   controls.h
   credits.h
@@ -71,9 +72,11 @@ set(HEADERS
   help.h
   hotspotmap.h
   hud.h
+  ICockpit.h
   init.h
   levelgoal.h
   levelgoal_external.h
+  LegacyCockpit.h
   lighting.h
   lightmap_info.h
   list.h
@@ -139,7 +142,8 @@ set(HEADERS
   voice.h
   weapon.h
   weapon_external.h
-  weather.h)
+  weather.h
+  WidescreenCockpit.h)
 
 set(CPPS
   aiambient.cpp
@@ -159,6 +163,7 @@ set(CPPS
   buddymenu.cpp
   cinematics.cpp
   cockpit.cpp
+  cockpit_factory.cpp
   config.cpp
   ConfigItem.cpp
   Controls.cpp
@@ -201,6 +206,7 @@ set(CPPS
   init.cpp
   Inventory.cpp
   levelgoal.cpp
+  LegacyCockpit.cpp
   lighting.cpp
   lightmap_info.cpp
   list.cpp
@@ -272,6 +278,7 @@ set(CPPS
   weapon.cpp
   WeaponFire.cpp
   weather.cpp
+  WidescreenCockpit.cpp
   sdlmain.cpp)
 
 if(WIN32)

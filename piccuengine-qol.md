@@ -89,7 +89,10 @@ fixed ddio_MouseGetState to not clear side button bits.
 - Toggle doppler and reverb from sound menu
 
 **PiccuEngine v1.0/v1.2 features**
-**Our status:** We use SDL audio. OpenAL would be a larger change.
+**Our status:** Implemented. Added an optional OpenAL Soft backend (`sndlib/openalsound.h/cpp`)
+alongside the existing SDL/software mixer. Selected via `SOUND_MIXER_OPENAL` in the sound
+config menu. Uses OpenAL sources for mixing, 3D spatialization, distance attenuation, and
+EFX reverb. Backend chosen in `hlsSystem::InitSoundLib()` based on mixer type.
 
 ### 10. Sound Channel Improvements
 - New scoring algorithm for bumping sounds (prioritizes closer sounds)
