@@ -890,6 +890,23 @@ static inline bool is_weapon_available(unsigned player_weapon_flags, int new_wea
   return ((player_weapon_flags & HAS_FLAG(new_weapon)) && ammo > 0) ? true : false;
 }
 
+// BUGFIX (PiccuEngine #11): Check ammo/energy availability for primary weapons.
+// The original code only checked ownership (weapon_flags) for primaries, allowing
+// selection of weapons with 0 energy/ammo. This helper checks both ownership and
+// resource availability using the ship's weapon info.
+static inline bool is_primary_weapon_usable(player *plr, unsigned player_weapon_flags, int weapon_index) {
+  if (!(player_weapon_flags & HAS_FLAG(weapon_index)))
+    return false;
+  ship *ship = &Ships[plr->ship_index];
+  otype_wb_info *wb = &ship->static_wb[weapon_index];
+  if (wb->ammo_usage > 0) {
+    return plr->weapon_ammo[weapon_index] > 0;
+  } else if (wb->energy_usage > 0.0f) {
+    return plr->energy >= wb->energy_usage;
+  }
+  return true; // weapons with no ammo/energy cost are always available
+}
+
 // used for sequencing
 void ResetWeaponSelectStates(uint16_t new_state) { Weapon_slot_mask = new_state; }
 
@@ -926,7 +943,8 @@ void SelectPrimaryWeapon(int slot) {
   if (oldslot == slot) {
     uint16_t nw_low = (plr->weapon[PW_PRIMARY].index + NUM_PRIMARY_SLOTS) % MAX_PRIMARY_WEAPONS;
 
-    if (is_weapon_available(avail_flags, nw_low)) {
+    // BUGFIX (PiccuEngine #11): Check ammo/energy availability, not just ownership.
+    if (is_primary_weapon_usable(plr, avail_flags, nw_low)) {
       // toggle class of weapon in specified slot (save for selection)
       SetPrimaryWeapon(nw_low, slot);
     } else {
@@ -949,11 +967,12 @@ void SelectPrimaryWeapon(int slot) {
 
     if (Weapon_slot_mask & (1 << slot)) {
       // we think we have a higher class of weapon.
-      if (is_weapon_available(avail_flags, nw_high)) {
+      // BUGFIX (PiccuEngine #11): Check ammo/energy availability, not just ownership.
+      if (is_primary_weapon_usable(plr, avail_flags, nw_high)) {
         // if this slot had the higher class of weapon then check if we still have the higher class weapon.
         // toggle class of weapon in specified slot (save for selection)
         SetPrimaryWeapon(nw_high, slot);
-      } else if (is_weapon_available(avail_flags, nw_low)) {
+      } else if (is_primary_weapon_usable(plr, avail_flags, nw_low)) {
         // check if we have the lower class.
         // toggle class of weapon in specified slot (save for selection)
         SetPrimaryWeapon(nw_low, slot);
@@ -970,11 +989,12 @@ void SelectPrimaryWeapon(int slot) {
       }
     } else {
       //	if this is a lower class of weapon, make sure this slot is flagged as having the lower version
-      if (is_weapon_available(avail_flags, nw_low)) {
+      // BUGFIX (PiccuEngine #11): Check ammo/energy availability, not just ownership.
+      if (is_primary_weapon_usable(plr, avail_flags, nw_low)) {
         // if this slot had the higher class of weapon then check if we still have the higher class weapon.
         // toggle class of weapon in specified slot (save for selection)
         SetPrimaryWeapon(nw_low, slot);
-      } else if (is_weapon_available(avail_flags, nw_high)) {
+      } else if (is_primary_weapon_usable(plr, avail_flags, nw_high)) {
         // check if we have the lower class.
         // toggle class of weapon in specified slot (save for selection)
         SetPrimaryWeapon(nw_high, slot);
