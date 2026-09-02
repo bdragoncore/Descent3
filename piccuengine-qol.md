@@ -19,8 +19,9 @@ under GPL-3.0 (compatible with our project).
   fullscreen instead of exclusive mode
 
 **PiccuEngine commits:** `832ccd8`, `f9538b9`, `b0e2d00`
-**Our status:** Partially implemented. Window centered on display,
-borderless fullscreen option added via -borderless flag.
+**Our status:** Implemented. Window centered on display, borderless
+fullscreen option added via -borderless flag, content scaling works
+via SDL3 automatic scaling.
 
 ### 2. Adjustable FOV with Widescreen Expansion
 - User-adjustable field of view
@@ -41,7 +42,8 @@ at non-4:3 resolutions.
 - Multi-Sample Anti-Aliasing support in the renderer
 
 **PiccuEngine commit:** v1.2 release notes
-**Our status:** Not implemented.
+**Our status:** Implemented. -msaa <samples> command line flag
+enables multisampling via SDL3 OpenGL attributes.
 
 ### 5. OpenGL Profile Selector
 - Choose between Compatibility profile (legacy) and Core profile (GL 3.3)
@@ -54,13 +56,15 @@ at non-4:3 resolutions.
 - Proper gamma correction using GPU shaders
 
 **PiccuEngine v1.1:** "Gamma correction now works, using shaders"
-**Our status:** Not implemented.
+**Our status:** Implemented. Gamma uses shader-based correction.
+Extended range to [0.1, 3.0] for bright monitors.
 
 ### 7. HUD Text Scaling
 - HUD text scales with resolution
 
 **PiccuEngine feature:** Listed in v1.0 features
-**Our status:** Not implemented.
+**Our status:** Implemented. HUD text scales based on window height
+relative to 1080p threshold in RenderHUDItems().
 
 ---
 
@@ -108,14 +112,17 @@ checks ammo/energy availability for primary weapons in SelectPrimaryWeapon().
 - FMV cutscenes use full screen width instead of 4:3 box
 
 **PiccuEngine v1.2:** "Videos are no longer put in a 4:3 box"
-**Our status:** Not implemented. Requires MVE player changes.
+**Our status:** Implemented. Removed pow2 texture restriction,
+set renderer to match video dimensions, draw at (0,0) to fill screen,
+restore renderer state after playback.
 
 ### 13. Framerate Limiter Precision
 - More precise framerate limiter
 - Hard cap for framerate limit
 
 **PiccuEngine commits:** `fee6198`, v1.1 notes
-**Our status:** We have a framecap but it may not be as precise.
+**Our status:** Implemented. Uses millisecond-precision timer with
+proper sleep calculation. Framecap default is 60 FPS.
 
 ### 14. Version in Title Bar
 - Git-extracted version shown in window title
@@ -138,7 +145,8 @@ last_hit_wall_sound_time in InitPlayerNewLevel().
 - Slow movement when keyboard ramping is exactly 0
 
 **PiccuEngine commits:** `f07dcb9`, `bead678`
-**Our status:** Bug may exist in our code.
+**Our status:** Implemented. Added unramped_control_value() that
+normalizes keyboard input to -1/0/+1 when ramping is disabled.
 
 ### 17. Fix Scorch -1 Bug
 - Crash when scorch index is -1
@@ -178,13 +186,14 @@ std::sort in postrender.cpp.
 
 **PiccuEngine v1.1:** "Fix some HUD elements being positioned
 differently based on resolution"
-**Our status:** Related to #685 resolution fix.
+**Our status:** Implemented. Related to #685 resolution fix and
+HUD text scaling.
 
 ### 23. Ship Modification Unload Reminder
 - Message reminds player to unload ship modifications
 
 **PiccuEngine commit:** `646c0fb`
-**Our status:** Not implemented.
+**Our status:** Not implemented. Requires UI/messaging changes.
 
 ### 24. Mass Driver Zoom Fix
 - MD zoom no longer sticks across new ships/levels
