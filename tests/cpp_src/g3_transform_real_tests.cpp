@@ -247,10 +247,12 @@ TEST_F(G3TransformTest, ModelViewTranslation) {
 
 /**
  * @test G3TransformTest.ModelViewZBias
- * @brief Verifies Z_bias is added to the z translation.
+ * @brief Verifies Z_bias is NOT baked into the model-view matrix.
  *
  * @details
- * Z_bias is a global depth offset applied to the forward translation.
+ * Z_bias is applied per-vertex in the vertex shader (u_z_bias), not in the
+ * matrix: baking it into view-space Z shifted screen-space X/Y after the
+ * perspective divide. The matrix holds the pure translation.
  *
  * @see renderer/HardwareTransforms.cpp
  * @ingroup descent3_tests
@@ -261,7 +263,7 @@ TEST_F(G3TransformTest, ModelViewZBias) {
   Z_bias = 0.5f;
   float m[16];
   g3_GetModelViewMatrix(&pos, &id, m);
-  EXPECT_FLOAT_EQ(m[14], -29.5f);
+  EXPECT_FLOAT_EQ(m[14], -30.0f);
   EXPECT_FLOAT_EQ(m[12], -10.0f);
   EXPECT_FLOAT_EQ(m[13], -20.0f);
 }

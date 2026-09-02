@@ -716,6 +716,9 @@ rendering_state Render_state;
 renderer_preferred_state Render_preferred_state;
 int Render_preferred_bitdepth;
 
+// Fullscreen scaling mode
+int Render_fullscreen_scale_mode = FULLSCREEN_SCALE_FIT;
+
 // How hard is this game?
 int Difficulty_level = 0;
 
@@ -936,13 +939,28 @@ void SetScreenMode(int sm, bool force_res_change) {
   } else {
     int scr_width, scr_height, scr_bitdepth;
 
-    if (sm == SM_GAME) {
+    // BUGFIX #685: In Native fullscreen scaling mode, use the display's native
+    // resolution for the framebuffer so the game fills the entire screen with
+    // no scaling or letterboxing. The native resolution is stored as the
+    // default resolution (the current display mode) in Video_res_list.
+    if (Game_fullscreen && Render_fullscreen_scale_mode == FULLSCREEN_SCALE_NATIVE) {
+      scr_width = Video_res_list[Default_resolution_id].width;
+      scr_height = Video_res_list[Default_resolution_id].height;
+      scr_bitdepth = Render_preferred_bitdepth;
+    } else if (sm == SM_GAME) {
       scr_width = Video_res_list[Current_video_resolution_id].width;
       scr_height = Video_res_list[Current_video_resolution_id].height;
       scr_bitdepth = Render_preferred_bitdepth;
     } else {
-      scr_width = FIXED_SCREEN_WIDTH;
-      scr_height = FIXED_SCREEN_HEIGHT;
+      // BUGFIX #685: Use the user-selected resolution for non-game screen modes
+      // instead of hardcoded 640x480. Previously, menu/UI modes always rendered
+      // at FIXED_SCREEN_WIDTH x FIXED_SCREEN_HEIGHT regardless of the resolution
+      // selected in the Video Menu. This caused the menu to render into a 640x480
+      // framebuffer that was then scaled up by PresentFrame to fit the larger SDL
+      // window, resulting in the content appearing smaller than the selected
+      // resolution with black bars on widescreen displays.
+      scr_width = Video_res_list[Current_video_resolution_id].width;
+      scr_height = Video_res_list[Current_video_resolution_id].height;
       scr_bitdepth = 32;
     }
 
@@ -1046,11 +1064,23 @@ void SetScreenMode(int sm, bool force_res_change) {
     SetUICallback(nullptr);
     int gw, gh;
     Current_pilot.get_hud_data(nullptr, nullptr, nullptr, &gw, &gh);
+    LOG_INFO << "SM_GAME: pilot hud_data=" << gw << "x" << gh << " Max_window=" << Max_window_w << "x" << Max_window_h
+             << " cockpit_mode=" << GetCockpitMode();
     if (force_res_change) {
       gw = Max_window_w;
       gh = Max_window_h;
     }
+    // BUGFIX #685: When widescreen cockpit mode is active, force the game
+    // window to the full renderer resolution so the 3D world and cockpit
+    // render at the screen's native aspect ratio instead of the pilot's
+    // stored (possibly stale 4:3) game_window_w/h values.
+    if (GetCockpitMode() == COCKPIT_MODE_WIDESCREEN) {
+      gw = Max_window_w;
+      gh = Max_window_h;
+    }
     InitGameScreen(gw, gh);
+    LOG_INFO << "SM_GAME: Game_window=" << Game_window_w << "x" << Game_window_h
+             << " Game_window_xy=" << Game_window_x << "," << Game_window_y;
     // need to do this since the pilot w,h could change.
     Current_pilot.set_hud_data(nullptr, nullptr, nullptr, &Game_window_w, &Game_window_h);
     break;

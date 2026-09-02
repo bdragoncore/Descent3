@@ -274,6 +274,16 @@ extern rendering_state Render_state;
 extern renderer_preferred_state Render_preferred_state;
 extern int Render_preferred_bitdepth;
 
+// Fullscreen scaling mode constants
+enum {
+  FULLSCREEN_SCALE_FILL = 0,  // Stretch to fill window, ignore aspect ratio
+  FULLSCREEN_SCALE_FIT = 1,   // Letterbox, maintain aspect ratio (default)
+  FULLSCREEN_SCALE_NATIVE = 2 // Use display native resolution for framebuffer
+};
+
+// Fullscreen scaling mode: how the framebuffer is mapped to the display window.
+extern int Render_fullscreen_scale_mode;
+
 #define GM_SINGLE 1 // Single player game.
 // #define GM_SERIAL	2								// You are in serial mode (Jason
 // doesn't like this.)

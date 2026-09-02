@@ -82,7 +82,13 @@
 #define MMITEM_FONT MENU_FONT              // default font
 #define MMITEM_COLOR GR_RGB(255, 255, 255) // default color of main menu
 #define MMITEM_X (Max_window_w * 3 / 5)    // x position of menu text
-#define MMITEM_Y 175                       // y position of menu text start
+// BUGFIX #685: scale the menu item Y positions with the window height so the
+// items stay aligned with the stretched menu art on high resolutions.
+#define MMITEM_Y (175 * Max_window_h / FIXED_SCREEN_HEIGHT)   // y position of menu text start
+#define MMITEM_SPACING (20 * Max_window_h / FIXED_SCREEN_HEIGHT) // y spacing between menu items
+// BUGFIX #1: scale font size proportionally to window height so menu text
+// remains readable on high-resolution displays.
+#define MMITEM_FONT_SCALE ((float)Max_window_h / (float)FIXED_SCREEN_HEIGHT)
 #define N_MMENU_ITEMS 10                   // modify this value to set the maximum main menu items avail.
 #define MM_STARTMENU_TYPE 1                // start menu group (used in mmInterface::AddITem)
 #define MM_ENDMENU_TYPE 2                  // end menu group

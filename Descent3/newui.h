@@ -292,6 +292,8 @@ struct tLargeBitmap {
   int bmps_w;
   int bmps_h;
   int *bm_array;
+  int pw; // BUGFIX #685: pixel width of the source art (for scaling)
+  int ph; // BUGFIX #685: pixel height of the source art (for scaling)
 };
 
 //	alpha for all NewUIWindows.

@@ -203,6 +203,9 @@
 
 extern void ui_DoCursor();
 
+// BUGFIX #2: global font/position scale for all newui menus.
+float Newui_ui_scale = 1.0f;
+
 // filenames of ui bitmaps
 /*
         $$TABLE_GAMEFILE "LRGButton.ogf"
@@ -392,6 +395,12 @@ public:
   // loads bitmap and returns the object
   UIBitmapItem *Load(const char *filename);
 
+  // returns the pixel height of a loaded bitmap (0 if not loaded)
+  int GetHeight(const char *filename);
+
+  // returns the pixel width of a loaded bitmap (0 if not loaded)
+  int GetWidth(const char *filename);
+
   // frees memory for bitmap object.
   void Free(UIBitmapItem *bmitem);
 };
@@ -518,6 +527,7 @@ static constexpr const char *Preloaded_bitmap_list[] = {
     NEWUI_LRGBTNLIT_FILE,   NEWUI_LBTN_FILE,        NEWUI_LBTNLIT_FILE,     NEWUI_BTN_FILE,
     NEWUI_BTNLIT_FILE,      NEWUI_LCHKBTN_FILE,     NEWUI_LCHKBTNLIT_FILE,  NEWUI_CHKBTN_FILE,
     NEWUI_CHKBTNLIT_FILE,   NEWUI_TINYBTN_FILE,     NEWUI_TINYBTNLIT_FILE,
+    NEWUI_SLIDER_FILE, // slider bar
     NEWUI_MSGBOX_FILE, // window frames
     NEWUI_MEDWIN_FILE,      NEWUI_LRGWIN_FILE,
     NEWUI_LB_N_FILE, // listbox frame
@@ -555,7 +565,11 @@ void newuiCore_Close() { Newui_resources.Shutdown(); }
 //	 C interface to load and free bitmap resources
 UIBitmapItem *newui_LoadBitmap(const char *filename) { return Newui_resources.Load(filename); }
 
-//	 C interface to load and free bitmap resources
+// C interface to query bitmap height
+int newui_GetBitmapHeight(const char *filename) { return Newui_resources.GetHeight(filename); }
+int newui_GetBitmapWidth(const char *filename) { return Newui_resources.GetWidth(filename); }
+
+// C interface to load and free bitmap resources
 void newui_FreeBitmap(UIBitmapItem *bmitem) { Newui_resources.Free(bmitem); }
 
 // touches all newui bitmaps, do before any newui menus open
@@ -814,6 +828,36 @@ void newuiResources::Free(UIBitmapItem *bmitem) {
   }
 }
 
+// returns the pixel height of a loaded bitmap (0 if not found)
+int newuiResources::GetHeight(const char *filename) {
+  for (int i = 0; i < N_NEWUI_BMPS_TOTAL; i++) {
+    if (m_list[i].n_count > 0 && m_list[i].filename && stricmp(filename, m_list[i].filename) == 0) {
+      if (m_list[i].chunked) {
+        // chunked bitmaps store the pixel height in ph (h is the chunk count)
+        return m_list[i].chunk.ph;
+      } else {
+        return bm_h(m_list[i].bm_handle, 0);
+      }
+    }
+  }
+  return 0;
+}
+
+// returns the pixel width of a loaded bitmap (0 if not found)
+int newuiResources::GetWidth(const char *filename) {
+  for (int i = 0; i < N_NEWUI_BMPS_TOTAL; i++) {
+    if (m_list[i].n_count > 0 && m_list[i].filename && stricmp(filename, m_list[i].filename) == 0) {
+      if (m_list[i].chunked) {
+        // chunked bitmaps store the pixel width in pw (w is the chunk count)
+        return m_list[i].chunk.pw;
+      } else {
+        return bm_w(m_list[i].bm_handle, 0);
+      }
+    }
+  }
+  return 0;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //	CLASS a menu with options and sheets
 
@@ -847,8 +891,23 @@ void newuiMenu::Create() {
   m_activate_sheet_cb = NULL;
   m_option_focus_cb = NULL;
 
-  UIWindow::Create((Max_window_w - m_bkg->width()) / 2, (Max_window_h - m_bkg->height()) / 2, m_bkg->width(),
-                   m_bkg->height());
+  // BUGFIX #2: scale the options menu to the current display resolution.
+  Newui_ui_scale = (float)Max_window_h / (float)FIXED_SCREEN_HEIGHT;
+
+  int scaled_w = m_bkg->width() * Newui_ui_scale;
+  int scaled_h = m_bkg->height() * Newui_ui_scale;
+  UIWindow::Create((Max_window_w - scaled_w) / 2, (Max_window_h - scaled_h) / 2, scaled_w, scaled_h);
+
+  // BUGFIX #2: scale all placement coordinates to match the window size.
+  m_sheetx = NEWUI_MEDWIN_SHEET_X * Newui_ui_scale;
+  m_sheety = NEWUI_MEDWIN_SHEET_Y * Newui_ui_scale;
+  m_optionsx = NEWUI_MEDWIN_OPTIONS_X * Newui_ui_scale;
+  m_optionsy = NEWUI_MEDWIN_OPTIONS_Y * Newui_ui_scale;
+  m_optionsw = NEWUI_MEDWIN_OPTIONS_W * Newui_ui_scale;
+  m_optionsh = NEWUI_MEDWIN_OPTIONS_H * Newui_ui_scale;
+  m_titlex = NEWUI_MEDWIN_TITLE_X * Newui_ui_scale;
+  m_titley = NEWUI_MEDWIN_TITLE_Y * Newui_ui_scale;
+
   m_newoptionid = -1;
   m_cursheetidx = -1;
 }
@@ -1002,32 +1061,60 @@ newuiSheet *newuiMenu::AddOption(int16_t id, const char *title, int size, bool h
 // set master sheet,button locations
 void newuiMenu::SetPlacements(int x, int y, int options_x, int options_y, int options_w, int options_h, int title_x,
                               int title_y, tAlignment align) {
-  m_sheetx = x;
-  m_sheety = y;
-  m_optionsx = options_x;
-  m_optionsy = options_y;
-  m_optionsw = options_w;
-  m_optionsh = options_h;
-  m_titlex = title_x;
-  m_titley = title_y;
+  // BUGFIX #2: scale all placement coordinates to match the window size.
+  m_sheetx = x * Newui_ui_scale;
+  m_sheety = y * Newui_ui_scale;
+  m_optionsx = options_x * Newui_ui_scale;
+  m_optionsy = options_y * Newui_ui_scale;
+  m_optionsw = options_w * Newui_ui_scale;
+  m_optionsh = options_h * Newui_ui_scale;
+  m_titlex = title_x * Newui_ui_scale;
+  m_titley = title_y * Newui_ui_scale;
   m_align = align;
 }
 
 // overridable draws the window background before gadgets
 void newuiMenu::OnDraw() {
-  // draw background
-  m_bkg->draw(0, 0);
+  // BUGFIX #2: draw the background art scaled to fill the window.
+  if (m_bkg) {
+    if (m_bkg->is_chunked()) {
+      chunked_bitmap *chunk = m_bkg->get_chunked_bitmap();
+      rend_DrawScaledChunkedBitmap(chunk, 0, 0, m_W, m_H, 255);
+    } else {
+      int bmp_w = m_bkg->width();
+      int bmp_h = m_bkg->height();
+      rend_DrawScaledBitmap(0, 0, m_W, m_H, m_bkg->get_bitmap(), 0, 0, 1.0f, 1.0f);
+    }
+  }
 
   // draw title
   if (m_cursheetidx != -1 && m_hassheet[m_cursheetidx]) {
     UITextItem *title = m_sheetbtn[m_cursheetidx].GetTitle();
     UITextItem m_texttitle(MONITOR15_NEWUI_FONT, title->GetBuffer(), NEWUI_MONITORFONT_COLOR);
 
-    m_texttitle.draw(m_titlex - 8 + (NEWUI_MEDWIN_TITLE_W - m_texttitle.width()) / 2, m_titley);
+    // BUGFIX #1: center the title within the bitmap's title bar area, not
+    // across the full window width.  The title bar artwork lives at
+    // (NEWUI_MEDWIN_TITLE_X, NEWUI_MEDWIN_TITLE_Y) with width
+    // NEWUI_MEDWIN_TITLE_W in the original 640×480 layout.
+    // The -8 offset matches the original centering math which accounts for
+    // padding in the title bar artwork.
+    int tx = m_titlex - (int)(8 * Newui_ui_scale) + (int)(NEWUI_MEDWIN_TITLE_W * Newui_ui_scale - m_texttitle.width()) / 2;
+    int ty = m_titley;
+    grtext_SetFontScale(Newui_ui_scale);
+    m_texttitle.draw(tx, ty);
   }
 
   // draws gadgets.
   UIWindow::OnDraw();
+}
+
+// overridable: runs after window is processed, to supplement it.
+// BUGFIX: scroll the current sheet when the mouse wheel is used, regardless of
+// which gadget currently has focus.
+void newuiMenu::OnUserProcess() {
+  if (m_cursheet && m_cursheet->IsScrollable() && UI_input.wheel != 0) {
+    m_cursheet->ScrollBy(-UI_input.wheel * 16);
+  }
 }
 
 // overridable: called in Destroy
@@ -1048,6 +1135,9 @@ void newuiMenu::OnDestroy() {
   }
 
   m_nsheets = 0;
+
+  // BUGFIX #2: reset the global scale so it doesn't leak to other UI code
+  Newui_ui_scale = 1.0f;
 
   SetUICallback(m_uiframe_cb);
 
@@ -1190,6 +1280,12 @@ newuiSheet::newuiSheet() {
   m_gadgetlimit = 0;
   m_ngadgets = 0;
   m_realized = false;
+  m_scrollable = false;
+  m_scroll_y = 0;
+  m_scroll_h = 0;
+  m_clip_w = 0;
+  m_clip_h = 0;
+  m_scrollbar = NULL;
 }
 
 void newuiSheet::Create(UIWindow *menu, const char *title, int n_items, int sx, int sy) {
@@ -1213,12 +1309,19 @@ void newuiSheet::Create(UIWindow *menu, const char *title, int n_items, int sx, 
   m_sy = sy;
   m_realized = false;
   m_initial_focus_id = -1;
+  m_scrollable = false;
+  m_scroll_y = 0;
+  m_scroll_h = 0;
+  m_clip_w = 0;
+  m_clip_h = 0;
+  m_scrollbar = NULL;
 
   for (i = 0; i < m_gadgetlimit; i++) {
     m_gadgetlist[i].obj.gadget = NULL;
     m_gadgetlist[i].title = NULL;
     m_gadgetlist[i].id = -1;
     m_gadgetlist[i].internal = NULL;
+    m_gadgetlist[i].base_y = 0;
   }
 }
 
@@ -1275,9 +1378,108 @@ void newuiSheet::Reset() {
 //	set focus on this gadget specified by id upon realization.
 void newuiSheet::SetInitialFocusedGadget(int16_t id) { m_initial_focus_id = id; }
 
+// makes the sheet a scrollable pane clipped to the given visible area.
+void newuiSheet::SetScrollArea(int w, int h) {
+  m_scrollable = true;
+  // BUGFIX #2: the caller passes art-space dimensions; scale to window-space
+  // so the visible area matches the scaled sheet.
+  m_clip_w = (int)(w * Newui_ui_scale);
+  m_clip_h = (int)(h * Newui_ui_scale);
+  m_scroll_y = 0;
+}
+
+// returns the maximum scroll offset in pixels (0 if content fits).
+int newuiSheet::GetScrollRange() const {
+  if (!m_scrollable)
+    return 0;
+  int range = m_scroll_h - m_clip_h;
+  return range > 0 ? range : 0;
+}
+
+// scrolls the pane by delta pixels (positive = down).  Clamped to range.
+void newuiSheet::ScrollBy(int delta) { SetScrollY(m_scroll_y + delta); }
+
+// sets the absolute scroll offset (0 = top).  Clamped to range.
+void newuiSheet::SetScrollY(int y) {
+  if (!m_scrollable)
+    return;
+
+  int range = GetScrollRange();
+  if (y < 0)
+    y = 0;
+  if (y > range)
+    y = range;
+  m_scroll_y = y;
+
+  // reposition every gadget by its unscrolled base position and hide the ones
+  // that fall outside the visible area (no renderer clip region exists, so
+  // out-of-view gadgets are flagged UIF_HIDDEN and skipped by UIWindow::Render).
+  for (int i = 0; i < m_ngadgets; i++) {
+    t_gadget_desc *desc = &m_gadgetlist[i];
+    // BUGFIX: the union's obj.gadget member stores the derived-class pointer,
+    // which for virtual-base gadgets (newuiButton/CheckBox/RadioButton) is NOT
+    // the UIGadget subobject address.  Calling methods through it would use a
+    // wrong `this` and corrupt adjacent fields, so resolve the typed pointer.
+    UIGadget *gadget = desc->obj.gadget;
+    switch (desc->type) {
+    case GADGET_BUTTON:
+    case GADGET_LBUTTON:
+      gadget = desc->obj.button;
+      break;
+    case GADGET_CHECKBOX:
+    case GADGET_LCHECKBOX:
+      gadget = desc->obj.chbox;
+      break;
+    case GADGET_RADIO:
+    case GADGET_LRADIO:
+      gadget = desc->obj.radio;
+      break;
+    default:
+      break;
+    }
+    if (!gadget)
+      continue;
+
+    int new_y = desc->base_y - m_scroll_y;
+    int dy = new_y - gadget->Y();
+    gadget->Move(gadget->X(), new_y, gadget->W(), gadget->H());
+    // BUGFIX #2: slave gadgets (slider arrow buttons, listbox scroll buttons)
+    // are not in the sheet's gadget list, so they must be shifted by the same
+    // delta as their master or they stay behind when the sheet scrolls.
+    if (dy != 0) {
+      gadget->MoveSlavesBy(0, dy);
+    }
+
+    // BUGFIX #685: only show gadgets fully within the visible area.  The old
+    // intersection test allowed gadgets whose top was inside the clip area but
+    // whose bottom extended past it, causing them to draw over the panel edge.
+    bool visible = (new_y >= m_sy) && (new_y + gadget->H() <= m_sy + m_clip_h);
+    if (visible) {
+      gadget->ClearFlag(UIF_HIDDEN);
+      gadget->Enable();
+    } else {
+      gadget->SetFlag(UIF_HIDDEN);
+      gadget->Disable();
+    }
+    // BUGFIX #2: propagate visibility to slave gadgets so they are also
+    // hidden/disabled when the master scrolls out of the clip region.
+    gadget->SetSlavesHidden(!visible);
+  }
+
+  if (m_scrollbar) {
+    m_scrollbar->SetScrollY(m_scroll_y);
+  }
+}
+
+// static callback invoked by the scrollbar when the user scrolls.
+void newuiSheet::ScrollBarCallback(int y, void *user) {
+  newuiSheet *sheet = static_cast<newuiSheet *>(user);
+  sheet->SetScrollY(y);
+}
+
 // call this to initialize gadgets specified above in parent window
 void newuiSheet::Realize() {
-  int i, first_radio_index = -1, last_toggle_index = -1, gx = m_sx, gy = m_sy;
+  int i, first_radio_index = -1, last_toggle_index = -1, gx = m_sx, gy = m_sy - m_scroll_y;
   newuiRadioButton *prev_radio = NULL;
   bool horizontal_align = false, hotspot_group = false, toggles_group = false;
   newuiEditBox *focus_edit = NULL;
@@ -1285,6 +1487,14 @@ void newuiSheet::Realize() {
 
   if (m_realized)
     return;
+
+  // BUGFIX #2: scale group offsets from art-space to window-space.
+  const float sc = Newui_ui_scale;
+
+  // BUGFIX: scrollable sheets lay gadgets out with a -m_scroll_y offset so the
+  // visible window shows the scrolled region.  m_scroll_h tracks the furthest
+  // (unscrolled) y reached so the scrollbar range can be computed.
+  m_scroll_h = 0;
 
   for (i = 0; i < m_ngadgets; i++) {
     newuiSheet::t_gadget_desc *desc = &m_gadgetlist[i];
@@ -1305,8 +1515,10 @@ void newuiSheet::Realize() {
     case GADGET_HGROUP:
     case GADGET_GROUP:
       horizontal_align = (desc->type == GADGET_GROUP) ? false : true;
-      gx = desc->parm.s[0] + m_sx;
-      gy = desc->parm.s[1] + m_sy;
+      // BUGFIX #2: scale group offsets from art-space (640×480) to window-space.
+      gx = (int)(desc->parm.s[0] * sc) + m_sx;
+      gy = (int)(desc->parm.s[1] * sc) + m_sy - m_scroll_y;
+      desc->base_y = (int)(desc->parm.s[1] * sc) + m_sy;
       if (desc->title) {
         text = new UIText;
         UITextItem item{MONITOR9_NEWUI_FONT, desc->title, NEWUI_MONITORFONT_COLOR};
@@ -1315,7 +1527,8 @@ void newuiSheet::Realize() {
 
         // determine pixel offset to first control if we stuffed the offset into desc->id (-1 = default)
         if (desc->id != -1) {
-          gy += text->H() + desc->id;
+          // BUGFIX #2: scale the art-space pix_offset
+          gy += text->H() + (int)(desc->id * sc);
         } else {
           gy += text->H();
         }
@@ -1339,6 +1552,7 @@ void newuiSheet::Realize() {
       text = new UIText;
       UITextItem item{MONITOR9_NEWUI_FONT, desc->title, NEWUI_MONITORFONT_COLOR};
       text->Create(m_parent, &item, gx, gy);
+      desc->base_y = gy + m_scroll_y;
       if (horizontal_align)
         gx += text->W() + 2;
       else
@@ -1350,6 +1564,7 @@ void newuiSheet::Realize() {
       text = new UIText;
       UITextItem item{MONITOR9_NEWUI_FONT, (const char *)desc->parm.p, NEWUI_MONITORFONT_COLOR};
       text->Create(m_parent, &item, gx, gy);
+      desc->base_y = gy + m_scroll_y;
       if (horizontal_align)
         gx += text->W() + 2;
       else
@@ -1362,16 +1577,20 @@ void newuiSheet::Realize() {
       bmp = new UIStatic;
       UIBitmapItem item{desc->parm.i};
       bmp->Create(m_parent, &item, gx, gy, 10, 10);
+      desc->base_y = gy + m_scroll_y;
+      // BUGFIX #2: bitmap dimensions are unscaled, multiply advances by scale
       if (horizontal_align)
-        gx += bmp->W() + 2;
+        gx += (int)(bmp->W() * sc) + 2;
       else
-        gy += bmp->H();
+        gy += (int)(bmp->H() * sc);
       desc->obj.gadget = bmp;
       break;
     }
     case GADGET_BUTTON:
       btn = new newuiButton;
       btn->Create(m_parent, desc->id, desc->title, gx, gy, desc->parm.i);
+      desc->base_y = gy + m_scroll_y;
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += btn->W() + 2;
       else
@@ -1382,6 +1601,7 @@ void newuiSheet::Realize() {
     case GADGET_CHECKBOX:
       cbox = new newuiCheckBox;
       cbox->Create(m_parent, desc->id, desc->title, gx, gy, false);
+      desc->base_y = gy + m_scroll_y;
       if (!toggles_group) {
         toggles_group = true;
         cbox->SetFlag(UIF_GROUP_START);
@@ -1389,6 +1609,7 @@ void newuiSheet::Realize() {
       last_toggle_index = i;
       if (desc->parm.b)
         cbox->SetCheck(true);
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += cbox->W() + 2;
       else
@@ -1401,9 +1622,11 @@ void newuiSheet::Realize() {
         first_radio_index = i;
       radio = new newuiRadioButton;
       radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, false);
+      desc->base_y = gy + m_scroll_y;
       if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index)) {
         radio->Activate();
       }
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += radio->W() + 2;
       else
@@ -1415,6 +1638,8 @@ void newuiSheet::Realize() {
     case GADGET_LBUTTON:
       btn = new newuiButton;
       btn->Create(m_parent, desc->id, desc->title, gx, gy, desc->parm.i | NEWUI_BTNF_LONG);
+      desc->base_y = gy + m_scroll_y;
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += btn->W() + 2;
       else
@@ -1425,6 +1650,7 @@ void newuiSheet::Realize() {
     case GADGET_LCHECKBOX:
       cbox = new newuiCheckBox;
       cbox->Create(m_parent, desc->id, desc->title, gx, gy, true);
+      desc->base_y = gy + m_scroll_y;
       if (!toggles_group) {
         toggles_group = true;
         cbox->SetFlag(UIF_GROUP_START);
@@ -1432,6 +1658,7 @@ void newuiSheet::Realize() {
       last_toggle_index = i;
       if (desc->parm.b)
         cbox->SetCheck(true);
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += cbox->W() + 2;
       else
@@ -1444,9 +1671,11 @@ void newuiSheet::Realize() {
         first_radio_index = i;
       radio = new newuiRadioButton;
       radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, true);
+      desc->base_y = gy + m_scroll_y;
       if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index)) {
         radio->Activate();
       }
+      // BUGFIX #2: newuiButton::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += radio->W() + 2;
       else
@@ -1462,6 +1691,7 @@ void newuiSheet::Realize() {
                   (bval && !hotspot_group)  ? UIF_GROUP_START
                   : (bval && hotspot_group) ? UIF_GROUP_END
                                             : 0);
+      desc->base_y = gy + m_scroll_y;
 
       if (bval && !hotspot_group) {
         hotspot_group = true;
@@ -1469,20 +1699,23 @@ void newuiSheet::Realize() {
         hotspot_group = false;
       }
 
+      // BUGFIX #2: hotspot dimensions are unscaled, multiply advances by scale
       if (horizontal_align)
-        gx += hot->W() + 2;
+        gx += (int)(hot->W() * sc) + 2;
       else
-        gy += hot->H();
+        gy += (int)(hot->H() * sc);
       desc->obj.hot = hot;
       break;
 
     case GADGET_SLIDER:
       slider = new newuiSlider;
       slider->Create(m_parent, desc->id, desc->title, gx, gy, desc->parm.s[1]);
+      desc->base_y = gy + m_scroll_y;
       slider->SetPos(desc->parm.s[0]);
       if (desc->internal) {
         slider->SetUnits((tSliderSettings *)desc->internal);
       }
+      // BUGFIX #2: newuiSlider::OnFormat already scales W/H, so use them directly.
       if (horizontal_align)
         gx += slider->W() + 4;
       else
@@ -1500,6 +1733,7 @@ void newuiSheet::Realize() {
       // awful hack, but no more room to store passed in parameters.  note that we should never have an edit
       // box with a width greater than 4096 pixels in the lifetime of this system.
       edit->Create(m_parent, desc->id, desc->title, gx, gy, (desc->parm.s[0] & 0xfff), flags);
+      desc->base_y = gy + m_scroll_y;
       edit->SetBufferLen(desc->parm.s[1]);
       edit->SetText((char *)desc->internal);
 
@@ -1511,10 +1745,11 @@ void newuiSheet::Realize() {
         focus_edit = edit;
       }
 
+      // BUGFIX #2: editbox dimensions are unscaled, multiply advances by scale
       if (horizontal_align)
-        gx += edit->W() + 4;
+        gx += (int)(edit->W() * sc) + 4;
       else
-        gy += edit->H() + 2;
+        gy += (int)(edit->H() * sc) + 2;
       desc->obj.edit = edit;
       break;
 
@@ -1522,11 +1757,13 @@ void newuiSheet::Realize() {
       lb = (newuiListBox *)desc->internal;
       ASSERT(lb);
       lb->Move(gx, gy, lb->W(), lb->H());
+      desc->base_y = gy + m_scroll_y;
       m_parent->AddGadget(lb);
+      // BUGFIX #2: listbox dimensions are unscaled, multiply advances by scale
       if (horizontal_align)
-        gx += lb->W() + 4;
+        gx += (int)(lb->W() * sc) + 4;
       else
-        gy += lb->H() + 2;
+        gy += (int)(lb->H() * sc) + 2;
       desc->obj.lb = lb;
       break;
 
@@ -1534,11 +1771,13 @@ void newuiSheet::Realize() {
       cb = (newuiComboBox *)desc->internal;
       ASSERT(cb);
       cb->Move(gx, gy, cb->W(), cb->H());
+      desc->base_y = gy + m_scroll_y;
       m_parent->AddGadget(cb);
+      // BUGFIX #2: combobox dimensions are unscaled, multiply advances by scale
       if (horizontal_align)
-        gx += cb->W() + 4;
+        gx += (int)(cb->W() * sc) + 4;
       else
-        gy += cb->H() + 2;
+        gy += (int)(cb->H() * sc) + 2;
       desc->obj.cb = cb;
       break;
 
@@ -1546,6 +1785,13 @@ void newuiSheet::Realize() {
       Int3();
     }
     desc->changed = false;
+
+    // track the furthest (unscrolled) y reached so the scrollbar range is correct.
+    if (m_scrollable) {
+      int unscrolled = gy + m_scroll_y - m_sy;
+      if (unscrolled > m_scroll_h)
+        m_scroll_h = unscrolled;
+    }
 
     if (desc->obj.gadget) {
       if (desc->obj.gadget->GetID() > -1 && desc->obj.gadget->GetID() == m_initial_focus_id) {
@@ -1567,6 +1813,23 @@ void newuiSheet::Realize() {
   } else if (focus_edit) {
     m_parent->SetFocusOnGadget(focus_edit);
     focus_edit->Activate();
+  }
+
+  // BUGFIX: for scrollable sheets, create the scrollbar at the right edge of
+  // the visible area and clamp the initial scroll offset to the valid range.
+  // The scrollbar is only shown when the content actually overflows.
+  if (m_scrollable && m_scroll_h > m_clip_h) {
+    const int sb_w = 16;
+    const int sb_x = m_sx + m_clip_w - sb_w;
+    const int sb_y = m_sy;
+    if (!m_scrollbar) {
+      m_scrollbar = new newuiScrollBar;
+    }
+    m_scrollbar->Create(m_parent, -1, sb_x, sb_y, sb_w, m_clip_h);
+    m_scrollbar->SetScrollCallback(newuiSheet::ScrollBarCallback, this);
+    m_scrollbar->SetRange(m_scroll_h, m_clip_h);
+    m_scrollbar->SetScrollY(m_scroll_y);
+    SetScrollY(m_scroll_y); // applies the clamped offset + hides out-of-view gadgets.
   }
 
   m_realized = true;
@@ -1653,6 +1916,13 @@ void newuiSheet::Unrealize() {
 
       desc->obj.gadget = NULL;
     }
+  }
+
+  // destroy the scrollbar gadget (if any) so it is not left dangling.
+  if (m_scrollbar) {
+    m_scrollbar->Destroy();
+    delete m_scrollbar;
+    m_scrollbar = NULL;
   }
 
   m_realized = false;
@@ -2147,6 +2417,14 @@ void newuiButton::OnFormat() {
   m_W = GetStateItem(m_State)->width();
   m_H = GetStateItem(m_State)->height();
 
+  // BUGFIX #2: scale bitmap dimensions to match the newui font scale so that
+  // the clip region and text centering math use the correct (scaled) sizes.
+  extern float Newui_ui_scale;
+  if (Newui_ui_scale != 1.0f) {
+    m_W = (int)(m_W * Newui_ui_scale);
+    m_H = (int)(m_H * Newui_ui_scale);
+  }
+
   UIGadget::OnFormat();
 }
 
@@ -2191,9 +2469,11 @@ void newuiButton::OnDestroy() {
 void newuiButton::OnDraw() {
   uint8_t alpha = IsDisabled() ? 128 : 255;
 
+  // BUGFIX #2: pass scaled (m_W, m_H) to the bitmap draw so the background
+  // art fills the gadget area at the correct scale.
   if (GetStateItem(m_State)) {
     GetStateItem(m_State)->set_alpha(alpha);
-    GetStateItem(m_State)->draw(0, 0);
+    GetStateItem(m_State)->draw(0, 0, m_W, m_H);
   }
 
   if (m_text) {
@@ -2385,6 +2665,211 @@ void newuiArrowButton::OnDraw() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
+//	CLASS a vertical scrollbar for scrollable sheets.
+
+// arrow area height reserved at the top and bottom of the scrollbar for the
+// up/down arrow buttons (matches the UPArrow/DownArrow art used by listboxes).
+#define NEWUI_SCROLLBAR_ARROW_H 19
+
+newuiScrollBar::newuiScrollBar() {
+  m_scroll_y = 0;
+  m_content_h = 0;
+  m_clip_h = 0;
+  m_scroll_fn = NULL;
+  m_user = NULL;
+  m_thumb_y = 0;
+  m_thumb_h = 0;
+  m_dragging = false;
+  m_drag_offs = 0;
+}
+
+void newuiScrollBar::Create(UIWindow *wnd, int16_t id, int16_t x, int16_t y, int16_t w, int16_t h) {
+  UIGadget::Create(wnd, id, x, y, w, h, 0);
+}
+
+// sets the scroll range: content_h is the total content height, clip_h the
+// visible height.  Max scroll offset = content_h - clip_h.
+void newuiScrollBar::SetRange(int content_h, int clip_h) {
+  m_content_h = content_h;
+  m_clip_h = clip_h;
+  if (m_scroll_y > GetScrollRange())
+    SetScrollY(m_scroll_y);
+}
+
+// returns the maximum scroll offset.
+int newuiScrollBar::GetScrollRange() const {
+  int range = m_content_h - m_clip_h;
+  return range > 0 ? range : 0;
+}
+
+// sets the current scroll offset (clamped to range) and notifies the callback.
+void newuiScrollBar::SetScrollY(int y) {
+  int range = GetScrollRange();
+  if (y < 0)
+    y = 0;
+  if (y > range)
+    y = range;
+  if (y == m_scroll_y)
+    return;
+  m_scroll_y = y;
+  if (m_scroll_fn)
+    m_scroll_fn(m_scroll_y, m_user);
+}
+
+// scrolls by delta and notifies.
+void newuiScrollBar::ScrollBy(int delta) { SetScrollY(m_scroll_y + delta); }
+
+// registers a callback invoked whenever the scroll offset changes.
+void newuiScrollBar::SetScrollCallback(void (*fn)(int, void *), void *user) {
+  m_scroll_fn = fn;
+  m_user = user;
+}
+
+// when gadget is added to a window (AddGadget is called)
+void newuiScrollBar::OnAttachToWindow() {
+  const int arrow_x = m_X + (m_W - 8) / 2;
+  m_up_btn.Create(m_Wnd, -1, NEWUI_ARROW_UP, NULL, arrow_x, m_Y);
+  m_up_btn.SetFlag(UIF_NOTIFYMASTERSEL);
+  AttachSlaveGadget(&m_up_btn);
+
+  m_down_btn.Create(m_Wnd, -1, NEWUI_ARROW_DOWN, NULL, arrow_x, m_Y + m_H - NEWUI_SCROLLBAR_ARROW_H);
+  m_down_btn.SetFlag(UIF_NOTIFYMASTERSEL);
+  AttachSlaveGadget(&m_down_btn);
+}
+
+void newuiScrollBar::OnDetachFromWindow() {
+  DetachSlaveGadget(&m_down_btn);
+  m_down_btn.Destroy();
+  DetachSlaveGadget(&m_up_btn);
+  m_up_btn.Destroy();
+}
+
+// called when destroyed.
+void newuiScrollBar::OnDestroy() {
+  if (m_up_btn.IsCreated())
+    m_up_btn.Destroy();
+  if (m_down_btn.IsCreated())
+    m_down_btn.Destroy();
+  UIGadget::OnDestroy();
+}
+
+// arrow buttons notify the master when clicked: scroll by a line.
+void newuiScrollBar::OnNotifySelect(UIGadget *g) {
+  if (g == &m_up_btn) {
+    ScrollBy(-16);
+  } else if (g == &m_down_btn) {
+    ScrollBy(16);
+  }
+}
+
+// behavior when key is pressed.
+void newuiScrollBar::OnKeyDown(int key) {
+  switch (key) {
+  case KEY_UP:
+    ScrollBy(-16);
+    break;
+  case KEY_DOWN:
+    ScrollBy(16);
+    break;
+  case KEY_PAGEUP:
+    ScrollBy(-m_clip_h);
+    break;
+  case KEY_PAGEDOWN:
+    ScrollBy(m_clip_h);
+    break;
+  }
+}
+
+// behavior when mouse button is pressed.
+void newuiScrollBar::OnMouseBtnDown(int btn) {
+  if (btn != UILMSEBTN)
+    return;
+
+  int my = SCREEN_TO_GAD_Y(this, UI_input.my);
+  int track_top = NEWUI_SCROLLBAR_ARROW_H;
+  int track_h = m_H - NEWUI_SCROLLBAR_ARROW_H * 2;
+  if (track_h <= 0)
+    return;
+
+  if (my >= m_thumb_y && my < m_thumb_y + m_thumb_h) {
+    // grab the thumb and start dragging.
+    m_dragging = true;
+    m_drag_offs = my - m_thumb_y;
+    LOCK_FOCUS(this);
+  } else if (my < m_thumb_y) {
+    ScrollBy(-m_clip_h); // page up
+  } else {
+    ScrollBy(m_clip_h); // page down
+  }
+}
+
+// behavior when mouse button is released.
+void newuiScrollBar::OnMouseBtnUp(int btn) {
+  if (btn == UILMSEBTN) {
+    m_dragging = false;
+    UNLOCK_FOCUS(this);
+  }
+}
+
+// behavior when gadget is processed: drives thumb dragging.
+void newuiScrollBar::OnUserProcess() {
+  if (!m_dragging)
+    return;
+
+  int my = SCREEN_TO_GAD_Y(this, UI_input.my);
+  int track_top = NEWUI_SCROLLBAR_ARROW_H;
+  int track_h = m_H - NEWUI_SCROLLBAR_ARROW_H * 2;
+  int range = GetScrollRange();
+  if (track_h <= 0 || range <= 0)
+    return;
+
+  int thumb_travel = track_h - m_thumb_h;
+  if (thumb_travel <= 0)
+    return;
+
+  int new_y = (my - m_drag_offs - track_top) * range / thumb_travel;
+  SetScrollY(new_y);
+}
+
+// draws the track and thumb.
+void newuiScrollBar::OnDraw() {
+  int track_top = NEWUI_SCROLLBAR_ARROW_H;
+  int track_h = m_H - NEWUI_SCROLLBAR_ARROW_H * 2;
+  int range = GetScrollRange();
+
+  if (track_h <= 0)
+    return;
+
+  // track background: dark green filled rectangle with subtle border.
+  ui_DrawRect(GR_RGB(0, 30, 0), 2, track_top, m_W - 2, track_top + track_h);
+  ui_DrawBox(GR_RGB(0, 60, 0), 2, track_top, m_W - 2, track_top + track_h);
+
+  if (range <= 0)
+    return; // content fits: no thumb.
+
+  // thumb: proportional to visible fraction, positioned by scroll offset.
+  m_thumb_h = track_h * m_clip_h / m_content_h;
+  if (m_thumb_h < 8)
+    m_thumb_h = 8;
+  if (m_thumb_h > track_h)
+    m_thumb_h = track_h;
+
+  int thumb_travel = track_h - m_thumb_h;
+  m_thumb_y = track_top + thumb_travel * m_scroll_y / range;
+
+  int tl = 1;
+  int tr = m_W - 1;
+  int tt = m_thumb_y;
+  int tb = m_thumb_y + m_thumb_h;
+
+  // thumb body: light green.
+  ui_DrawRect(GR_RGB(0, 180, 0), tl + 1, tt + 1, tr - 1, tb - 1);
+
+  // bevelled edges: bright highlight top/left, dark shadow bottom/right.
+  ui_DrawLTBox(GR_RGB(0, 220, 0), GR_RGB(0, 100, 0), tl, tt, tr, tb);
+}
+
+//////////////////////////////////////////////////////////////////////////////
 //	CLASS a new check box: note that newuiButton and UICheckBox will share the same UIButton base
 //	since bott newuiButton and UICheckBox inherit UIButton virtually.
 
@@ -2469,7 +2954,11 @@ void newuiSlider::OnAttachToWindow() {
   m_minus_btn.Create(m_Wnd, -1, NEWUI_ARROW_LEFT, NULL, bx, by);
   m_minus_btn.SetFlag(UIF_NOTIFYMASTERSEL);
   AttachSlaveGadget(&m_minus_btn);
-  m_plus_btn.Create(m_Wnd, -1, NEWUI_ARROW_RIGHT, NULL, bx + m_bar_bmp->width() - 24, by);
+  // BUGFIX #2: scale bar bitmap width and arrow offset by Newui_ui_scale so
+  // the plus button aligns with the right end of the scaled slider bar.
+  extern float Newui_ui_scale;
+  int plus_x = bx + (int)(m_bar_bmp->width() * Newui_ui_scale) - (int)(24 * Newui_ui_scale);
+  m_plus_btn.Create(m_Wnd, -1, NEWUI_ARROW_RIGHT, NULL, plus_x, by);
   m_plus_btn.SetFlag(UIF_NOTIFYMASTERSEL);
   AttachSlaveGadget(&m_plus_btn);
 }
@@ -2500,6 +2989,16 @@ void newuiSlider::OnFormat() {
     m_H = m_bar_bmp->height();
     if (m_title) {
       m_H += m_title->height();
+    }
+
+    // BUGFIX #2: scale bitmap dimensions so the slider bar and text fit.
+    // m_title->height() is already scaled via UITextItem::height(), so only
+    // scale the bitmap-derived parts.
+    extern float Newui_ui_scale;
+    if (Newui_ui_scale != 1.0f) {
+      m_W = (int)(m_W * Newui_ui_scale);
+      int bmp_h = (int)(m_bar_bmp->height() * Newui_ui_scale);
+      m_H = bmp_h + (m_title ? m_title->height() : 0);
     }
   }
 }
@@ -2571,15 +3070,29 @@ void newuiSlider::OnDraw() {
   }
 
   // draw bar frame
+  extern float Newui_ui_scale;
+  int bar_w = m_bar_bmp ? m_bar_bmp->width() : 0;
+  int bar_h = m_bar_bmp ? m_bar_bmp->height() : 0;
   if (m_bar_bmp) {
-    m_bar_bmp->draw(ox, oy);
-    ox += 20; // move to where bar will be filled in.
-    oy += 2;
+    // BUGFIX #2: draw the bar bitmap scaled to match the widget dimensions.
+    if (Newui_ui_scale != 1.0f) {
+      int sw = (int)(bar_w * Newui_ui_scale);
+      int sh = (int)(bar_h * Newui_ui_scale);
+      m_bar_bmp->draw(ox, oy, sw, sh);
+      ox += (int)(20 * Newui_ui_scale);
+      oy += (int)(2 * Newui_ui_scale);
+      bar_w = sw;
+      bar_h = sh;
+    } else {
+      m_bar_bmp->draw(ox, oy);
+      ox += 20;
+      oy += 2;
+    }
   }
 
   // draw slider bar now.
-  int width = m_bar_bmp->width() - 42;
-  int height = m_bar_bmp->height() - 6;
+  int width = bar_w - (Newui_ui_scale != 1.0f ? (int)(42 * Newui_ui_scale) : 42);
+  int height = bar_h - (Newui_ui_scale != 1.0f ? (int)(6 * Newui_ui_scale) : 6);
 
   lx = (percent_full * width) + ox;
   delta_g = (lx - ox) ? (percent_full * 255.0f) / (lx - ox) : 0.0f;

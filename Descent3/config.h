@@ -200,11 +200,23 @@ struct tDetailSettings {
 // Call this with one of the above defines to set the detail level to a predefined set (custom level is ignored)
 void ConfigSetDetailLevel(int level);
 
+// BUGFIX: Force every detail setting to its maximum quality value.  Modern
+// platforms can run the game at full detail, so the preset selector and the
+// individual detail toggles/sliders are no longer user-configurable.  Only
+// Fast_headlight_on is left as a user toggle (see details_menu in config.cpp).
+void ConfigSetDetailLevelMax();
+
 #define DETAIL_LEVEL_LOW 0
 #define DETAIL_LEVEL_MED 1
 #define DETAIL_LEVEL_HIGH 2
 #define DETAIL_LEVEL_VERY_HIGH 3
 #define DETAIL_LEVEL_CUSTOM 4
+
+// Detail setting bounds (used by ConfigSetDetailLevelMax and the detail sheet)
+#define MINIMUM_TERRAIN_DETAIL 4
+#define MAXIMUM_TERRAIN_DETAIL 28
+#define MINIMUM_RENDER_DIST 80
+#define MAXIMUM_RENDER_DIST 200
 
 extern tDetailSettings Detail_settings;
 extern int Default_detail_level;

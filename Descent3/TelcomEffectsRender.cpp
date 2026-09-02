@@ -128,12 +128,13 @@ void RenderTextStatic(tceffect *tce, float frametime, int xoff, int yoff, bool o
   }
   int lcount = 0;
   while ((nextline) && ((curry + height) < tce->pos_y + tce->h)) {
-    grtext_Printf(tce->pos_x + glitch_dx + xoff, curry + glitch_dy, buff);
+    // BUGFIX #685: art-space positions are scaled to the window at draw time.
+    grtext_Printf(TelcomScaleX(tce->pos_x + glitch_dx + xoff), TelcomScaleY(curry + glitch_dy), buff);
     lcount++;
     curry += height;
     nextline = textaux_CopyTextLine(nextline, buff);
   }
-  grtext_Printf(tce->pos_x + glitch_dx + xoff, curry + glitch_dy, buff);
+  grtext_Printf(TelcomScaleX(tce->pos_x + glitch_dx + xoff), TelcomScaleY(curry + glitch_dy), buff);
   lcount++;
   grtext_SetAlpha(old_alpha);
 
@@ -225,12 +226,13 @@ void RenderTextType(tceffect *tce, float frametime, int xoff, int yoff, bool ok_
   }
   int lcount = 0;
   while ((nextline) && ((curry + height) <= tce->pos_y + tce->h)) {
-    grtext_Printf(tce->pos_x + xoff + glitch_dx, curry + yoff + glitch_dy, buff);
+    // BUGFIX #685: art-space positions are scaled to the window at draw time.
+    grtext_Printf(TelcomScaleX(tce->pos_x + xoff + glitch_dx), TelcomScaleY(curry + yoff + glitch_dy), buff);
     lcount++;
     curry += height;
     nextline = textaux_CopyTextLine(nextline, buff);
   }
-  grtext_Printf(tce->pos_x + xoff + glitch_dx, curry + yoff + glitch_dy, buff);
+  grtext_Printf(TelcomScaleX(tce->pos_x + xoff + glitch_dx), TelcomScaleY(curry + yoff + glitch_dy), buff);
   lcount++;
   if ((lcount * height) > tce->h) {
     // we can scroll down
@@ -375,12 +377,13 @@ void RenderTextFade(tceffect *tce, float frametime, int xoff, int yoff, bool ok_
   }
   int lcount = 0;
   while ((nextline) && ((curry + height) < tce->pos_y + tce->h)) {
-    grtext_Printf(tce->pos_x + glitch_dx + xoff, curry + glitch_dy + yoff, buff);
+    // BUGFIX #685: art-space positions are scaled to the window at draw time.
+    grtext_Printf(TelcomScaleX(tce->pos_x + glitch_dx + xoff), TelcomScaleY(curry + glitch_dy + yoff), buff);
     lcount++;
     curry += height;
     nextline = textaux_CopyTextLine(nextline, buff);
   }
-  grtext_Printf(tce->pos_x + glitch_dx + xoff, curry + glitch_dy + yoff, buff);
+  grtext_Printf(TelcomScaleX(tce->pos_x + glitch_dx + xoff), TelcomScaleY(curry + glitch_dy + yoff), buff);
   lcount++;
   grtext_SetAlpha(old_alpha);
   if ((lcount * height) > tce->h) {
@@ -741,10 +744,12 @@ void RenderBmpStretch(tceffect *tce, float frametime, int xoff, int yoff, bool o
   int dx, dy;
   int index;
   index = 0;
+  // BUGFIX #685: art-space tile rects are scaled to the window at draw time.
   for (dy = 0, realy = starty; dy < h_count; dy++, realy += h)
     for (dx = 0, realx = startx; dx < w_count; dx++, realx += w) {
-      rend_DrawScaledBitmap(realx + xoff + glitch_dx, realy + yoff + glitch_dy, realx + w + xoff + glitch_dx,
-                            realy + h + yoff + glitch_dy, tce->bmpinfo.bitmaps[index], 0, 0, 1, 1);
+      rend_DrawScaledBitmap(TelcomScaleX(realx + xoff + glitch_dx), TelcomScaleY(realy + yoff + glitch_dy),
+                            TelcomScaleX(realx + w + xoff + glitch_dx), TelcomScaleY(realy + h + yoff + glitch_dy),
+                            tce->bmpinfo.bitmaps[index], 0, 0, 1, 1);
       index++;
     }
   rend_SetFiltering(1);
@@ -755,10 +760,11 @@ void RenderBackground(tceffect *tce, float frametime, int xoff, int yoff, bool o
     return;
   ASSERT(tce->type == EFX_BACKGROUND);
   int lx, rx, ty, by;
-  lx = tce->pos_x + xoff;
-  rx = tce->pos_x + xoff + tce->w;
-  ty = tce->pos_y + yoff;
-  by = tce->pos_y + yoff + tce->h;
+  // BUGFIX #685: the monitor rect is in art coordinates; scale to the window.
+  lx = TelcomScaleX(tce->pos_x + xoff);
+  rx = TelcomScaleX(tce->pos_x + xoff + tce->w);
+  ty = TelcomScaleY(tce->pos_y + yoff);
+  by = TelcomScaleY(tce->pos_y + yoff + tce->h);
   rend_FillRect(tce->color, lx, ty, rx, by);
   tce->age += frametime;
 }
@@ -770,10 +776,13 @@ void RenderMovie(tceffect *tce, float frametime, int xoff, int yoff, bool ok_to_
   if (!tce->movieinfo.handle)
     return;
   bool done = false;
-  FrameMovie(tce->movieinfo.handle, tce->pos_x + glitch_dx, tce->pos_y + glitch_dy, false);
+  // BUGFIX #685: art-space movie positions are scaled to the window (the
+  // movie frames themselves still render at native size).
+  FrameMovie(tce->movieinfo.handle, TelcomScaleX(tce->pos_x + glitch_dx), TelcomScaleY(tce->pos_y + glitch_dy), false);
   float end_time = tce->age + frametime;
   while ((end_time > tce->age) && (!done)) {
-    if (!FrameMovie(tce->movieinfo.handle, tce->pos_x + glitch_dx + xoff, tce->pos_y + glitch_dy + yoff)) {
+    if (!FrameMovie(tce->movieinfo.handle, TelcomScaleX(tce->pos_x + glitch_dx + xoff),
+                    TelcomScaleY(tce->pos_y + glitch_dy + yoff))) {
       /*
       if(IsLooping())	//looping?
       {

@@ -66,6 +66,10 @@ static std::vector<std::string> g_recorder;
 // ---------------------------------------------------------------------------
 int Max_window_w = 640;
 int Max_window_h = 480;
+int Game_window_x = 0;
+int Game_window_y = 0;
+int Game_window_w = 640;
+int Game_window_h = 480;
 bool Multi_bail_ui_menu = false;
 int Game_fonts[NUM_FONTS] = {0};
 
@@ -175,6 +179,7 @@ int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferred
 
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
+int Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
 renderer_preferred_state Render_preferred_state{};
 // Stubs for cockpit factory (config.cpp calls these; real impl pulls in
 // LegacyCockpit/WidescreenCockpit which need the full renderer chain).
@@ -490,6 +495,9 @@ void SetScreenMode(int sm, bool) {
   s_screen_mode = sm;
   s_screen_mode_changes++;
 }
+
+// cockpit / player stubs for video_menu::finish() cockpit-mode recreation
+void RecreateCockpitForCurrentPlayer() {}
 
 // file-local to newui_core.cpp
 void SimpleUICallback();
@@ -973,6 +981,43 @@ TEST_F(ConfigTest, UnknownLevelSkipsPresetButRecordsLevel) {
   EXPECT_EQ(Default_detail_level, 99);
 }
 
+/**
+ * @test ConfigTest.MaxDetailForcesEverySettingToMaximum
+ * @brief Verifies max Detail Forces Every Setting To Maximum.
+ *
+ * @details
+ * Exercises the ConfigTest code path and asserts observable
+ * post-conditions. Stubbed subsystems provide deterministic
+ * inputs; no external I/O is performed.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MaxDetailForcesEverySettingToMaximum) {
+  // start from a low preset so the max override visibly changes everything
+  ConfigSetDetailLevel(DETAIL_LEVEL_LOW);
+  Detail_settings.Fast_headlight_on = false; // user toggle must be preserved
+
+  ConfigSetDetailLevelMax();
+
+  EXPECT_FLOAT_EQ(Detail_settings.Terrain_render_distance, MAXIMUM_RENDER_DIST * TERRAIN_SIZE);
+  EXPECT_FLOAT_EQ(Detail_settings.Pixel_error, MINIMUM_TERRAIN_DETAIL);
+  EXPECT_TRUE(Detail_settings.Specular_lighting);
+  EXPECT_TRUE(Detail_settings.Dynamic_lighting);
+  EXPECT_TRUE(Detail_settings.Mirrored_surfaces);
+  EXPECT_TRUE(Detail_settings.Fog_enabled);
+  EXPECT_TRUE(Detail_settings.Coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Procedurals_enabled);
+  EXPECT_TRUE(Detail_settings.Powerup_halos);
+  EXPECT_TRUE(Detail_settings.Scorches_enabled);
+  EXPECT_TRUE(Detail_settings.Weapon_coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Bumpmapping_enabled);
+  EXPECT_EQ(Detail_settings.Specular_mapping_type, 1);
+  EXPECT_EQ(Detail_settings.Object_complexity, 2);
+  EXPECT_FALSE(Detail_settings.Fast_headlight_on); // untouched by the override
+  EXPECT_EQ(Default_detail_level, DETAIL_LEVEL_VERY_HIGH);
+}
+
 // ---------------------------------------------------------------------------
 // OptionsMenu integration: forced bail-out runs every finish hook and saves
 // ---------------------------------------------------------------------------
@@ -1013,13 +1058,11 @@ TEST_F(ConfigTest, ForceQuitRunsAllFinishHooksAndSaves) {
   EXPECT_EQ(Default_player_terrain_leveling, 2);
   EXPECT_EQ(Default_player_room_leveling, 2);
 
-  // details.finish wrote preset radio back to database
-  ASSERT_GE(g_database.writes.size(), 1u);
-  bool found_db_write = false;
+  // details.finish no longer writes the preset radio back to the database:
+  // detail settings are forced to max on modern platforms, so only the Fast
+  // Headlight toggle is read back from the sheet.
   for (auto &[label, val] : g_database.writes)
-    if (label == std::string("PredefDetailSetting") && val == DETAIL_LEVEL_MED)
-      found_db_write = true;
-  EXPECT_TRUE(found_db_write);
+    EXPECT_NE(label, std::string("PredefDetailSetting"));
 
   // sound.finish applied slider-derived volumes
   EXPECT_FLOAT_EQ(s_set_master_vol, 1.0f);
@@ -1061,4 +1104,29 @@ TEST_F(ConfigTest, InGameHudChangePropagatesToSetHUDState) {
   uint16_t expected = STAT_MESSAGES | STAT_CUSTOM | STAT_SHIP | STAT_TIMER | STAT_FPS;
   EXPECT_EQ(s_rec_sethud_mask, expected);
   EXPECT_EQ(s_rec_sethud_gr, 0);
+}
+
+/**
+ * @test ConfigTest.FullscreenScaleModeRoundTripsThroughVideoMenu
+ * @brief Verifies the fullscreen scaling mode radio group is created in the
+ * video menu and its selection is written back to Render_fullscreen_scale_mode
+ * by video_menu::finish().
+ *
+ * @details
+ * The video menu setup() creates a "Scaling" radio group (Fill/Fit/Zoom/Native)
+ * initialized from Render_fullscreen_scale_mode. finish() reads the selected
+ * radio index back into the global. This test drives OptionsMenu() with the
+ * default FIT mode and asserts the value survives the round-trip.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FullscreenScaleModeRoundTripsThroughVideoMenu) {
+  Multi_bail_ui_menu = true;
+  Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
+
+  OptionsMenu();
+
+  // video.finish() writes the radio selection back to the global
+  EXPECT_EQ(Render_fullscreen_scale_mode, 1);
 }

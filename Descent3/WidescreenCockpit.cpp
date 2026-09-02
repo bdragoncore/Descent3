@@ -95,6 +95,15 @@ void WidescreenCockpit::Render() {
   // the projection matrix (Matrix_scale.x = (h/w)/zoom') compresses it. Scaling
   // rvec by aspect/(4/3) widens the model back to fill the screen.
   float h_scale = ComputeHorizontalScale();
+  // BUGFIX #685: Log the window size and scale once so we can verify the
+  // widescreen correction is actually being applied. If Game_window_w/h are
+  // 4:3 (stale pilot HUD data), h_scale is 1.0 and the cockpit looks legacy.
+  static bool s_logged_render = false;
+  if (!s_logged_render) {
+    s_logged_render = true;
+    LOG_DEBUG << "WidescreenCockpit::Render: Game_window=" << Game_window_w << "x" << Game_window_h
+              << " h_scale=" << h_scale;
+  }
   view_tmat.rvec = view_tmat.rvec * h_scale;
 
   light_vec = -Viewer_object->orient.uvec;

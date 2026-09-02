@@ -563,15 +563,22 @@ void UIWindow::Render() {
   ui_EndDraw();
 
   while (gadget) {
+    //	reformat gadget (must happen first so m_W/m_H are current)
+    gadget->OnFormat();
+
     int l = m_X + gadget->X();
     int t = m_Y + gadget->Y();
     int r = l + gadget->W();
     int b = t + gadget->H();
 
-    //	reformat gadget
-    gadget->OnFormat();
-
     // draw gadget
+    if (CHECK_FLAG(gadget->GetFlags(), UIF_HIDDEN)) {
+      // BUGFIX: scrollable sheets hide out-of-view gadgets with UIF_HIDDEN so
+      // they are not drawn over the sheet bounds (no renderer clip region).
+      gadget = gadget->m_Next;
+      continue;
+    }
+
     if (l >= 0 && r <= UI_screen_width && t >= 0 && b <= UI_screen_height) {
       ui_StartDraw(l, t, r, b);
       ui_DrawSetFont(m_FontHandle);

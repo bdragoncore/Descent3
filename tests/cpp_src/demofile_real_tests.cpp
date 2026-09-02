@@ -411,6 +411,7 @@ void UIStatic::OnDraw() {}
 void UIStatic::OnFormat() {}
 void UIStatic::OnDestroy() {}
 bool UIBitmapItem::draw(int, int, tUIDrawClass) { return false; }
+bool UIBitmapItem::draw(int, int, int, int) { return false; }
 int UIBitmapItem::width() { return 0; }
 int UIBitmapItem::height() { return 0; }
 UIItem *UIBitmapItem::CopyUIItem() { return nullptr; }

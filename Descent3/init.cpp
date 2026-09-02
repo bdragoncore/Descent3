@@ -1170,6 +1170,7 @@ void SaveGameSettings() {
   Database->write("RS_fov", static_cast<int>(Render_FOV_setting));
   Database->write("RS_fullscreen", static_cast<int>(Game_fullscreen));
   Database->write("RS_cockpit_mode", GetCockpitMode());
+  Database->write("RS_fullscreen_scale_mode", Render_fullscreen_scale_mode);
 
   Database->write("RS_bitdepth", Render_preferred_bitdepth);
   Database->write("RS_bilear", Render_preferred_state.filtering);
@@ -1329,6 +1330,10 @@ void LoadGameSettings() {
   Database->read_int("RS_fullscreen", &tempval);
   Game_fullscreen = tempval != 0;
 
+  tempval = FULLSCREEN_SCALE_FIT;
+  Database->read_int("RS_fullscreen_scale_mode", &tempval);
+  Render_fullscreen_scale_mode = std::clamp(tempval, static_cast<int>(FULLSCREEN_SCALE_FILL), static_cast<int>(FULLSCREEN_SCALE_NATIVE));
+
   Database->read_int("RS_bilear", &Render_preferred_state.filtering);
   Database->read_int("RS_mipping", &Render_preferred_state.mipping);
   Database->read_int("RS_color_model", &Render_state.cur_color_model);
@@ -1400,6 +1405,12 @@ void LoadGameSettings() {
 
   Database->read_int("PredefDetailSetting", &level);
   ConfigSetDetailLevel(level);
+
+  // BUGFIX #1: Modern platforms can run at true maximum detail, so force every
+  // detail setting to its maximum value regardless of the saved preset.  The
+  // Fast Headlight toggle is intentionally left untouched so the player can
+  // still choose between the fast and full-quality headlight paths.
+  ConfigSetDetailLevelMax();
 
   // Motion blur
   Use_motion_blur = 0;
