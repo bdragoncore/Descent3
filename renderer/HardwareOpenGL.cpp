@@ -55,6 +55,7 @@
 #include "NewBitmap.h"
 #include "shaders.h"
 #include "ShaderProgram.h"
+#include "d3_version.h"
 
 #if defined(WIN32)
 #include "win/arb_extensions.h"
@@ -296,7 +297,7 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     int center_y = (bounds.h - winh) / 2;
 
     SDL_PropertiesID props = SDL_CreateProperties();
-    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Descent 3");
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Descent 3 - " D3_GIT_HASH);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, center_x);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, center_y);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, winw);

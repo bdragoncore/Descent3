@@ -312,7 +312,11 @@ void DrawScorches(int roomnum, int facenum) {
     rend_SetTextureType(TT_LINEAR);
   }
 
-  ASSERT(Scorch_end != -1);
+  // BUGFIX (PiccuEngine #17): Return early when no scorches exist.
+  // Scorch_end == -1 is a valid state (no scorches), not an error condition.
+  // The original ASSERT(Scorch_end != -1) would crash in debug builds.
+  if (Scorch_end == -1)
+    return;
 
   // Loop through all the scorches, and draw the ones for this face
   for (int i = Scorch_start; i >= 0; ) {
