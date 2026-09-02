@@ -49,5 +49,21 @@ This starts the Next.js viewer at `http://localhost:3000` with per-test trace vi
 
 Build or runtime issues should be reported on our [GitHub tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
+## Quality of Life Improvements
+
+We track potential QoL improvements from other Descent 3 forks,
+particularly [PiccuEngine](https://github.com/InsanityBringer/PiccuEngine)
+by InsanityBringer. See [piccuengine-qol.md](piccuengine-qol.md) for a
+full list of improvements we can port, with credit to the original author.
+
+Key areas under consideration:
+- Windowed mode improvements (centered window, borderless fullscreen)
+- Adjustable FOV with widescreen expansion
+- Widescreen cockpit support
+- MSAA and gamma correction via shaders
+- Mouse polling rate and button improvements
+- Sound channel prioritization fixes
+- Multiplayer weapon selection logic
+
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.
