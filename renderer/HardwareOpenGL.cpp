@@ -286,7 +286,7 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   // Common values: 2, 4, 8.
   int msaa_arg = FindArg("-msaa");
   int msaa_samples = 0;
-  if (msaa_arg && msaa_arg + 1 < GameArgc) {
+  if (msaa_arg && msaa_arg + 1 < MAX_ARGS) {
     msaa_samples = atoi(GameArgs[msaa_arg + 1]);
     if (msaa_samples < 0)
       msaa_samples = 0;
