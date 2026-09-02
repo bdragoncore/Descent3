@@ -1564,6 +1564,15 @@ void InitPlayerNewShip(int slot, int inven_reset) {
   ResetWeaponSelectStates(); // reset storage of current weapon class selected per slot.
   ResetReticle();
 
+  // BUGFIX (PiccuEngine #24): Reset FOV on a new ship.
+  // Holding the Mass Driver zoom during a level transition or respawn
+  // would leave Render_FOV stuck at the zoomed value, since the zoom
+  // state was never reset. Restore the desired FOV so the player
+  // doesn't spawn still zoomed in.
+  if (slot == Player_num) {
+    Render_FOV = Render_FOV_setting;
+  }
+
   // add his guidebot (if it is a guidebot game)
   // this is here in case DMFC calls this function (which would remove the guidebot)
   if (GetGameState() == GAMESTATE_LVLPLAYING && Game_mode & GM_MULTI && Netgame.local_role == LR_SERVER &&
