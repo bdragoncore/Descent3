@@ -288,10 +288,17 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     float scale = SDL_GetDisplayContentScale(Display_id);
     LOG_WARNING.printf("Using content scale %f", scale);
 
+    // BUGFIX (PiccuEngine #12): Center the window on the display instead of
+    // using SDL_WINDOWPOS_UNDEFINED which places it at an OS-determined position.
+    SDL_Rect bounds;
+    SDL_GetDisplayBounds(Display_id, &bounds);
+    int center_x = (bounds.w - winw) / 2;
+    int center_y = (bounds.h - winh) / 2;
+
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Descent 3");
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_UNDEFINED_DISPLAY(Display_id));
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_UNDEFINED_DISPLAY(Display_id));
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, center_x);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, center_y);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, winw);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, winh);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL);
@@ -463,6 +470,20 @@ std::unique_ptr<NewBitmap> HardwareOpenGL::Screenshot(int width, int height) con
 
 void HardwareOpenGL::SetFullScreen(bool fullscreen) {
   if (window_) {
+    // BUGFIX (PiccuEngine #13): Borderless fullscreen option.
+    // When going fullscreen, check if -borderless is specified. If so,
+    // match the window size to the display resolution and use
+    // SDL_WINDOW_FULLSCREEN (which in SDL3 gives borderless fullscreen
+    // when the window already matches the display resolution).
+    if (fullscreen) {
+      int borderless = FindArgChar("-borderless", 0);
+      if (borderless) {
+        SDL_Rect bounds;
+        SDL_GetDisplayBounds(Display_id, &bounds);
+        SDL_SetWindowSize(window_, bounds.w, bounds.h);
+        SDL_SetWindowPosition(window_, 0, 0);
+      }
+    }
     SDL_SetWindowFullscreen(window_, fullscreen);
     SDL_SyncWindow(window_);
   }
