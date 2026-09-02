@@ -723,6 +723,16 @@ void DecreasePlayerEnergy(int slot, float energy) {
 void PlayPlayerDamageSound(object *playerobj, int damage_type) {
   int sound_handle;
 
+  // BUGFIX (PiccuEngine #18): Throttle pain sounds to avoid overlapping cacophony
+  // when taking rapid fire. Without this, each damage tick played a new sound
+  // simultaneously, creating an unpleasant wall of overlapping pain sounds.
+  static int64_t last_pain_sound_ms = 0;
+  const int64_t PAIN_SOUND_THROTTLE_MS = 100; // minimum 100ms between pain sounds
+  int64_t now_ms = timer_GetMSTime();
+  if ((now_ms - last_pain_sound_ms) < PAIN_SOUND_THROTTLE_MS)
+    return;
+  last_pain_sound_ms = now_ms;
+
   switch (damage_type) {
   case PD_ENERGY_WEAPON:
     sound_handle = SOUND_HIT_BY_ENERGY_WEAPON;
