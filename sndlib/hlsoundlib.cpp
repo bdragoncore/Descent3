@@ -465,6 +465,9 @@
 #include "descent.h"
 
 #include "sdlsound.h"
+#ifdef HAVE_OPENAL
+#include "openalsound.h"
+#endif
 
 hlsSystem Sound_system;
 char Sound_quality = SQT_NORMAL;
@@ -523,8 +526,19 @@ int hlsSystem::InitSoundLib(oeApplication *sos, char mixer_type, char quality, b
   }
 
   // Create and initialize the low-level sound library
-  if (m_ll_sound_ptr == NULL)
+  if (m_ll_sound_ptr == NULL) {
+    // BUGFIX (PiccuEngine #9): Select the OpenAL backend when the user has
+    // chosen SOUND_MIXER_OPENAL, otherwise fall back to the SDL/software mixer.
+#ifdef HAVE_OPENAL
+    if (mixer_type == SOUND_MIXER_OPENAL) {
+      m_ll_sound_ptr = new openalsound;
+    } else {
+      m_ll_sound_ptr = new lnxsound;
+    }
+#else
     m_ll_sound_ptr = new lnxsound;
+#endif
+  }
   ASSERT(m_ll_sound_ptr);
   if (m_ll_sound_ptr == NULL)
     return 0;

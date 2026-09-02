@@ -998,6 +998,9 @@ struct sound_menu {
     case SOUND_MIXER_CREATIVE_EAX:
       iTemp = 5;
       break;
+    case SOUND_MIXER_OPENAL:
+      iTemp = 6;
+      break;
     default:
       Int3(); //-wtf?
     }
@@ -1007,6 +1010,7 @@ struct sound_menu {
     sheet->AddRadioButton("DS 16");
     sheet->AddRadioButton("DS 3D");
     sheet->AddRadioButton("EAX");
+    sheet->AddRadioButton("OPENAL"); // BUGFIX (PiccuEngine #9): OpenAL Soft option
     *sndmixer = iTemp;
 #endif
 
@@ -1039,6 +1043,9 @@ struct sound_menu {
       break;
     case 5:
       mixer_type = SOUND_MIXER_CREATIVE_EAX;
+      break;
+    case 6:
+      mixer_type = SOUND_MIXER_OPENAL; // BUGFIX (PiccuEngine #9): OpenAL Soft
       break;
     default:
       Int3(); // -wtf?

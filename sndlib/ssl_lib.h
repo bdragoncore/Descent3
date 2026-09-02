@@ -346,6 +346,8 @@ struct sound_info {
 #define SOUND_MIXER_AUREAL 4       // Unused, outdated 3D sound technology
 #define SOUND_MIXER_CREATIVE_EAX 6 // switched because launcher uses 5 as NONE.
 #define SOUND_MIXER_NONE 5
+// BUGFIX (PiccuEngine #9): Optional OpenAL Soft backend for 3D sound
+#define SOUND_MIXER_OPENAL 7
 
 // Support sound qualities
 #define SQT_NORMAL 0
