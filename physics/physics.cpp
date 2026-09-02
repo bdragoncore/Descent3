@@ -701,6 +701,17 @@ void do_physics_sim(object *obj) {
   float sim_time_remaining = Frametime;     // Amount of simulation time remaining (current iteration)
   float old_sim_time_remaining = Frametime; // Amount of simulation time remaining (previous iteration)
 
+  // BUGFIX #549: Clamp physics timestep to prevent pass-through at very high FPS.
+  // At extremely small timesteps, floating-point precision errors in the velocity
+  // recomputation and collision speed calculation cause projectiles to pass
+  // through geometry. A minimum timestep of ~8.3ms (120 FPS) ensures the
+  // physics simulation operates in a numerically stable regime.
+  constexpr float MIN_PHYSICS_TIMESTEP = 1.0f / 120.0f;
+  if (Frametime > 0.0f && Frametime < MIN_PHYSICS_TIMESTEP) {
+    sim_time_remaining = MIN_PHYSICS_TIMESTEP;
+    old_sim_time_remaining = MIN_PHYSICS_TIMESTEP;
+  }
+
   vector init_pos = obj->pos;   // Initial position
   int init_room = obj->roomnum; // Initial room
 
@@ -1932,6 +1943,13 @@ void do_walking_sim(object *obj) {
 
   float sim_time_remaining = Frametime;     // Amount of simulation time remaining (current iteration)
   float old_sim_time_remaining = Frametime; // Amount of simulation time remaining (previous iteration)
+
+  // BUGFIX #549: Same minimum timestep clamp for walking physics.
+  constexpr float MIN_PHYSICS_TIMESTEP_WALK = 1.0f / 120.0f;
+  if (Frametime > 0.0f && Frametime < MIN_PHYSICS_TIMESTEP_WALK) {
+    sim_time_remaining = MIN_PHYSICS_TIMESTEP_WALK;
+    old_sim_time_remaining = MIN_PHYSICS_TIMESTEP_WALK;
+  }
 
   vector init_pos = obj->pos;   // Initial position
   int init_room = obj->roomnum; // Initial room
