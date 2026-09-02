@@ -19,8 +19,8 @@ under GPL-3.0 (compatible with our project).
   fullscreen instead of exclusive mode
 
 **PiccuEngine commits:** `832ccd8`, `f9538b9`, `b0e2d00`
-**Our status:** Partially addressed by #685 fix. Full windowed mode
-improvements still needed.
+**Our status:** Partially implemented. Window centered on display,
+borderless fullscreen option added via -borderless flag.
 
 ### 2. Adjustable FOV with Widescreen Expansion
 - User-adjustable field of view
@@ -72,8 +72,9 @@ at non-4:3 resolutions.
 - Fixed mouse button 5 reading as scroll wheel input
 
 **PiccuEngine commits:** v1.1 features, `4a7ba93`
-**Our status:** Mouse buttons 4/5 may work already. Polling rate
-limit may still exist.
+**Our status:** Implemented. Removed 20Hz polling limit, remapped side
+buttons to MOUSE_B4/MOUSE_B5, remapped scroll wheel to MOUSE_B6/MOUSE_B7,
+fixed ddio_MouseGetState to not clear side button bits.
 
 ### 9. OpenAL Sound System
 - Replaces DirectSound with OpenAL Soft
@@ -91,20 +92,23 @@ limit may still exist.
 - Limit player-to-generic object collision sounds
 
 **PiccuEngine commits:** `26e9fbc`, `50ca88a`, `c46f780`, `6442a8d`
-**Our status:** Not implemented. These are quality-of-life audio fixes.
+**Our status:** Partially implemented. Pain sound throttle added.
+Looping sounds already protected by SSF_PLAY_LOOPING check in
+sdlsound.cpp. Bumping algorithm and collision sounds not changed.
 
 ### 11. Multiplayer Weapon Selection
 - Don't prioritize weapons that are out of ammo
 - When selecting a weapon slot, pick the higher priority weapon
 
 **PiccuEngine commits:** `f3121a8`, `7735520`
-**Our status:** Not implemented.
+**Our status:** Implemented. Added is_primary_weapon_usable() that
+checks ammo/energy availability for primary weapons in SelectPrimaryWeapon().
 
 ### 12. Videos Expand to Screen Width
 - FMV cutscenes use full screen width instead of 4:3 box
 
 **PiccuEngine v1.2:** "Videos are no longer put in a 4:3 box"
-**Our status:** Not implemented.
+**Our status:** Not implemented. Requires MVE player changes.
 
 ### 13. Framerate Limiter Precision
 - More precise framerate limiter
@@ -117,7 +121,7 @@ limit may still exist.
 - Git-extracted version shown in window title
 
 **PiccuEngine commit:** `2a1fee6`
-**Our status:** Not implemented.
+**Our status:** Implemented. Window title now shows "Descent 3 - D3_GIT_HASH".
 
 ---
 
@@ -127,7 +131,8 @@ limit may still exist.
 - Warning sound works correctly after changing levels
 
 **PiccuEngine commit:** `3c0b62d`
-**Our status:** Bug may exist in our code.
+**Our status:** Implemented. Reset last_homing_warning_sound_time and
+last_hit_wall_sound_time in InitPlayerNewLevel().
 
 ### 16. Fix Key Ramping at 0
 - Slow movement when keyboard ramping is exactly 0
@@ -139,7 +144,8 @@ limit may still exist.
 - Crash when scorch index is -1
 
 **PiccuEngine commit:** `4d16021`
-**Our status:** Bug may exist in our code.
+**Our status:** Implemented. DrawScorches() returns early when
+Scorch_end == -1 instead of asserting.
 
 ### 18. Fix Fusion Damage Scaling
 - Fusion damage scales based on framerate (was broken)
@@ -151,7 +157,8 @@ limit may still exist.
 - Crash when Viewer_object is null
 
 **PiccuEngine commit:** `0fcd088`
-**Our status:** Bug may exist in our code.
+**Our status:** Partially implemented. Added null guards to
+DoRainEffect() and DoSnowEffect() in weather.cpp.
 
 ### 20. Fix OOF Model Polygon Stack Corruption
 - Stack corruption when glow attached and more than 30 vertices
@@ -163,7 +170,8 @@ limit may still exist.
 - Replace original quicksort with std::sort
 
 **PiccuEngine commit:** `c1d3532`
-**Our status:** Our code may have the same buggy quicksort.
+**Our status:** Implemented. Replaced hand-rolled quicksort with
+std::sort in postrender.cpp.
 
 ### 22. Fix HUD Positioning at Different Resolutions
 - HUD elements positioned correctly regardless of resolution
@@ -182,7 +190,8 @@ differently based on resolution"
 - MD zoom no longer sticks across new ships/levels
 
 **PiccuEngine commit:** `e55c23c`
-**Our status:** Bug may exist in our code.
+**Our status:** Implemented. Reset Render_FOV to Render_FOV_setting
+in InitPlayerNewShip().
 
 ---
 
