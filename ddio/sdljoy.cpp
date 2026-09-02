@@ -195,6 +195,23 @@ static bool joy_InitStick(tJoystick joy, char *server_adr) {
     case 0:
       break;
     }
+
+    // BUGFIX #496: Detect trigger axes using initial value heuristic.
+    // Xbox controller triggers rest at their minimum value (-32768) when
+    // released, unlike stick axes which rest near 0. If an axis initial
+    // value is near the minimum, mark it as a unipolar trigger.
+    caps.trigger_axis_mask = 0;
+    unsigned axis_flags[] = {JOYFLAG_XVALID, JOYFLAG_YVALID, JOYFLAG_ZVALID,
+                            JOYFLAG_RVALID, JOYFLAG_UVALID, JOYFLAG_VVALID};
+    for (int a = 0; a < axes && a < 6; a++) {
+      int16_t initialVal = 0;
+      if (SDL_JoystickGetAxisInitialState(stick, a, &initialVal)) {
+        if (initialVal < -32768 * 0.75) {
+          caps.trigger_axis_mask |= axis_flags[a];
+        }
+      }
+    }
+
     Joysticks[joy].caps = caps;
 
     LOG_DEBUG.printf("JOYSTICK: Initialized stick named [%s].", caps.name);

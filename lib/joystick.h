@@ -108,6 +108,7 @@ typedef int tJoystick;
 struct tJoyInfo {
   char name[128];
   unsigned axes_mask;
+  unsigned trigger_axis_mask; // BUGFIX #496: bitmask of axes that are unipolar triggers
   unsigned num_btns;
   int minx, maxx;
   int miny, maxy;
