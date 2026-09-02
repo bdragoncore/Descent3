@@ -3917,6 +3917,9 @@ target_include_directories(mock_cfile PRIVATE
     ${PROJECT_SOURCE_DIR}/cfile
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+# mock_cfile.hpp includes <gmock/gmock.h>; link GTest::gmock to get its
+# include directory propagated to this object library.
+target_link_libraries(mock_cfile PRIVATE GTest::gmock)
 
 # CFile mock tests - linked with mock object FIRST (wins symbol conflicts)
 add_executable(cfile_mock_tests
@@ -3962,6 +3965,9 @@ target_include_directories(mock_cfile_full PRIVATE
     ${PROJECT_SOURCE_DIR}/cfile
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+# mock_cfile_full.hpp includes <gmock/gmock.h>; link GTest::gmock to get its
+# include directory propagated to this object library.
+target_link_libraries(mock_cfile_full PRIVATE GTest::gmock)
 
 # ============================================================================
 # CFile Integration Tests (using full mock with HOG library support)
@@ -4062,6 +4068,8 @@ target_include_directories(test_stubs_cpp PRIVATE
     ${PROJECT_SOURCE_DIR}/cfile
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+# mock_cfile.cpp includes mock_cfile.hpp which includes <gmock/gmock.h>
+target_link_libraries(test_stubs_cpp PRIVATE GTest::gmock)
 # Force C linkage for all cfile functions
 target_compile_options(test_stubs_cpp PRIVATE -x c++)
 
@@ -4395,4 +4403,7 @@ target_include_directories(vfx_constants_tests PRIVATE
 gtest_discover_tests(vfx_constants_tests)
 
 # Consolidated render tests using OffscreenGL + Mesa llvmpipe
-add_subdirectory(render)
+# Only build on Linux where PkgConfig + EGL + Mesa are available
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_subdirectory(render)
+endif()
