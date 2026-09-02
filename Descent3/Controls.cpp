@@ -559,6 +559,18 @@ static inline float ramp_control_value(float val, float limit, float &ramp_state
   return ramp_state;
 }
 
+// BUGFIX (PiccuEngine #16): When key ramping is disabled (set to 0), keyboard
+// input should give full-speed movement instead of tiny delta values.
+// The original code passed the raw keyboard delta (a small float) directly,
+// causing extremely slow movement when ramping was set to 0.
+static inline float unramped_control_value(float val) {
+  if (val < 0)
+    return -1.0f;
+  else if (val > 0)
+    return 1.0f;
+  return 0.0f;
+}
+
 //	INITIALIZATION FUNCTIONS
 
 void InitControls() {
@@ -835,34 +847,34 @@ void DoKeyboardMovement(game_controls *controls) {
   d_afterburn = (key_afterburn.value);
 
   controls->sideways_thrust +=
-      (KEY_RAMPUP_TIME) ? (ramp_control_value(dx, KEY_RAMPUP_TIME, Key_ramp.x, Key_ramp.ox) / KEY_RAMPUP_TIME) : dx;
+      (KEY_RAMPUP_TIME) ? (ramp_control_value(dx, KEY_RAMPUP_TIME, Key_ramp.x, Key_ramp.ox) / KEY_RAMPUP_TIME) : unramped_control_value(dx);
   controls->vertical_thrust +=
-      (KEY_RAMPUP_TIME) ? (ramp_control_value(dy, KEY_RAMPUP_TIME, Key_ramp.y, Key_ramp.oy) / KEY_RAMPUP_TIME) : dy;
+      (KEY_RAMPUP_TIME) ? (ramp_control_value(dy, KEY_RAMPUP_TIME, Key_ramp.y, Key_ramp.oy) / KEY_RAMPUP_TIME) : unramped_control_value(dy);
   controls->forward_thrust +=
-      (KEY_RAMPUP_TIME) ? (ramp_control_value(dz, KEY_RAMPUP_TIME, Key_ramp.z, Key_ramp.oz) / KEY_RAMPUP_TIME) : dz;
+      (KEY_RAMPUP_TIME) ? (ramp_control_value(dz, KEY_RAMPUP_TIME, Key_ramp.z, Key_ramp.oz) / KEY_RAMPUP_TIME) : unramped_control_value(dz);
 
   controls->afterburn_thrust += d_afterburn / Frametime;
 
   if (!controls->toggle_slide && !controls->toggle_bank) {
     // clamp pitch ramp time to limits.
     controls->pitch_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(dp, KEY_RAMPUP_TIME, Key_ramp.p, Key_ramp.op) / KEY_RAMPUP_TIME) : dp;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(dp, KEY_RAMPUP_TIME, Key_ramp.p, Key_ramp.op) / KEY_RAMPUP_TIME) : unramped_control_value(dp);
     controls->heading_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : dh;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : unramped_control_value(dh);
   }
 
   if (controls->toggle_slide) {
     controls->sideways_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : dh;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : unramped_control_value(dh);
     controls->vertical_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(dp, KEY_RAMPUP_TIME, Key_ramp.p, Key_ramp.op) / KEY_RAMPUP_TIME) : dp;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(dp, KEY_RAMPUP_TIME, Key_ramp.p, Key_ramp.op) / KEY_RAMPUP_TIME) : unramped_control_value(dp);
   }
   if (controls->toggle_bank) {
     controls->bank_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : dh;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(dh, KEY_RAMPUP_TIME, Key_ramp.h, Key_ramp.oh) / KEY_RAMPUP_TIME) : unramped_control_value(dh);
   } else {
     controls->bank_thrust +=
-        (KEY_RAMPUP_TIME) ? (ramp_control_value(db, KEY_RAMPUP_TIME, Key_ramp.b, Key_ramp.ob) / KEY_RAMPUP_TIME) : db;
+        (KEY_RAMPUP_TIME) ? (ramp_control_value(db, KEY_RAMPUP_TIME, Key_ramp.b, Key_ramp.ob) / KEY_RAMPUP_TIME) : unramped_control_value(db);
   }
 }
 
