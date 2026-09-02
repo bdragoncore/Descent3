@@ -233,6 +233,7 @@ void ui_Flush() {
   UI_input.b1_status = 0;
   UI_input.b1_last_status = 0;
   UI_input.b1_count = 0;
+  UI_input.wheel = 0;
   UIFrameTime = 0.0f;
   UI_input.cur_time = timer_GetTime();
   ui_KeyFlush();
@@ -274,6 +275,14 @@ bool ui_MousePoll(bool buttons) {
     UI_input.last_my = UI_input.my;
     UI_input.mx = mx / kDefaultMouseScale;
     UI_input.my = my / kDefaultMouseScale;
+
+    // BUGFIX: capture the mouse wheel (MOUSE_B6=up, MOUSE_B7=down) so
+    // scrollable sheets can react to it. ddio clears these bits after each
+    // read, so they must be accumulated here.
+    if (CHECK_FLAG(btn_mask, MOUSE_B6))
+      UI_input.wheel++;
+    if (CHECK_FLAG(btn_mask, MOUSE_B7))
+      UI_input.wheel--;
   } else if (UI_cursor_show) {
     // if bX_count is 0, then repeat processing can occur, otherwise only real mouse events are processed.
     if (ddio_MouseGetEvent(&msebtn, &state)) {
@@ -433,6 +442,7 @@ int ui_ProcessFocusedWindow() {
   //	process the window in focus.
   // process at least once regardless of input (for user processes.)
   // get keys.   get mouse while real events (non ui manuipulated) are there.
+  UI_input.wheel = 0; // wheel is a per-frame accumulator.
   ui_MousePoll(false);
   if (UIWindowFocus) {
     UI_input.b1_count = 0; // button one state reset.

@@ -215,6 +215,14 @@ uint16_t *opengl_packed_Translate_table = nullptr;
 uint16_t *opengl_packed_4444_translate_table = nullptr;
 
 extern rendering_state gpu_state;
+
+// Fullscreen scaling mode (from game.h enum: FILL=0, FIT=1, NATIVE=2)
+extern int Render_fullscreen_scale_mode;
+enum {
+  FULLSCREEN_SCALE_FILL = 0,
+  FULLSCREEN_SCALE_FIT = 1,
+  FULLSCREEN_SCALE_NATIVE = 2
+};
 extern renderer_preferred_state gpu_preferred_state;
 
 bool OpenGL_multitexture_state = false;
@@ -299,10 +307,12 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   }
 
   if (!window_) {
+    // BUGFIX #685: In SDL3, SDL_CreateWindowWithProperties uses logical
+    // coordinates and the display content scale is applied automatically
+    // by the windowing system. Multiplying manually creates a window that
+    // is 'scale' times too large in logical coordinates on HiDPI displays.
     float scale = SDL_GetDisplayContentScale(Display_id);
     LOG_WARNING.printf("Using content scale %f", scale);
-    winw = std::floor(static_cast<float>(winw) * scale);
-    winh = std::floor(static_cast<float>(winh) * scale);
 
     // BUGFIX (PiccuEngine #12): Center the window on the display instead of
     // using SDL_WINDOWPOS_UNDEFINED which places it at an OS-determined position.
@@ -442,24 +452,40 @@ void HardwareOpenGL::PresentFrame() const {
 
     int scaledHeight;
     int scaledWidth;
-    if (w < h) {
-      scaledWidth = w;
-      scaledHeight = static_cast<int>((static_cast<double>(framebuffer_height_) / static_cast<double>(framebuffer_width_)) *
-                                      static_cast<double>(w));
-    } else {
-      scaledHeight = h;
-      scaledWidth = static_cast<int>((static_cast<double>(framebuffer_width_) / static_cast<double>(framebuffer_height_)) *
-                                     static_cast<double>(h));
-    }
+    int centerX;
+    int centerY;
 
-    const int centeredX = (w - scaledWidth) / 2;
-    const int centeredY = (h - scaledHeight) / 2;
+    switch (Render_fullscreen_scale_mode) {
+    case FULLSCREEN_SCALE_FILL:
+      // Stretch to fill the window, ignoring aspect ratio.
+      scaledWidth = w;
+      scaledHeight = h;
+      centerX = 0;
+      centerY = 0;
+      break;
+
+    case FULLSCREEN_SCALE_FIT:
+    default:
+      // Maintain aspect ratio, letterbox (original behavior).
+      if (w < h) {
+        scaledWidth = w;
+        scaledHeight = static_cast<int>((static_cast<double>(framebuffer_height_) / static_cast<double>(framebuffer_width_)) *
+                                        static_cast<double>(w));
+      } else {
+        scaledHeight = h;
+        scaledWidth = static_cast<int>((static_cast<double>(framebuffer_width_) / static_cast<double>(framebuffer_height_)) *
+                                       static_cast<double>(h));
+      }
+      centerX = (w - scaledWidth) / 2;
+      centerY = (h - scaledHeight) / 2;
+      break;
+    }
 
     dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     dglClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     dglClear(GL_COLOR_BUFFER_BIT);
-    dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, centeredX, centeredY, centeredX + scaledWidth,
-                       centeredY + scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, centerX, centerY, centerX + scaledWidth,
+                       centerY + scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     dglBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 

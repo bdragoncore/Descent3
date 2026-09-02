@@ -288,7 +288,13 @@ void rend_DrawChunkedBitmap(chunked_bitmap *chunk, int x, int y, uint8_t alpha) 
     for (int t = 0; t < w; t++) {
       int dx = x + (piece_w * t);
       int dy = y + (piece_h * i);
-      rend_DrawSimpleBitmap(bm_array[i * w + t], dx, dy);
+      rend_SetAlphaType(AT_CONSTANT_TEXTURE);
+      rend_SetAlphaValue(alpha);
+      rend_SetLighting(LS_NONE);
+      rend_SetColorModel(CM_MONO);
+      rend_SetOverlayType(OT_NONE);
+      rend_SetWrapType(WT_CLAMP);
+      rend_DrawScaledBitmap(dx, dy, dx + piece_w, dy + piece_h, bm_array[i * w + t], 0, 0, 1, 1);
     }
   }
   rend_SetZBufferState(1);
@@ -299,17 +305,41 @@ void rend_DrawScaledChunkedBitmap(chunked_bitmap *chunk, int x, int y, int neww,
   int *bm_array = chunk->bm_array;
   int w = chunk->w;
   int h = chunk->h;
-  int piece_w;
-  int piece_h;
+  if (w <= 0 || h <= 0 || !bm_array)
+    return;
+
+  // BUGFIX #685: composite all tiles into a single square temporary bitmap so
+  // the GPU samples the entire image as one OpenGL texture.  Each tile is a
+  // separate texture; GL_LINEAR clamps at every texture edge, producing
+  // visible seam lines that no overlap or UV tweak can remove.  The OpenGL
+  // renderer rejects non-square textures (opengl_MakeBitmapCurrent), so the
+  // temp bitmap is allocated square and only the image area is drawn.
+  int srcW = chunk->pw;
+  int srcH = chunk->ph;
+  if (srcW <= 0 || srcH <= 0)
+    return;
+
+  int square = std::max(srcW, srcH);
+  int temp_bm = bm_AllocBitmap(square, square, 0);
+  if (temp_bm < 0)
+    return;
+
+  uint16_t *dst = bm_data(temp_bm, 0);
+  int tileW = bm_w(bm_array[0], 0);
+  int tileH = bm_h(bm_array[0], 0);
+
+  for (int ty = 0; ty < h; ty++) {
+    for (int tx = 0; tx < w; tx++) {
+      uint16_t *src = bm_data(bm_array[ty * w + tx], 0);
+      int copyW = std::min(tileW, srcW - tx * tileW);
+      int copyH = std::min(tileH, srcH - ty * tileH);
+      for (int row = 0; row < copyH; row++) {
+        std::memcpy(&dst[(ty * tileH + row) * square + tx * tileW], &src[row * tileW], copyW * sizeof(uint16_t));
+      }
+    }
+  }
+
   int screen_w, screen_h;
-  int i, t;
-
-  float scalew, scaleh;
-
-  scalew = ((float)neww) / ((float)chunk->pw);
-  scaleh = ((float)newh) / ((float)chunk->ph);
-  piece_w = scalew * ((float)bm_w(bm_array[0], 0));
-  piece_h = scaleh * ((float)bm_h(bm_array[0], 0));
   rend_GetProjectionParameters(&screen_w, &screen_h);
   rend_SetOverlayType(OT_NONE);
   rend_SetLighting(LS_NONE);
@@ -317,27 +347,20 @@ void rend_DrawScaledChunkedBitmap(chunked_bitmap *chunk, int x, int y, int neww,
   rend_SetZBufferState(0);
   rend_SetAlphaType(AT_CONSTANT_TEXTURE);
   rend_SetAlphaValue(alpha);
-  rend_SetWrapType(WT_WRAP);
-  for (i = 0; i < h; i++) {
-    for (t = 0; t < w; t++) {
-      int dx = x + (piece_w * t);
-      int dy = y + (piece_h * i);
-      int dw, dh;
-      if ((dx + piece_w) > screen_w)
-        dw = piece_w - ((dx + piece_w) - screen_w);
-      else
-        dw = piece_w;
-      if ((dy + piece_h) > screen_h)
-        dh = piece_h - ((dy + piece_h) - screen_h);
-      else
-        dh = piece_h;
+  rend_SetWrapType(WT_CLAMP);
 
-      float u2 = (float)dw / (float)piece_w;
-      float v2 = (float)dh / (float)piece_h;
-      rend_DrawScaledBitmap(dx, dy, dx + dw, dy + dh, bm_array[i * w + t], 0, 0, u2, v2);
-    }
-  }
+  int8_t prev_filtering = gpu_state.cur_bilinear_state;
+  rend_SetFiltering(1);
+
+  // Draw only the image area (srcW x srcH) of the square texture.
+  float u1 = (float)srcW / (float)square;
+  float v1 = (float)srcH / (float)square;
+  rend_DrawScaledBitmap(x, y, x + neww, y + newh, temp_bm, 0, 0, u1, v1, -1, NULL);
+
+  rend_SetFiltering(prev_filtering);
   rend_SetZBufferState(1);
+
+  bm_FreeBitmap(temp_bm);
 }
 
 // Sets some global preferences for the renderer

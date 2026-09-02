@@ -299,12 +299,14 @@
 #include "SmallViews.h"
 #include "D3ForceFeedback.h"
 #include "appdatabase.h"
+#include "gamefont.h"
 #include "soundload.h"
 #include "sounds.h"
 #include "ctlconfig.h"
 #include "d3music.h"
 #include "gameloop.h"
 #include "cockpit_factory.h"
+#include "cockpit.h"
 #include "args.h"
 
 #include <SDL3/SDL.h>
@@ -771,9 +773,10 @@ struct video_menu {
   bool *fullscreen = nullptr;
   bool *mipmapping = nullptr;
   bool *vsync = nullptr;
+  bool *widescreen = nullptr;
+  int *scale_mode = nullptr;
   char *resolution_string = nullptr;
   short *fov = nullptr;
-  int *cockpit_mode = nullptr;
   bool resolution_changed = false;
 
   int *bitdepth = nullptr; // bitdepths
@@ -782,29 +785,73 @@ struct video_menu {
   newuiSheet *setup(newuiMenu *menu) {
     sheet = menu->AddOption(IDV_VCONFIG, TXT_OPTVIDEO, NEWUIMENU_MEDIUM);
 
+    // BUGFIX #685: compute group positions from actual art heights at runtime
+    // instead of hardcoded pixel offsets.  After newuiCore_PageInBitmaps(),
+    // all widget bitmaps are loaded and their dimensions are available.
+    // Note: widget text height = grfont_GetHeight + 1 (Grtext_line_spacing).
+    const int font_h = grfont_GetHeight(MONITOR9_NEWUI_FONT) + 1;
+    const int lbtn_h = newui_GetBitmapHeight("LongButton.ogf");
+    const int lchk_h = newui_GetBitmapHeight("LongButtonRed.ogf");
+    const int radio_h = newui_GetBitmapHeight("SmallButton.ogf");
+    const int slider_bar_h = newui_GetBitmapHeight("Bar.ogf");
+    const int slider_h = font_h + slider_bar_h + 2; // title + bar + spacing from Realize
+    const int group_pad = 5;
+
+    // Bounding box of the sheet's black area: from the sheet origin to the
+    // options-button column on the right, and down to the bottom of the
+    // black content area within the MediumScreen.ogf background art.
+    // The art has a decorative border at the bottom; 30px accounts for it.
+    const int sheet_w = NEWUI_MEDWIN_OPTIONS_X - NEWUI_MEDWIN_SHEET_X;
+    const int sheet_h = newui_GetBitmapHeight("MediumScreen.ogf") - NEWUI_MEDWIN_SHEET_Y - 30;
+
+    // BUGFIX: make the video options a scrollable pane so additional options
+    // can be added without overflowing the sheet bounds.  The scrollbar is
+    // only shown when the content exceeds the visible area.
+    sheet->SetScrollArea(sheet_w, sheet_h);
+
+    // Single-column layout: the sheet is too narrow for a second column of
+    // long controls (the FOV slider bar is 176px wide), so everything flows
+    // down the left column within the sheet bounds.
+    int cy = 0; // y cursor relative to sheet origin
+
     // video resolution
-    sheet->NewGroup(TXT_RESOLUTION, 0, 0);
+    sheet->NewGroup(TXT_RESOLUTION, 0, cy);
+    cy += font_h;
     std::string res = Video_res_list[Current_video_resolution_id].getName();
     auto alloc_size = std::max(res.size() + 1, static_cast<size_t>(15));
     resolution_string = sheet->AddChangeableText(alloc_size);
     snprintf(resolution_string, alloc_size, res.c_str());
+    cy += font_h;
     sheet->AddLongButton("Change", IDV_CHANGE_RES_WINDOW);
+    cy += lbtn_h;
 
     fullscreen = sheet->AddLongCheckBox("Fullscreen", Game_fullscreen);
+    cy += lchk_h;
+    cy += group_pad;
 
-    // Cockpit mode: Legacy (4:3) or Widescreen (aspect-corrected)
-    sheet->NewGroup("Cockpit", 0, 50);
-    cockpit_mode = sheet->AddFirstRadioButton("Legacy");
-    sheet->AddRadioButton("Widescreen");
-    *cockpit_mode = (GetCockpitMode() == COCKPIT_MODE_WIDESCREEN) ? 1 : 0;
+    // Widescreen: when enabled the cockpit uses aspect-corrected rendering.
+    widescreen = sheet->AddLongCheckBox("Widescreen", GetCockpitMode() == COCKPIT_MODE_WIDESCREEN);
+    cy += lchk_h;
 
-    // FOV setting 72deg -> 90deg
+    // Fullscreen scaling mode: how the framebuffer maps to the display window.
+    // Only meaningful in fullscreen; radio group flows after Widescreen.
+    sheet->NewGroup("Scaling", 0, cy);
+    cy += font_h;
+    scale_mode = sheet->AddFirstRadioButton("Fill");
+    sheet->AddRadioButton("Fit");
+    sheet->AddRadioButton("Native");
+    *scale_mode = Render_fullscreen_scale_mode;
+    cy += radio_h * 3;
+
+    // FOV setting 72deg -> 90deg (flows after Cockpit, no NewGroup)
     tSliderSettings settings = {};
     settings.min_val.f = D3_DEFAULT_FOV;
     settings.max_val.f = 90.f;
     settings.type = SLIDER_UNITS_FLOAT;
     fov = sheet->AddSlider("FOV", static_cast<int16_t>(settings.max_val.f - settings.min_val.f),
                            static_cast<int16_t>(Render_FOV_setting - D3_DEFAULT_FOV), &settings);
+    cy += slider_h;
+    cy += group_pad;
 
 #if !defined(POSIX)
     int iTemp = 0;
@@ -829,15 +876,23 @@ struct video_menu {
       bitdepth = NULL;
     }
 #endif
-    // video settings
-    sheet->NewGroup(TXT_TOGGLES, 0, 80);
-    filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
-    mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
 
-    sheet->NewGroup(TXT_MONITOR, 0, 130);
+    // video settings
+    sheet->NewGroup(TXT_TOGGLES, 0, cy);
+    cy += font_h;
+    filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
+    cy += lchk_h;
+    mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
+    cy += lchk_h;
+    cy += group_pad;
+
+    sheet->NewGroup(TXT_MONITOR, 0, cy);
+    cy += font_h;
     vsync = sheet->AddLongCheckBox(TXT_CFG_VSYNCENABLED, (Render_preferred_state.vsync_on != 0));
+    cy += lchk_h;
 
     sheet->AddText("");
+    cy += font_h;
     sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
     return sheet;
@@ -874,11 +929,31 @@ struct video_menu {
       Render_FOV = Render_FOV_setting; // ISB: this may cause discontinuities if FOV is changed while zoomed.
     }
 
+    if (scale_mode) {
+      Render_fullscreen_scale_mode = *scale_mode;
+    }
+
     // Cockpit mode: recreate the active cockpit if the mode changed.
-    // The cockpit is re-initialized on the next level load or ship change.
-    int new_cockpit_mode = (*cockpit_mode) ? COCKPIT_MODE_WIDESCREEN : COCKPIT_MODE_LEGACY;
+    // BUGFIX #685: CreateCockpit() only allocates the new cockpit; it leaves it
+    // uninitialized (model_num == -1) so it would not render until the next
+    // level load. Initialize and open it now so the mode change takes effect
+    // immediately, even if the player resumes a level without reloading.
+    int new_cockpit_mode = *widescreen ? COCKPIT_MODE_WIDESCREEN : COCKPIT_MODE_LEGACY;
     if (new_cockpit_mode != GetCockpitMode()) {
       CreateCockpit(new_cockpit_mode);
+      RecreateCockpitForCurrentPlayer();
+
+      // BUGFIX #685: WidescreenCockpit::ComputeHorizontalScale() reads
+      // Game_window_w/h to compute the aspect ratio correction. These values
+      // come from the pilot's persisted HUD data and can be stale 4:3 values
+      // (e.g., 640x480), making h_scale=1.0 so widescreen has no effect.
+      // Force Game_window_w/h to the actual screen resolution so the cockpit
+      // reads the correct aspect ratio.
+      Game_window_w = Max_window_w;
+      Game_window_h = Max_window_h;
+      Game_window_x = 0;
+      Game_window_y = 0;
+      Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
     }
 
     sheet = NULL;

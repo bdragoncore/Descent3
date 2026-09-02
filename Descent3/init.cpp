@@ -1170,6 +1170,7 @@ void SaveGameSettings() {
   Database->write("RS_fov", static_cast<int>(Render_FOV_setting));
   Database->write("RS_fullscreen", static_cast<int>(Game_fullscreen));
   Database->write("RS_cockpit_mode", GetCockpitMode());
+  Database->write("RS_fullscreen_scale_mode", Render_fullscreen_scale_mode);
 
   Database->write("RS_bitdepth", Render_preferred_bitdepth);
   Database->write("RS_bilear", Render_preferred_state.filtering);
@@ -1328,6 +1329,10 @@ void LoadGameSettings() {
 
   Database->read_int("RS_fullscreen", &tempval);
   Game_fullscreen = tempval != 0;
+
+  tempval = FULLSCREEN_SCALE_FIT;
+  Database->read_int("RS_fullscreen_scale_mode", &tempval);
+  Render_fullscreen_scale_mode = std::clamp(tempval, static_cast<int>(FULLSCREEN_SCALE_FILL), static_cast<int>(FULLSCREEN_SCALE_NATIVE));
 
   Database->read_int("RS_bilear", &Render_preferred_state.filtering);
   Database->read_int("RS_mipping", &Render_preferred_state.mipping);

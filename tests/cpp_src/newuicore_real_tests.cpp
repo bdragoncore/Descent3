@@ -578,6 +578,66 @@ TEST_F(NewuiCoreTest, SheetAddTextAndChangeableText) {
   menu.Destroy();
 }
 
+/**
+ * @test NewuiCoreTest.ScrollableSheetScrollsAndClipsGadgets
+ * @brief Verifies a scrollable sheet scrolls, clamps, and hides out-of-view gadgets.
+ *
+ * @details
+ * A sheet with a small visible area and enough gadgets to overflow it is
+ * realized.  The scroll range must be positive, scrolling must move the
+ * offset (clamped at both ends), and gadgets scrolled out of view must be
+ * flagged UIF_HIDDEN so UIWindow::Render skips them.
+ *
+ * @see Descent3/newuicore.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(NewuiCoreTest, ScrollableSheetScrollsAndClipsGadgets) {
+  newuiCore_Init();
+  newuiMenu menu;
+  menu.Create();
+
+  newuiSheet *sheet = menu.AddOption(10, "Options", 20, true, 0);
+  ASSERT_NE(sheet, nullptr);
+
+  // small visible area so the content overflows.
+  sheet->SetScrollArea(200, 100);
+
+  // add enough sliders to overflow the 100px visible area.
+  sheet->NewGroup("Group", 0, 0);
+  for (int i = 0; i < 10; i++) {
+    char name[32];
+    snprintf(name, sizeof(name), "Item %d", i);
+    sheet->AddSlider(name, 20, 0, nullptr, 100 + i);
+  }
+
+  sheet->Realize();
+
+  EXPECT_TRUE(sheet->IsScrollable());
+  EXPECT_GT(sheet->GetScrollRange(), 0);
+  EXPECT_EQ(sheet->GetScrollY(), 0);
+
+  // scroll down by 50px.
+  sheet->ScrollBy(50);
+  EXPECT_EQ(sheet->GetScrollY(), 50);
+
+  // scrolling past the bottom clamps at the range.
+  sheet->ScrollBy(100000);
+  EXPECT_EQ(sheet->GetScrollY(), sheet->GetScrollRange());
+
+  // a gadget scrolled out of view is hidden so it is not drawn.
+  UIGadget *first = sheet->GetGadget(100);
+  ASSERT_NE(first, nullptr);
+  EXPECT_TRUE((first->GetFlags() & UIF_HIDDEN) != 0);
+
+  // scrolling back to the top clamps at 0 and un-hides the gadget.
+  sheet->ScrollBy(-100000);
+  EXPECT_EQ(sheet->GetScrollY(), 0);
+  EXPECT_FALSE((first->GetFlags() & UIF_HIDDEN) != 0);
+
+  sheet->Unrealize();
+  menu.Destroy();
+}
+
 // ---------------------------------------------------------------------------
 // newuiListBox item management
 // ---------------------------------------------------------------------------

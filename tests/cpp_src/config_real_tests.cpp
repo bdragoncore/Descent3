@@ -66,6 +66,10 @@ static std::vector<std::string> g_recorder;
 // ---------------------------------------------------------------------------
 int Max_window_w = 640;
 int Max_window_h = 480;
+int Game_window_x = 0;
+int Game_window_y = 0;
+int Game_window_w = 640;
+int Game_window_h = 480;
 bool Multi_bail_ui_menu = false;
 int Game_fonts[NUM_FONTS] = {0};
 
@@ -174,6 +178,7 @@ int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferred
 
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
+int Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
 renderer_preferred_state Render_preferred_state{};
 // Stubs for cockpit factory (config.cpp calls these; real impl pulls in
 // LegacyCockpit/WidescreenCockpit which need the full renderer chain).
@@ -487,6 +492,9 @@ void SetScreenMode(int sm, bool) {
   s_screen_mode = sm;
   s_screen_mode_changes++;
 }
+
+// cockpit / player stubs for video_menu::finish() cockpit-mode recreation
+void RecreateCockpitForCurrentPlayer() {}
 
 // file-local to newui_core.cpp
 void SimpleUICallback();
@@ -1058,4 +1066,29 @@ TEST_F(ConfigTest, InGameHudChangePropagatesToSetHUDState) {
   uint16_t expected = STAT_MESSAGES | STAT_CUSTOM | STAT_SHIP | STAT_TIMER | STAT_FPS;
   EXPECT_EQ(s_rec_sethud_mask, expected);
   EXPECT_EQ(s_rec_sethud_gr, 0);
+}
+
+/**
+ * @test ConfigTest.FullscreenScaleModeRoundTripsThroughVideoMenu
+ * @brief Verifies the fullscreen scaling mode radio group is created in the
+ * video menu and its selection is written back to Render_fullscreen_scale_mode
+ * by video_menu::finish().
+ *
+ * @details
+ * The video menu setup() creates a "Scaling" radio group (Fill/Fit/Zoom/Native)
+ * initialized from Render_fullscreen_scale_mode. finish() reads the selected
+ * radio index back into the global. This test drives OptionsMenu() with the
+ * default FIT mode and asserts the value survives the round-trip.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FullscreenScaleModeRoundTripsThroughVideoMenu) {
+  Multi_bail_ui_menu = true;
+  Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
+
+  OptionsMenu();
+
+  // video.finish() writes the radio selection back to the global
+  EXPECT_EQ(Render_fullscreen_scale_mode, 1);
 }

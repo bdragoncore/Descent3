@@ -103,6 +103,19 @@
 #define NEWUI_ARROW_CBUP 0x5
 #define NEWUI_ARROW_CBDOWN 0x6
 
+// medium options-menu geometry (matches newui_core.cpp)
+#define NEWUI_MEDWIN_OPTIONS_X 314
+#define NEWUI_MEDWIN_OPTIONS_Y 60
+#define NEWUI_MEDWIN_OPTIONS_W 140
+#define NEWUI_MEDWIN_OPTIONS_H 27
+#define NEWUI_MEDWIN_SHEET_X 28
+#define NEWUI_MEDWIN_SHEET_Y 40
+
+// BUGFIX #2: global font scale for the newui framework.  Set by newuiMenu
+// to Max_window_h / FIXED_SCREEN_HEIGHT so all options menus scale to the
+// current display resolution.
+extern float Newui_ui_scale;
+
 // initializes the core system for the newui
 void newuiCore_Init();
 
@@ -117,6 +130,10 @@ void newuiCore_ReleaseBitmaps();
 
 //	 C interface to load and free bitmap resources
 UIBitmapItem *newui_LoadBitmap(const char *filename);
+
+//	 C interface to query the pixel height of a loaded newui bitmap (0 if not loaded)
+int newui_GetBitmapHeight(const char *filename);
+int newui_GetBitmapWidth(const char *filename);
 
 //	 C interface to load and free bitmap resources
 void newui_FreeBitmap(UIBitmapItem *bmitem);
@@ -186,9 +203,19 @@ struct tSliderSettings {
 
 //	CLASS contains gadgets
 
+class newuiScrollBar; // forward decl: scrollbar gadget defined after newuiArrowButton.
+
 class newuiSheet {
   int m_sx, m_sy;           // origin of sheet gadgets relative to parent.
   int16_t m_initial_focus_id; // gadget that will have focus upon realization.
+
+  // scrollable-pane state.  When m_scrollable is set, gadgets are laid out
+  // with a -m_scroll_y offset and clipped to the m_clip_w x m_clip_h area.
+  bool m_scrollable;
+  int m_scroll_y;   // current scroll offset in pixels (0 = top).
+  int m_scroll_h;   // total content height in pixels (computed during Realize).
+  int m_clip_w, m_clip_h; // visible area size in pixels.
+  newuiScrollBar *m_scrollbar; // scrollbar gadget (created when scrollable).
 
 public:
   newuiSheet();
@@ -211,6 +238,28 @@ public:
 
   // call this to release gadgets specified above in parent window, retreives checkbox,radio,etc values too.
   void Unrealize();
+
+  // makes the sheet a scrollable pane: gadgets are clipped to the given
+  // visible area and a scrollbar is shown when content overflows.
+  void SetScrollArea(int w, int h);
+
+  // scrolls the pane by delta pixels (positive = down).  Clamped to range.
+  void ScrollBy(int delta);
+
+  // sets the absolute scroll offset (0 = top).  Clamped to range.
+  void SetScrollY(int y);
+
+  // returns the current scroll offset in pixels.
+  int GetScrollY() const { return m_scroll_y; };
+
+  // returns true if this sheet is a scrollable pane.
+  bool IsScrollable() const { return m_scrollable; };
+
+  // returns the maximum scroll offset in pixels (0 if content fits).
+  int GetScrollRange() const;
+
+  // static callback used by the scrollbar gadget to scroll this sheet.
+  static void ScrollBarCallback(int y, void *user);
 
   // ALL following functions that return a pointer, that pointer contains the value of the gadget added
   // i.e. checkbox will have a true or false value.  you can use this pointer to modify gadget values.
@@ -300,6 +349,7 @@ private:
     bool changed; // parameters are different than defaults?
     int16_t id;     // id value
     char *title;  // title of gadget
+    int16_t base_y; // unscrolled y position (sheet origin relative), used by scrollable sheets.
     union {
       int i;
       int16_t s[2];
@@ -398,6 +448,59 @@ protected:
 private:
   float m_timer, m_selecttimer;
   bool m_hidden;
+};
+
+//	CLASS a vertical scrollbar for scrollable sheets.
+//	Draws up/down arrow buttons plus a draggable thumb over a track.  When the
+//	user scrolls, the callback is invoked with the new scroll offset so the
+//	owning sheet can reposition its gadgets.
+
+class newuiScrollBar final : public UIGadget {
+public:
+  newuiScrollBar();
+
+  // creates the scrollbar at (x,y) with the given size.
+  void Create(UIWindow *wnd, int16_t id, int16_t x, int16_t y, int16_t w, int16_t h);
+
+  // sets the scroll range: content_h is the total content height, clip_h the
+  // visible height.  Max scroll offset = content_h - clip_h.
+  void SetRange(int content_h, int clip_h);
+
+  // sets the current scroll offset (clamped to range) and notifies the callback.
+  void SetScrollY(int y);
+
+  // returns the current scroll offset.
+  int GetScrollY() const { return m_scroll_y; };
+
+  // returns the maximum scroll offset (0 if content fits).
+  int GetScrollRange() const;
+
+  // registers a callback invoked whenever the scroll offset changes.
+  void SetScrollCallback(void (*fn)(int, void *), void *user);
+
+protected:
+  virtual void OnDraw();                // draws track + thumb.
+  virtual void OnMouseBtnDown(int btn); // start thumb drag / page scroll.
+  virtual void OnMouseBtnUp(int btn);   // end thumb drag.
+  virtual void OnKeyDown(int key);      // up/down/page keys scroll.
+  virtual void OnUserProcess();         // drives thumb dragging.
+  virtual void OnNotifySelect(UIGadget *g); // arrow buttons scroll by a line.
+  virtual void OnDestroy();             // destroys arrow buttons.
+  virtual void OnAttachToWindow();      // creates arrow buttons.
+  virtual void OnDetachFromWindow();    // destroys arrow buttons.
+
+private:
+  newuiArrowButton m_up_btn, m_down_btn; // scroll arrows.
+  int m_scroll_y;                        // current offset.
+  int m_content_h;                       // total content height.
+  int m_clip_h;                          // visible height.
+  void (*m_scroll_fn)(int, void *);      // scroll callback.
+  void *m_user;                          // callback user pointer.
+  int m_thumb_y, m_thumb_h;              // thumb rect (computed in OnDraw).
+  bool m_dragging;                       // thumb drag in progress.
+  int m_drag_offs;                       // grab offset within thumb.
+
+  void ScrollBy(int delta); // scrolls by delta and notifies.
 };
 
 //	CLASS a new listbox. uses less memory than the old listbox hopefully.
@@ -597,6 +700,7 @@ public:
 protected:
   virtual void OnDraw();    // overridable draws the window background before gadgets
   virtual void OnDestroy(); // overridable: called in Destroy
+  virtual void OnUserProcess(); // scrolls the current sheet on mouse wheel.
 
   UIBitmapItem *m_bkg; // background
 

@@ -105,6 +105,14 @@ target_link_libraries(vecmat_util_tests
 target_include_directories(vecmat_util_tests PRIVATE ${PROJECT_SOURCE_DIR}/lib)
 gtest_discover_tests(vecmat_util_tests)
 
+# TelCom UI art-space scaling helpers (BUGFIX #685) - header-only, gtest only
+add_executable(telcomui_tests
+    cpp_src/telcomui_tests.cpp
+)
+target_link_libraries(telcomui_tests PRIVATE GTest::gtest_main)
+target_include_directories(telcomui_tests PRIVATE ${PROJECT_SOURCE_DIR}/Descent3 ${PROJECT_SOURCE_DIR}/lib)
+gtest_discover_tests(telcomui_tests)
+
 # ============================================================================
 # Standalone utility tests (self-contained, gtest only)
 # ============================================================================
@@ -4648,3 +4656,33 @@ target_include_directories(mouse_focus_tests PRIVATE
 )
 target_compile_definitions(mouse_focus_tests PRIVATE RELEASE)
 gtest_discover_tests(mouse_focus_tests)
+
+# theora_movie_tests exercises the real Descent3/theora_movie.cpp decoder.
+# A small test .ogv is generated at configure time with ffmpeg so the test
+# is self-contained and does not depend on the game data being installed.
+find_program(FFMPEG_EXECUTABLE ffmpeg)
+if(FFMPEG_EXECUTABLE)
+  set(THEORA_TEST_MOVIE "${CMAKE_CURRENT_BINARY_DIR}/theora_test.ogv")
+  add_custom_command(
+    OUTPUT ${THEORA_TEST_MOVIE}
+    COMMAND ${FFMPEG_EXECUTABLE} -y -f lavfi -i "testsrc2=size=64x48:rate=10:duration=1"
+            -c:v libtheora -q:v 5 ${THEORA_TEST_MOVIE}
+    COMMENT "Generating test .ogv for theora_movie_tests"
+    VERBATIM
+  )
+  add_executable(theora_movie_tests
+      cpp_src/theora_movie_tests.cpp
+      ${PROJECT_SOURCE_DIR}/Descent3/theora_movie.cpp
+  )
+  target_link_libraries(theora_movie_tests PRIVATE GTest::gtest_main ${THEORA_LIBRARIES} ${OGG_LIBRARIES})
+  target_include_directories(theora_movie_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/Descent3
+      ${PROJECT_SOURCE_DIR}/logger
+      ${THEORA_INCLUDE_DIRS}
+      ${OGG_INCLUDE_DIRS}
+  )
+  target_compile_definitions(theora_movie_tests PRIVATE THEORA_TEST_MOVIE="${THEORA_TEST_MOVIE}")
+  add_custom_target(theora_test_movie DEPENDS ${THEORA_TEST_MOVIE})
+  add_dependencies(theora_movie_tests theora_test_movie)
+  gtest_discover_tests(theora_movie_tests)
+endif()

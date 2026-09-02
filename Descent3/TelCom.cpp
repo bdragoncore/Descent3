@@ -512,6 +512,7 @@
 #include "mem.h"
 #include "Mission.h"
 #include "stringtable.h"
+#include "telcomui.h"
 #include "multi.h"
 #include "ship.h"
 #include "polymodel.h"
@@ -547,6 +548,14 @@ static int Telcom_mouse_last_effect = -1; // the last efxnum the mouse was over
 
 hotspotmap_t hotspotmap; // Holds hotspot data (position)
 windowmap_t windowmap;   // Holds window data (position)
+
+// BUGFIX #685: convert TelCom art-space coordinates (640x480 layout) to and
+// from the current window. The TelCom UI keeps all layout in art coordinates
+// internally; scaling happens only at the draw and input boundaries.
+int TelcomScaleX(int x) { return TelcomScaledX(x, Max_window_w); }
+int TelcomScaleY(int y) { return TelcomScaledY(y, Max_window_h); }
+int TelcomUnscaleX(int x) { return TelcomUnscaledX(x, Max_window_w); }
+int TelcomUnscaleY(int y) { return TelcomUnscaledY(y, Max_window_h); }
 tTelComInfo Telcom_system;
 
 chunked_bitmap Telcom_bitmap; // background bitmap for telcom system
@@ -966,7 +975,9 @@ void TelCom_BltToScreen(int dx, int dy, chunked_bitmap *src_bmp) {
 }
 
 void TelCom_BltToScreen(int dx, int dy, chunked_bitmap *src_bmp, int sx, int sy, int sw, int sh) {
-  rend_DrawScaledChunkedBitmap(src_bmp, dx, dy, sw, sh, 255);
+  // BUGFIX #685: the source rect is in art coordinates; scale it to the
+  // current window so hotspot/bitmaps land on the stretched TelCom art.
+  rend_DrawScaledChunkedBitmap(src_bmp, TelcomScaleX(dx), TelcomScaleY(dy), TelcomScaleX(sw), TelcomScaleY(sh), 255);
 }
 
 void TelCom_BltToMem(int dest_bmp, int dx, int dy, int src_bmp, int sx, int sy, int sw, int sh, bool trans) {
@@ -1128,8 +1139,9 @@ void TCMainMenuRenderCallback(void) {
   grtext_SetAlpha(255);
 
   int mm_y, mm_x;
-  mm_y = Telcom_system.Monitor_coords[MONITOR_MAIN].top + BOFF_T + MM_BUTTONY;
-  mm_x = Telcom_system.Monitor_coords[MONITOR_MAIN].left + BOFF_L + MM_BUTTONX;
+  // BUGFIX #685: scale the art-space button text positions to the window.
+  mm_y = TelcomScaleY(Telcom_system.Monitor_coords[MONITOR_MAIN].top + BOFF_T + MM_BUTTONY);
+  mm_x = TelcomScaleX(Telcom_system.Monitor_coords[MONITOR_MAIN].left + BOFF_L + MM_BUTTONX);
 
   for (int i = 0; i < TCMAX_MMBUTTONS; i++) {
     if (MMButtons[i].enabled) {
@@ -1137,7 +1149,7 @@ void TCMainMenuRenderCallback(void) {
       grtext_Printf(mm_x, mm_y, MMButtons[i].text);
 
       // adjust y value
-      mm_y += MM_BUTTONOFFSET;
+      mm_y += TelcomScaleY(MM_BUTTONOFFSET);
     }
   }
 }
@@ -1760,7 +1772,9 @@ void TelcomDrawScreen(bool poweron, bool powerup) {
   rend_SetFiltering(0);
 
   // draw telcom background
-  rend_DrawChunkedBitmap(&Telcom_bitmap, 0, 0, 255);
+  // BUGFIX #685: stretch the 640x480 TelCom art to the current window so the
+  // briefing UI fills high-resolution displays (same as the main menu art).
+  rend_DrawScaledChunkedBitmap(&Telcom_bitmap, 0, 0, Max_window_w, Max_window_h, 255);
 
   if (neon_state >= NEON_ON1)
     DrawHotSpotOn(NEON_LIGHT);
@@ -1942,13 +1956,14 @@ void TelcomRenderDrawHiLites(void) {
     int curr_x, curr_y, i, w, h;
     int *HiLites;
 
-    curr_x = TelcomHiLiteOffset[monitor].x + Telcom_system.Monitor_coords[monitor].left;
-    curr_y = TelcomHiLiteOffset[monitor].y + Telcom_system.Monitor_coords[monitor].top;
+    // BUGFIX #685: hilite offsets/dimensions are in art coordinates.
+    curr_x = TelcomScaleX(TelcomHiLiteOffset[monitor].x + Telcom_system.Monitor_coords[monitor].left);
+    curr_y = TelcomScaleY(TelcomHiLiteOffset[monitor].y + Telcom_system.Monitor_coords[monitor].top);
     HiLites = TelcomHiLites[monitor];
 
     for (i = 0; i < TelcomHiLiteCount[monitor]; i++) {
-      w = bm_w(HiLites[i], 0);
-      h = bm_h(HiLites[i], 0);
+      w = TelcomScaleX(bm_w(HiLites[i], 0));
+      h = TelcomScaleY(bm_h(HiLites[i], 0));
       rend_DrawScaledBitmap(curr_x, curr_y, curr_x + w, curr_y + h, HiLites[i], 0, 0, 1, 1, -1, alphas);
       curr_x += w;
     }
@@ -2029,9 +2044,12 @@ void TelcomRenderScanline(void) {
 
   float end_time = timer_GetTime();
 
+  // BUGFIX #685: the scanline sweeps the monitor in 32x16 art-space steps;
+  // scale the drawn rect to the window.
   while (end_time > scanline_nexttime) {
     for (x = start_x; x < end_x; x += 32)
-      rend_DrawScaledBitmap(x, scanliney, x + 32, scanliney + 16, scanline_handle, 0, 0, 1, 1, -1, alphas);
+      rend_DrawScaledBitmap(TelcomScaleX(x), TelcomScaleY(scanliney), TelcomScaleX(x + 32), TelcomScaleY(scanliney + 16),
+                            scanline_handle, 0, 0, 1, 1, -1, alphas);
     scanliney++;
     scanline_nexttime += scanline_speed;
   }
@@ -2095,18 +2113,21 @@ void TelcomRenderMouse(void) {
   rend_SetAlphaValue(255);
 
   if (TC_cursor > -1) {
+    // BUGFIX #685: Telcom_mouse_x/y are kept in art coordinates (for hit
+    // testing against the 640x480 hotspot rects); scale back to the window
+    // for drawing the cursor.
     int mx, my;
-    mx = Telcom_mouse_x;
-    my = Telcom_mouse_y;
+    mx = TelcomScaleX(Telcom_mouse_x);
+    my = TelcomScaleY(Telcom_mouse_y);
 
     float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
-    int cur_w = bm_w(TC_cursor, 0);
-    int cur_h = bm_h(TC_cursor, 0);
+    int cur_w = TelcomScaleX(bm_w(TC_cursor, 0));
+    int cur_h = TelcomScaleY(bm_h(TC_cursor, 0));
 
-    if (mx > (Game_window_w - cur_w))
-      u1 = ((float)(Game_window_w - mx)) / ((float)cur_w);
-    if (my > (Game_window_h - cur_h))
-      v1 = ((float)(Game_window_h - my)) / ((float)cur_h);
+    if (mx > (Max_window_w - cur_w))
+      u1 = ((float)(Max_window_w - mx)) / ((float)cur_w);
+    if (my > (Max_window_h - cur_h))
+      v1 = ((float)(Max_window_h - my)) / ((float)cur_h);
 
     rend_DrawScaledBitmap(mx, my, mx + (int)((float)cur_w * u1), my + (int)((float)cur_h * v1), TC_cursor, u0, v0, u1,
                           v1);
@@ -2240,9 +2261,11 @@ void TelcomDisplayStatic(float alpha) {
   int h = bm_h(StaticBmps[type], 0);
   int w = bm_w(StaticBmps[type], 0);
   int j = 0;
+  // BUGFIX #685: tiles iterate in art space; scale the drawn rect to the window.
   for (y = dy; y < height; y += h)
     for (x = 0; x < width; x += w) {
-      rend_DrawScaledBitmap(x + xoff, y + yoff, x + w + xoff, y + h + yoff, StaticBmps[type + (j % 4)], 0, 0, 1, 1);
+      rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y + yoff), TelcomScaleX(x + w + xoff),
+                            TelcomScaleY(y + h + yoff), StaticBmps[type + (j % 4)], 0, 0, 1, 1);
       h = bm_h(StaticBmps[type + (j % 4)], 0);
       w = bm_w(StaticBmps[type + (j % 4)], 0);
       j++;
@@ -2318,9 +2341,11 @@ void TelcomDoPowerEffect(bool power_down, float frametime) {
     if (line_count < 0)
       line_count = 0;
 
+    // BUGFIX #685: tiles iterate in art space; scale the drawn rect to the window.
     for (y = 0; y < height; y += 32)
       for (x = 0; x < width; x += 32) {
-        rend_DrawScaledBitmap(x + xoff, y + yoff, x + 32 + xoff, y + 32 + yoff, PowerBmps[0], 0, 0, 1, 1);
+        rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y + yoff), TelcomScaleX(x + 32 + xoff),
+                              TelcomScaleY(y + 32 + yoff), PowerBmps[0], 0, 0, 1, 1);
       }
 
     if (TC_effect_position < TCPE_START)
@@ -2330,7 +2355,8 @@ void TelcomDoPowerEffect(bool power_down, float frametime) {
     y = (height / 2) - 16 + yoff;
 
     for (i = 0; i < line_count; i++) {
-      rend_DrawScaledBitmap(x, y, x + 32, y + 32, PowerBmps[1], 0, 0, 1, 1);
+      rend_DrawScaledBitmap(TelcomScaleX(x), TelcomScaleY(y), TelcomScaleX(x + 32), TelcomScaleY(y + 32), PowerBmps[1],
+                            0, 0, 1, 1);
       x += 32;
     }
   } else {
@@ -2341,15 +2367,18 @@ void TelcomDoPowerEffect(bool power_down, float frametime) {
     gap = ((float)height) * (TC_effect_position - TCPE_STAGE1) / (TCPE_STAGE2 - TCPE_STAGE1);
     int hcount = ((((float)height) / 2.0f) - (((float)gap) / 2.0f)) / 32.0f;
 
+    // BUGFIX #685: tiles iterate in art space; scale the drawn rect to the window.
     for (i = 0; i < hcount; i++)
       for (x = 0; x < width; x += 32) {
         y = (i << 5);
         if (i == (hcount - 1)) {
           rend_SetAlphaType(AT_SATURATE_TEXTURE);
-          rend_DrawScaledBitmap(x + xoff, y + 10 + yoff, x + 32 + xoff, y + 42 + yoff, PowerBmps[1], 0, 0, 1, 1);
+          rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y + 10 + yoff), TelcomScaleX(x + 32 + xoff),
+                                TelcomScaleY(y + 42 + yoff), PowerBmps[1], 0, 0, 1, 1);
           rend_SetAlphaType(AT_CONSTANT_TEXTURE);
         }
-        rend_DrawScaledBitmap(x + xoff, y + yoff, x + 32 + xoff, y + 32 + yoff, PowerBmps[0], 0, 0, 1, 1);
+        rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y + yoff), TelcomScaleX(x + 32 + xoff),
+                              TelcomScaleY(y + 32 + yoff), PowerBmps[0], 0, 0, 1, 1);
       }
 
     y = height - 32;
@@ -2357,10 +2386,12 @@ void TelcomDoPowerEffect(bool power_down, float frametime) {
       for (x = 0; x < width; x += 32) {
         if (i == (hcount - 1)) {
           rend_SetAlphaType(AT_SATURATE_TEXTURE);
-          rend_DrawScaledBitmap(x + xoff, y - 10 + yoff, x + 32 + xoff, y + 22 + yoff, PowerBmps[1], 0, 0, 1, 1);
+          rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y - 10 + yoff), TelcomScaleX(x + 32 + xoff),
+                                TelcomScaleY(y + 22 + yoff), PowerBmps[1], 0, 0, 1, 1);
           rend_SetAlphaType(AT_CONSTANT_TEXTURE);
         }
-        rend_DrawScaledBitmap(x + xoff, y + yoff, x + 32 + xoff, y + 32 + yoff, PowerBmps[0], 0, 0, 1, 1);
+        rend_DrawScaledBitmap(TelcomScaleX(x + xoff), TelcomScaleY(y + yoff), TelcomScaleX(x + 32 + xoff),
+                              TelcomScaleY(y + 32 + yoff), PowerBmps[0], 0, 0, 1, 1);
       }
       y -= 32;
     }
@@ -2670,19 +2701,22 @@ void TelComHandleAllEvents(tTelComInfo *tcs) {
     buttons = ddio_MouseGetState(&x, &y, NULL, NULL);
   }
 
-  Telcom_mouse_x = x;
-  Telcom_mouse_y = y;
+  // BUGFIX #685: convert the mouse position into art coordinates so the hit
+  // tests below (hotspot rects, button effects) match the 640x480 layout.
+  Telcom_mouse_x = TelcomUnscaleX(x);
+  Telcom_mouse_y = TelcomUnscaleY(y);
 
   // check to see if the power button was clicked
-  if (!buttons && Telcom_system.Telcom_mouse_downtime > 0 && (x >= HotSpotL(POWER_BUTTON)) &&
-      (x <= HotSpotR(POWER_BUTTON)) && (y >= HotSpotT(POWER_BUTTON)) && (y <= HotSpotB(POWER_BUTTON))) {
+  if (!buttons && Telcom_system.Telcom_mouse_downtime > 0 && (Telcom_mouse_x >= HotSpotL(POWER_BUTTON)) &&
+      (Telcom_mouse_x <= HotSpotR(POWER_BUTTON)) && (Telcom_mouse_y >= HotSpotT(POWER_BUTTON)) &&
+      (Telcom_mouse_y <= HotSpotB(POWER_BUTTON))) {
     Telcom_system.state = TCS_POWEROFF;
   }
 
   frametime = last_frametime;
 
   // see if the mouse is over any button
-  int efxnum = FindButtonEffectByXY(x, y, screen);
+  int efxnum = FindButtonEffectByXY(Telcom_mouse_x, Telcom_mouse_y, screen);
 
   if (efxnum != -1) {
     // check to see if this is the effect num the mouse was last over, if not, then
@@ -3702,7 +3736,8 @@ void TCSSSCallback(void) {
   viewer_eye.z() = -TCShipSelect.cam_dist;
 
   grtext_Flush();
-  StartFrame(325, 142, 535, 280);
+  // BUGFIX #685: ship select 3D viewport rect is in art coordinates.
+  StartFrame(TelcomScaleX(325), TelcomScaleY(142), TelcomScaleX(535), TelcomScaleY(280));
 
   // backup user-specified aspect ratio, than disable it for ship select screen
   float aspect = g3_GetAspectRatio();
@@ -3763,10 +3798,11 @@ void TCSSSCallback(void) {
   char *name = Ships[SSShips[TCShipSelect.CurrentSelectID].ship_index].name;
   int line_length = grtext_GetTextLineWidth(name);
   int line_height = grfont_GetHeight(BIG_BRIEFING_FONT);
-  int bar_width = 177;
-  int bar_height = 34;
-  int bar_x = 287 + Telcom_system.Monitor_coords[MONITOR_MAIN].left;
-  int bar_y = 246 + Telcom_system.Monitor_coords[MONITOR_MAIN].top;
+  // BUGFIX #685: name bar rect is in art coordinates.
+  int bar_width = TelcomScaleX(177);
+  int bar_height = TelcomScaleY(34);
+  int bar_x = TelcomScaleX(287 + Telcom_system.Monitor_coords[MONITOR_MAIN].left);
+  int bar_y = TelcomScaleY(246 + Telcom_system.Monitor_coords[MONITOR_MAIN].top);
 
   int x, y;
   x = bar_x + ((bar_width / 2) - (line_length / 2));
@@ -3776,10 +3812,13 @@ void TCSSSCallback(void) {
 
   // write ship descriptions
   tShipInfo *si = &TCSSInfo[TCShipSelect.CurrentSelectID];
-  x = 115;
-  y = 130;
+  // BUGFIX #685: the stats column starts at an art-space position; scale it.
+  // The wrap width/height stay in art space so line breaking matches the
+  // original text layout.
+  x = TelcomScaleX(115);
+  y = TelcomScaleY(130);
   int width = 210;
-  int max_height = y + 150;
+  int max_height = TelcomScaleY(130 + 150);
   grtext_SetFont(BRIEFING_FONT);
   int height = grfont_GetHeight(BRIEFING_FONT);
   const char *line_text;

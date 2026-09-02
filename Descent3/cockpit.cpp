@@ -23,6 +23,20 @@
 
 #include "cockpit.h"
 #include "cockpit_factory.h"
+#include "player.h"
+
+// BUGFIX #685: After CreateCockpit() swaps the active cockpit implementation,
+// the new instance is uninitialized (model_num == -1) and would not render
+// until the next level load. Initialize and open it for the current player so
+// the mode change takes effect immediately, even if a level is resumed without
+// reloading.
+void RecreateCockpitForCurrentPlayer() {
+  int ship_index = (Player_num >= 0) ? Players[Player_num].ship_index : 0;
+  if (ship_index < 0)
+    ship_index = 0;
+  InitCockpit(ship_index);
+  QuickOpenCockpit();
+}
 
 void RenderCockpit() {
   if (ICockpit *c = GetCockpit())

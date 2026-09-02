@@ -211,6 +211,10 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(THEORA REQUIRED IMPORTED_TARGET theoradec)
+pkg_check_modules(OGG REQUIRED IMPORTED_TARGET ogg)
+
 find_package(plog QUIET)
 if (NOT plog_FOUND)
   if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../externals/plog)

@@ -335,6 +335,7 @@ public:
 #define UIF_CENTER 0x01
 #define UIF_FIT 0x02
 #define UIF_BORDER 0x04                  // for certain gadgets specifies that the border be drawn.
+#define UIF_HIDDEN 0x08                  // gadget is not drawn (used by scrollable sheets to clip out-of-view content).
 #define UIF_SLAVE 0x10                   // gadget never gets focus from ui system directly (child gadgets).
 #define UIF_NOTIFYMASTERSEL 0x20         // when slave gadget is selected, the master will know.
 #define UIF_PROCESS_MENU 0x40            // use this to create a 'menu style' window (Options menu)
@@ -477,9 +478,15 @@ public:
   void SetFlag(int flag);
   void ClearFlag(int flag);
 
-  // OnSelect messages to another gadget
+  //	OnSelect messages to another gadget
   void AttachSlaveGadget(UIGadget *gadget);
   void DetachSlaveGadget(UIGadget *gadget);
+
+  // Moves all slave gadgets by (dx, dy) relative to their current position.
+  void MoveSlavesBy(int dx, int dy);
+
+  // Hides or shows all slave gadgets and enables/disables them accordingly.
+  void SetSlavesHidden(bool hidden);
 
   //	class id
   virtual tUIClass Class() const { // Overide this function to name the class

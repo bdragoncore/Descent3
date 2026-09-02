@@ -326,6 +326,12 @@ void grtext_SetFontScale(float scale) {
   Grtext_scale = scale;
 }
 
+// BUGFIX #2: set font scale for measurement only (no buffer write).
+// grtext_SetFontScale() writes a SCALE command to the render buffer,
+// which is correct for draw calls but pollutes the buffer when called
+// from width()/height() measurement functions.
+void grtext_SetFontScaleImmediate(float scale) { Grtext_scale = scale; }
+
 //	sets fancy color for text
 void grtext_SetFancyColor(ddgr_color col1, ddgr_color col2, ddgr_color col3, ddgr_color col4) {
   struct {
@@ -516,7 +522,7 @@ void grtext_Render() {
   //	setup rendering of text.
   rend_SetTextureType(TT_LINEAR);
   rend_SetOverlayType(OT_NONE);
-  rend_SetFiltering(0);
+  rend_SetFiltering(1);
   rend_SetLighting(LS_FLAT_GOURAUD);
   rend_SetAlphaType(ATF_TEXTURE + ATF_CONSTANT);
   rend_SetColorModel(CM_MONO);

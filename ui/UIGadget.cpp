@@ -286,6 +286,32 @@ void UIGadget::DetachSlaveGadget(UIGadget *gadget) {
   gadget->m_Flags &= (~UIF_SLAVE);
 }
 
+void UIGadget::MoveSlavesBy(int dx, int dy) {
+  // BUGFIX #2: slave gadgets (e.g. slider arrow buttons) are not tracked by
+  // the sheet's gadget list, so SetScrollY() does not reposition them.
+  // Iterate the slave list (linked via m_PrevSlave from m_SlaveGadgets) and
+  // shift each by the same delta the master was moved.
+  UIGadget *slave = m_SlaveGadgets;
+  while (slave) {
+    slave->Move(slave->X() + dx, slave->Y() + dy, slave->W(), slave->H());
+    slave = slave->m_PrevSlave;
+  }
+}
+
+void UIGadget::SetSlavesHidden(bool hidden) {
+  UIGadget *slave = m_SlaveGadgets;
+  while (slave) {
+    if (hidden) {
+      slave->SetFlag(UIF_HIDDEN);
+      slave->Disable();
+    } else {
+      slave->ClearFlag(UIF_HIDDEN);
+      slave->Enable();
+    }
+    slave = slave->m_PrevSlave;
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //	PRIVATE FUNCTIONS
 

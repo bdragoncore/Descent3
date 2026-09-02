@@ -53,6 +53,8 @@ struct tUIInput {
   int key_status, last_key_status;
   float cur_time;
 
+  int wheel; // accumulated mouse-wheel ticks this frame (+up / -down), reset each frame.
+
   bool key_first_press; // if the key was really pressed or just held down.
   bool printscreen;
 };
