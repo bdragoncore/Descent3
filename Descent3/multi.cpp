@@ -3736,7 +3736,9 @@ void MultiDoServerRejectedChecksum(uint8_t *data) {
   MULTI_ASSERT(Netgame.local_role == LR_CLIENT, NULL);
 
   SKIP_HEADER(data, &count);
-  ShowProgressScreen(TXT_MLTLEVELNOMATCH);
+  // BUGFIX (PiccuEngine #23): Remind player to unload ship modifications
+  // when the level checksum doesn't match the server.
+  ShowProgressScreen(TXT_MLTLEVELNOMATCH, "Remove any ship modifications if you have any loaded");
   MultiLeaveGame();
   D3::ChronoTimer::SleepMS(2000);
 }
