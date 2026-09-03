@@ -29,6 +29,14 @@ else()
   set(ALLOW_MULTI_DEF_LINKER_FLAG "")
 endif()
 
+# stdc++fs is needed for std::filesystem on older GCC but does not exist on
+# macOS (libc++) or MSVC (built-in). Create an INTERFACE target that
+# conditionally provides it.
+add_library(stdcppfs INTERFACE)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+  target_link_libraries(stdcppfs INTERFACE stdc++fs)
+endif()
+
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
 
@@ -1233,7 +1241,7 @@ add_executable(help_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/help.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/newui_core.cpp
 )
-target_link_libraries(help_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs ui)
+target_link_libraries(help_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs ui)
 target_include_directories(help_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -1306,7 +1314,7 @@ add_executable(configitem_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/newui_core.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/newui.cpp
 )
-target_link_libraries(configitem_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs ui)
+target_link_libraries(configitem_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs ui)
 target_include_directories(configitem_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -1339,7 +1347,7 @@ add_executable(gamecheat_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/GameCheat.cpp
     ${PROJECT_SOURCE_DIR}/tests/cpp_src/fake_hlsystem.cpp
 )
-target_link_libraries(gamecheat_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(gamecheat_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(gamecheat_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -1372,7 +1380,7 @@ add_executable(fireball_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/fireball.cpp
     ${PROJECT_SOURCE_DIR}/tests/cpp_src/fake_hlsystem.cpp
 )
-target_link_libraries(fireball_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(fireball_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(fireball_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -1405,7 +1413,7 @@ add_executable(weaponfire_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/WeaponFire.cpp
     ${PROJECT_SOURCE_DIR}/tests/cpp_src/fake_hlsystem.cpp
 )
-target_link_libraries(weaponfire_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(weaponfire_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(weaponfire_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -1744,7 +1752,7 @@ add_executable(player_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/Player.cpp
     ${PROJECT_SOURCE_DIR}/tests/cpp_src/fake_hlsystem.cpp
 )
-target_link_libraries(player_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(player_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(player_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3069,7 +3077,7 @@ add_executable(descent_real_tests
     cpp_src/descent_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/descent.cpp
 )
-target_link_libraries(descent_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(descent_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(descent_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3162,7 +3170,7 @@ add_executable(demofile_real_tests
     cpp_src/demofile_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/demofile.cpp
 )
-target_link_libraries(demofile_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(demofile_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(demofile_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3194,7 +3202,7 @@ add_executable(init_real_tests
     cpp_src/init_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/init.cpp
 )
-target_link_libraries(init_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(init_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(init_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3226,7 +3234,7 @@ add_executable(multi_ui_real_tests
     cpp_src/multi_ui_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/multi_ui.cpp
 )
-target_link_libraries(multi_ui_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(multi_ui_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(multi_ui_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3258,7 +3266,7 @@ add_executable(gamefile_real_tests
     cpp_src/gamefile_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/gamefile.cpp
 )
-target_link_libraries(gamefile_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(gamefile_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(gamefile_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3290,7 +3298,7 @@ add_executable(gamepath_real_tests
     cpp_src/gamepath_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/gamepath.cpp
 )
-target_link_libraries(gamepath_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(gamepath_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(gamepath_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3322,7 +3330,7 @@ add_executable(door_real_tests
     cpp_src/door_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/door.cpp
 )
-target_link_libraries(door_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(door_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(door_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3354,7 +3362,7 @@ add_executable(ship_real_tests
     cpp_src/ship_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/ship.cpp
 )
-target_link_libraries(ship_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(ship_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(ship_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3386,7 +3394,7 @@ add_executable(pilotpicsapi_real_tests
     cpp_src/pilotpicsapi_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/PilotPicsAPI.cpp
 )
-target_link_libraries(pilotpicsapi_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(pilotpicsapi_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(pilotpicsapi_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3418,7 +3426,7 @@ add_executable(weapon_real_tests
     cpp_src/weapon_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/weapon.cpp
 )
-target_link_libraries(weapon_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(weapon_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(weapon_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3450,7 +3458,7 @@ add_executable(newuicore_real_tests
     cpp_src/newuicore_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/newui_core.cpp
 )
-target_link_libraries(newuicore_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs ui)
+target_link_libraries(newuicore_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs ui)
 target_include_directories(newuicore_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3483,14 +3491,14 @@ add_executable(config_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/config.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/newui_core.cpp
 )
-target_link_libraries(config_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs ui)
+target_link_libraries(config_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs ui)
 
 add_executable(menu_real_tests
     cpp_src/menu_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/menu.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/newui_core.cpp
 )
-target_link_libraries(menu_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs ui)
+target_link_libraries(menu_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs ui)
 
 target_include_directories(menu_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
@@ -3523,7 +3531,7 @@ add_executable(game_real_tests
     cpp_src/game_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/game.cpp
 )
-target_link_libraries(game_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat bitmap stdc++fs)
+target_link_libraries(game_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat bitmap stdcppfs)
 target_include_directories(game_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3555,7 +3563,7 @@ add_executable(bnode_linked_real_tests
     cpp_src/bnode_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/bnode.cpp
 )
-target_link_libraries(bnode_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(bnode_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(bnode_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3587,7 +3595,7 @@ add_executable(boa_linked_real_tests
     cpp_src/boa_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/BOA.cpp
 )
-target_link_libraries(boa_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(boa_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(boa_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3619,7 +3627,7 @@ add_executable(aigoal_linked_real_tests
     cpp_src/aigoal_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/AIGoal.cpp
 )
-target_link_libraries(aigoal_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(aigoal_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(aigoal_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3651,7 +3659,7 @@ add_executable(lighting_linked_real_tests
     cpp_src/lighting_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/lighting.cpp
 )
-target_link_libraries(lighting_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(lighting_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(lighting_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3683,7 +3691,7 @@ add_executable(terrainrender_linked_real_tests
     cpp_src/terrainrender_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/terrainrender.cpp
 )
-target_link_libraries(terrainrender_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdc++fs)
+target_link_libraries(terrainrender_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat stdcppfs)
 target_include_directories(terrainrender_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3715,7 +3723,7 @@ add_executable(damage_linked_real_tests
     cpp_src/damage_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/damage.cpp
 )
-target_link_libraries(damage_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdc++fs)
+target_link_libraries(damage_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdcppfs)
 target_include_directories(damage_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3747,7 +3755,7 @@ add_executable(object_linked_real_tests
     cpp_src/object_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/object.cpp
 )
-target_link_libraries(object_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdc++fs)
+target_link_libraries(object_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdcppfs)
 target_include_directories(object_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3779,7 +3787,7 @@ add_executable(aimain_linked_real_tests
     cpp_src/aimain_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/AImain.cpp
 )
-target_link_libraries(aimain_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdc++fs)
+target_link_libraries(aimain_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdcppfs)
 target_include_directories(aimain_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3811,7 +3819,7 @@ add_executable(room_linked_real_tests
     cpp_src/room_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/room.cpp
 )
-target_link_libraries(room_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdc++fs)
+target_link_libraries(room_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc stdcppfs)
 target_include_directories(room_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3844,7 +3852,7 @@ add_executable(bsp_linked_real_tests
     ${PROJECT_SOURCE_DIR}/Descent3/bsp.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/list.cpp
 )
-target_link_libraries(bsp_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc cfile ddebug stdc++fs)
+target_link_libraries(bsp_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc cfile ddebug stdcppfs)
 target_include_directories(bsp_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -3876,7 +3884,7 @@ add_executable(terrain_linked_real_tests
     cpp_src/terrain_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/terrain.cpp
 )
-target_link_libraries(terrain_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc cfile bitmap ddebug stdc++fs)
+target_link_libraries(terrain_linked_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat misc cfile bitmap ddebug stdcppfs)
 target_include_directories(terrain_linked_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
