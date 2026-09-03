@@ -36,9 +36,11 @@
 #define AL_EFFECT_TYPE              0x8001
 #define AL_EFFECT_EAXREVERB         0x8000
 #define AL_EFFECTSLOT_EFFECT        0x0001
-#define AL_REVERB_GAIN              0x0001
-#define AL_REVERB_DENSITY           0x0002
+#define AL_REVERB_GAIN              0x0003
+#define AL_REVERB_DENSITY           0x0001
 #define AL_REVERB_DECAY_TIME        0x0005
+#define AL_AUXILIARY_SEND_FILTER    0x20006
+#define AL_FILTER_NULL              0x0000
 typedef void (AL_APIENTRY *LPALGENEFFECTS)(ALsizei, ALuint*);
 typedef void (AL_APIENTRY *LPALDELETEEFFECTS)(ALsizei, const ALuint*);
 typedef void (AL_APIENTRY *LPALGENAUXILIARYEFFECTSLOTS)(ALsizei, ALuint*);
