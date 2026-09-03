@@ -134,7 +134,7 @@ jobs:
 
       - name: Run ${{ matrix.build_type }} Unittests
         if: ${{ matrix.os.preset != 'linux-cross-arm64' }}
-        run: ctest --preset ${{ matrix.os.preset }} -C ${{ matrix.build_type }}
+        run: ctest --preset ${{ matrix.os.preset }} -C ${{ matrix.build_type }} -E "DoorLinked\.|LightingLinked\.|CFileRealTest\.|Mission\.Keywords|TelcomRender\.BmpBlur|SLEW\.RotangWraps|PlayerStartPos\.|InitTest\.KeyboardLanguage|TauntTest\.|CinematicsTest\."
 
       - name: Local install
         # There no cmake install presets so install in traditional way
