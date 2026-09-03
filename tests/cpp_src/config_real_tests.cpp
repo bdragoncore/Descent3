@@ -175,6 +175,13 @@ int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferred
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
 renderer_preferred_state Render_preferred_state{};
+// Stubs for cockpit factory (config.cpp calls these; real impl pulls in
+// LegacyCockpit/WidescreenCockpit which need the full renderer chain).
+class ICockpit;
+static int s_cockpit_mode = 0;
+void SetCockpitMode(int mode) { s_cockpit_mode = mode; }
+int GetCockpitMode() { return s_cockpit_mode; }
+ICockpit *CreateCockpit(int) { return nullptr; }
 
 void StartFrame(bool) {}
 void StartFrame(int, int, int, int, bool, bool) {}

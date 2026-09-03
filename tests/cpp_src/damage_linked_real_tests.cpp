@@ -58,6 +58,7 @@
 #include "d3music.h"
 #include "game2dll.h"
 #include "osiris_dll.h"
+#include "ddio.h"
 
 extern float Shake_magnitude;
 extern matrix Old_player_orient;
@@ -152,6 +153,7 @@ object *ObjGetUltimateParent(object *o){ return o; }
 int CreateObjectFireball(object *o,float f){ return 0; }
 void DemoWritePlayerDeath(object *a,bool b,int c){}
 int ObjGetNum(object *o){ return o - Objects; }
+int64_t D3::ChronoTimer::GetTimeMS() { return 0; }
 #define OBJNUM(o) (o - Objects)
 
 // For room portal etc.
