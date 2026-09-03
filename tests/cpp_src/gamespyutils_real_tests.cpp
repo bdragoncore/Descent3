@@ -44,7 +44,7 @@
  */
 TEST(GameSpyUtils, EncodeEmpty) {
   uint8_t out[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-  uint8_t in[] = {};
+  uint8_t in[1] = {0};
   gs_encode(in, 0, out);
   EXPECT_EQ(out[0], 0); // result null-terminated
 }

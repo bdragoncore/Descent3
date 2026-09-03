@@ -2619,6 +2619,7 @@ void newuiSlider::OnNotifySelect(UIGadget *g) {
 //	CLASS a new listbox. uses less memory than the old listbox hopefully.
 
 newuiListBox::newuiListBox() {
+  m_Flags = 0; // BUGFIX: initialize parent's m_Flags to avoid UB from uninitialized reads
   m_ItemList = NULL;
   m_Virt2Real = NULL;
   m_Real2Virt = NULL;

@@ -15,6 +15,14 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 # On Windows, WIN32 is defined by the compiler/platform automatically.
 
+# Linker flag to allow multiple definitions (needed when stubs override real libs).
+# GNU ld uses --allow-multiple-definition; Apple ld uses -multiply_defined,suppress.
+if(APPLE)
+  set(ALLOW_MULTI_DEF_LINKER_FLAG -Wl,-multiply_defined,suppress)
+else()
+  set(ALLOW_MULTI_DEF_LINKER_FLAG -Wl,--allow-multiple-definition)
+endif()
+
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
 
@@ -564,7 +572,7 @@ add_executable(vclip_real_tests
 # The test provides its own recording Error(); --allow-multiple-definition
 # makes the test's copy (first on the link line) win over ddebug's.
 target_link_libraries(vclip_real_tests PRIVATE GTest::gtest_main logger mem fix vecmat cfile)
-target_link_options(vclip_real_tests PRIVATE -Wl,--allow-multiple-definition)
+target_link_options(vclip_real_tests PRIVATE ${ALLOW_MULTI_DEF_LINKER_FLAG})
 target_include_directories(vclip_real_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/Descent3
     ${PROJECT_SOURCE_DIR}/lib
@@ -4133,8 +4141,8 @@ add_executable(bitmap_loader_tests
     cpp_src/stubs.c
 )
 
-# Mock and stubs first so -Wl,--allow-multiple-definition uses them over cfile/ddebug/ddio from bitmap
-target_link_options(bitmap_loader_tests PRIVATE "LINKER:--allow-multiple-definition")
+# Mock and stubs first so allow-multiple-definition uses them over cfile/ddebug/ddio from bitmap
+target_link_options(bitmap_loader_tests PRIVATE ${ALLOW_MULTI_DEF_LINKER_FLAG})
 target_link_libraries(bitmap_loader_tests PRIVATE
     $<TARGET_OBJECTS:mock_cfile>
     GTest::gtest_main
@@ -4161,7 +4169,7 @@ add_executable(iff_loader_tests
     cpp_src/stubs.c
 )
 
-target_link_options(iff_loader_tests PRIVATE "LINKER:--allow-multiple-definition")
+target_link_options(iff_loader_tests PRIVATE ${ALLOW_MULTI_DEF_LINKER_FLAG})
 target_link_libraries(iff_loader_tests PRIVATE
     $<TARGET_OBJECTS:mock_cfile>
     GTest::gtest_main
@@ -4188,7 +4196,7 @@ add_executable(pcx_loader_tests
     cpp_src/stubs.c
 )
 
-target_link_options(pcx_loader_tests PRIVATE "LINKER:--allow-multiple-definition")
+target_link_options(pcx_loader_tests PRIVATE ${ALLOW_MULTI_DEF_LINKER_FLAG})
 target_link_libraries(pcx_loader_tests PRIVATE
     $<TARGET_OBJECTS:mock_cfile>
     GTest::gtest_main
@@ -4217,7 +4225,7 @@ add_executable(manage_tests
     cpp_src/stubs.c
 )
 
-target_link_options(manage_tests PRIVATE "LINKER:--allow-multiple-definition")
+target_link_options(manage_tests PRIVATE ${ALLOW_MULTI_DEF_LINKER_FLAG})
 target_link_libraries(manage_tests PRIVATE
     $<TARGET_OBJECTS:mock_cfile>
     GTest::gtest_main
