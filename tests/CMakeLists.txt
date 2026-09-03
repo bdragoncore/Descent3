@@ -40,6 +40,18 @@ endif()
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
 
+# BUGFIX #509: Verify the MSVC runtime library is set to static CRT.
+# The dynamic debug CRT (ucrtbased.dll) is not redistributable, so Debug
+# builds could not start on machines without the Windows SDK. The root
+# CMakeLists.txt sets CMAKE_MSVC_RUNTIME_LIBRARY to "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+# (/MT for Release, /MTd for Debug). This test fails at configure time if
+# that setting is ever removed or changed back to dynamic.
+if(MSVC)
+  if(NOT CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "MultiThreaded")
+    message(FATAL_ERROR "BUGFIX #509 regression: CMAKE_MSVC_RUNTIME_LIBRARY must be static CRT (MultiThreaded/MultiThreadedDebug), got '${CMAKE_MSVC_RUNTIME_LIBRARY}'. Dynamic CRT (/MDd) requires non-redistributable ucrtbased.dll.")
+  endif()
+endif()
+
 # Note: On Arch, GMock is available as GTest::gmock (not GMock::gmock)
 
 # Test data generators (header-only, included in test sources)
