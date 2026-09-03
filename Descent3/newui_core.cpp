@@ -3936,6 +3936,11 @@ void newuiEditBox::OnDraw() {
     m_title->draw(0, 0);
   }
 
+  // BUGFIX: Windows wingdi.h defines DrawText as a macro (DrawTextA/DrawTextW)
+  // which collides with the UIEdit::DrawText() member function.
+#ifdef DrawText
+#undef DrawText
+#endif
   DrawText();
 }
 
