@@ -27,9 +27,32 @@
 #include <cstdlib>
 #include <cstring>
 
+#ifdef __APPLE__
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
+// macOS OpenAL.framework does not ship efx.h; define EFX types locally.
+// The actual function pointers are loaded at runtime via alGetProcAddress.
+#ifndef AL_EFFECT_TYPE
+#define AL_EFFECT_TYPE              0x8001
+#define AL_EFFECT_EAXREVERB         0x8000
+#define AL_EFFECTSLOT_EFFECT        0x0001
+#define AL_REVERB_GAIN              0x0001
+#define AL_REVERB_DENSITY           0x0002
+#define AL_REVERB_DECAY_TIME        0x0005
+typedef void (AL_APIENTRY *LPALGENEFFECTS)(ALsizei, ALuint*);
+typedef void (AL_APIENTRY *LPALDELETEEFFECTS)(ALsizei, const ALuint*);
+typedef void (AL_APIENTRY *LPALGENAUXILIARYEFFECTSLOTS)(ALsizei, ALuint*);
+typedef void (AL_APIENTRY *LPALDELETEAUXILIARYEFFECTSLOTS)(ALsizei, const ALuint*);
+typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)(ALuint, ALenum, ALint);
+typedef void (AL_APIENTRY *LPALEFFECTI)(ALuint, ALenum, ALint);
+typedef void (AL_APIENTRY *LPALEFFECTF)(ALuint, ALenum, ALfloat);
+typedef void (AL_APIENTRY *LPALEFFECTFV)(ALuint, ALenum, const ALfloat*);
+#endif
+#else
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/efx.h>
+#endif
 
 #include "openalsound.h"
 #include "pserror.h"

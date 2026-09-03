@@ -49,7 +49,7 @@
 #define hibyte(_w) ((_w) >> 8)
 #define lobyte(_w) ((_w) & 0x00ff)
 #define kb_to_bytes(_kb) ((_kb) * 1024)
-#define ABS(a) ((a < 0) ? (-a) : (a))
+#define ABS(a) (((a) < 0) ? (-(a)) : (a))
 
 // ============================================================================
 // Test Fixtures
