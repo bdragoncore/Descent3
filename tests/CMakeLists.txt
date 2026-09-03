@@ -14,13 +14,19 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   add_compile_definitions(POSIX MACOSX=1)
 endif()
 # On Windows, WIN32 is defined by the compiler/platform automatically.
+# NOMINMAX prevents the windows.h min/max macros from breaking std::min/std::max.
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
 
 # Linker flag to allow multiple definitions (needed when stubs override real libs).
-# GNU ld uses --allow-multiple-definition; Apple ld uses -multiply_defined,suppress.
-if(APPLE)
-  set(ALLOW_MULTI_DEF_LINKER_FLAG -Wl,-multiply_defined,suppress)
-else()
+# GNU ld uses --allow-multiple-definition; Apple ld does not support this
+# (multiply_defined is obsolete/ignored on modern ld64). Tests that need this
+# flag are guarded to non-Apple platforms below.
+if(NOT APPLE)
   set(ALLOW_MULTI_DEF_LINKER_FLAG -Wl,--allow-multiple-definition)
+else()
+  set(ALLOW_MULTI_DEF_LINKER_FLAG "")
 endif()
 
 # Find GTest (includes GMock on Arch Linux)
@@ -564,6 +570,9 @@ target_include_directories(robotfire_real_tests PRIVATE
 target_compile_definitions(robotfire_real_tests PRIVATE RELEASE)
 gtest_discover_tests(robotfire_real_tests)
 
+# vclip_real_tests needs --allow-multiple-definition (GNU ld) which is not
+# available on macOS (Apple ld ignores -multiply_defined). Skip on Apple.
+if(NOT APPLE)
 add_executable(vclip_real_tests
     cpp_src/vclip_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/vclip.cpp
@@ -591,6 +600,7 @@ target_include_directories(vclip_real_tests PRIVATE
 )
 target_compile_definitions(vclip_real_tests PRIVATE RELEASE)
 gtest_discover_tests(vclip_real_tests)
+endif()
 
 add_executable(spew_real_tests
     cpp_src/spew_real_tests.cpp
@@ -4134,8 +4144,10 @@ target_compile_options(test_stubs_cpp PRIVATE -x c++)
 
 # ============================================================================
 # Bitmap Loader Tests
+# Uses --allow-multiple-definition (GNU ld only); skip on Apple.
 # ============================================================================
 
+if(NOT APPLE)
 add_executable(bitmap_loader_tests
     cpp_src/bitmap_loader_tests.cpp
     cpp_src/stubs.c
@@ -4158,12 +4170,15 @@ target_include_directories(bitmap_loader_tests PRIVATE
 )
 
 gtest_discover_tests(bitmap_loader_tests)
+endif()
 
 # ============================================================================
 # IFF Loader Tests
 # Tests IFF format (PBM/ILBM) loading from in-memory buffers
+# Uses --allow-multiple-definition (GNU ld only); skip on Apple.
 # ============================================================================
 
+if(NOT APPLE)
 add_executable(iff_loader_tests
     cpp_src/iff_loader_tests.cpp
     cpp_src/stubs.c
@@ -4185,12 +4200,15 @@ target_include_directories(iff_loader_tests PRIVATE
 )
 
 gtest_discover_tests(iff_loader_tests)
+endif()
 
 # ============================================================================
 # PCX Loader Tests
 # Tests PCX format (8-bit and 24-bit) loading from in-memory buffers
+# Uses --allow-multiple-definition (GNU ld only); skip on Apple.
 # ============================================================================
 
+if(NOT APPLE)
 add_executable(pcx_loader_tests
     cpp_src/pcx_loader_tests.cpp
     cpp_src/stubs.c
@@ -4212,13 +4230,16 @@ target_include_directories(pcx_loader_tests PRIVATE
 )
 
 gtest_discover_tests(pcx_loader_tests)
+endif()
 
 # ============================================================================
 # Manage Tests (tracklock functions)
 # Tests manage module's tracklock functionality
 # Uses minimal tracklock implementation to avoid heavy dependencies
+# Uses --allow-multiple-definition (GNU ld only); skip on Apple.
 # ============================================================================
 
+if(NOT APPLE)
 add_executable(manage_tests
     cpp_src/manage_tests.cpp
     cpp_src/manage_tracklocks.cpp
@@ -4244,6 +4265,7 @@ target_include_directories(manage_tests PRIVATE
 target_compile_definitions(manage_tests PRIVATE __LINUX__)
 
 gtest_discover_tests(manage_tests)
+endif()
 
 # ============================================================================
 # PART 4: DESCENT3/ SUB-MODULES - External Header Tests
