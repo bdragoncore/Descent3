@@ -4497,3 +4497,25 @@ endif()
 # Cannot use set_tests_properties here because gtest_discover_tests
 # discovers tests at build time, not configure time.
 # Instead, exclude them via ctest -E in the CI workflow (.github/workflows/build.yml).
+
+# ============================================================================
+# Mouse Focus Tests (BUGFIX #676)
+# Verifies ddio mouse grab state management. The SDL window grab calls
+# require a running SDL context, so only the state layer is unit-tested.
+# ============================================================================
+
+add_executable(mouse_focus_tests
+    cpp_src/mouse_focus_tests.cpp
+)
+target_link_libraries(mouse_focus_tests PRIVATE GTest::gtest_main ddio)
+target_include_directories(mouse_focus_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/ddio
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/mem
+    ${PROJECT_SOURCE_DIR}/logger
+    ${PROJECT_SOURCE_DIR}/linux
+    ${CMAKE_BINARY_DIR}/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(mouse_focus_tests PRIVATE RELEASE)
+gtest_discover_tests(mouse_focus_tests)

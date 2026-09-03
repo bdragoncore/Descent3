@@ -131,7 +131,14 @@ bool ddio_MouseGetGrab() {
 }
 
 void ddio_MouseSetGrab(bool grab) {
+  // BUGFIX #676: Actually call SDL to apply/release mouse grab, instead of
+  // only maintaining a disconnected boolean. This ensures the SDL window
+  // state stays in sync with the ddio grab state.
   ddio_mouseGrabbed = grab;
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, grab);
+  }
 }
 
 int ddio_MouseGetCaps(int *buttons, int *axes) {
@@ -177,13 +184,42 @@ void ddio_MouseReset() {
 
 static int Mouse_counter = 0;
 
-void ddio_MouseShow() { Mouse_counter++; }
+void ddio_MouseShow() {
+  // BUGFIX #676: Actually show/hide the OS cursor via SDL. Previously these
+  // only maintained a counter and never touched SDL, so the desktop cursor
+  // remained visible during gameplay (showing both cursors simultaneously).
+  Mouse_counter++;
+  if (Mouse_counter >= 0) {
+    SDL_ShowCursor();
+  }
+}
 
-void ddio_MouseHide() { Mouse_counter--; }
+void ddio_MouseHide() {
+  Mouse_counter--;
+  if (Mouse_counter < 0) {
+    Mouse_counter = 0;
+  }
+  SDL_HideCursor();
+}
 
-void ddio_InternalMouseSuspend(void) {}
+void ddio_InternalMouseSuspend(void) {
+  // BUGFIX #676: Release the mouse grab when the app is suspended (e.g.
+  // alt-tab, focus loss). SDL3 automatically releases relative mouse mode
+  // on focus loss, but we must remember the desired state so it can be
+  // re-applied on resume.
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, false);
+  }
+}
 
-void ddio_InternalMouseResume(void) {}
+void ddio_InternalMouseResume(void) {
+  // BUGFIX #676: Re-apply the mouse grab on resume (focus regained).
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow && ddio_mouseGrabbed) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, true);
+  }
+}
 
 void ddio_MouseMode(int mode) { Mouse_mode = mode; }
 
@@ -389,6 +425,19 @@ bool sdlMouseMotionFilter(SDL_Event const *event) {
     DDIO_mouse_state.dy = event->jball.yrel / 100.0f;
     DDIO_mouse_state.x += DDIO_mouse_state.dx;
     DDIO_mouse_state.y += DDIO_mouse_state.dy;
+  } else if (!ddio_mouseGrabbed && Lnx_app_obj && Lnx_app_obj->m_W > 0 && Lnx_app_obj->m_H > 0) {
+    // BUGFIX #676: When the mouse is not grabbed (e.g. -nomousegrab), SDL
+    // reports xrel/yrel as 0 because the cursor is not locked, so the virtual
+    // position never updates and the cursor appears stuck. Map the absolute
+    // window position into the virtual coordinate space instead.
+    float scale_x = (float)(DDIO_mouse_state.r - DDIO_mouse_state.l) / (float)Lnx_app_obj->m_W;
+    float scale_y = (float)(DDIO_mouse_state.b - DDIO_mouse_state.t) / (float)Lnx_app_obj->m_H;
+    float new_x = event->motion.x * scale_x + DDIO_mouse_state.l;
+    float new_y = event->motion.y * scale_y + DDIO_mouse_state.t;
+    DDIO_mouse_state.dx = new_x - DDIO_mouse_state.x;
+    DDIO_mouse_state.dy = new_y - DDIO_mouse_state.y;
+    DDIO_mouse_state.x = new_x;
+    DDIO_mouse_state.y = new_y;
   } else {
     DDIO_mouse_state.dx += event->motion.xrel;
     DDIO_mouse_state.dy += event->motion.yrel;
