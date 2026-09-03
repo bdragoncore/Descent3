@@ -324,25 +324,6 @@ endif()
 file(GLOB_RECURSE INCS "../lib/*.h")
 
 add_executable(Descent3 WIN32 MACOSX_BUNDLE ${D3Icon} ${HEADERS} ${CPPS} ${INCS} ${MANIFEST} ${RC_FILE})
-
-# BUGFIX #509: Use static CRT (/MT, /MTd) instead of dynamic (/MD, /MDd)
-# for the game executable only. The dynamic debug CRT (ucrtbased.dll) is not
-# redistributable and is not present on machines without the Windows SDK, so
-# Debug builds could not start. The editor (MFC-based) requires /MD, so this
-# must not be set globally via CMAKE_MSVC_RUNTIME_LIBRARY.
-if(MSVC)
-  set_target_properties(Descent3 PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-  )
-  # BUGFIX #509 regression guard: verify the static CRT property actually
-  # took effect. If it is ever removed or changed back to dynamic (/MDd),
-  # Debug builds will require the non-redistributable ucrtbased.dll.
-  get_target_property(_d3_crt Descent3 MSVC_RUNTIME_LIBRARY)
-  if(NOT _d3_crt MATCHES "MultiThreaded")
-    message(FATAL_ERROR "BUGFIX #509 regression: Descent3 MSVC_RUNTIME_LIBRARY must be static CRT (MultiThreaded/MultiThreadedDebug), got '${_d3_crt}'. Dynamic CRT (/MDd) requires non-redistributable ucrtbased.dll.")
-  endif()
-endif()
-
 target_link_libraries(Descent3 PRIVATE
   SDL3::SDL3
   2dlib

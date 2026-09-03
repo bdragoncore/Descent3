@@ -240,6 +240,13 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   add_link_options("/SAFESEH:NO;/NODEFAULTLIB:LIBC")
   add_link_options("$<$<CONFIG:Release>:/LTCG>")
 
+  # BUGFIX #509: Use static CRT (/MT, /MTd) instead of dynamic (/MD, /MDd).
+  # The dynamic debug CRT (ucrtbased.dll) is not redistributable and is not
+  # present on machines without the Windows SDK, so Debug builds could not
+  # start. Static CRT makes Debug builds self-contained. The MFC-based editor
+  # overrides this back to /MD in editor/CMakeLists.txt.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
   add_compile_definitions(WIN32 _CRT_SECURE_NO_WARNINGS _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO_DEPRECATE)
 
   set(CMAKE_FIND_LIBRARY_PREFIXES "")

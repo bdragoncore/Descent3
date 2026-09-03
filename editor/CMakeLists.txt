@@ -575,6 +575,16 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO /NODEFAULTLIB:
 
 
 add_executable(Descent3Editor WIN32 ${HEADERS} ${SOURCE})
+
+# BUGFIX #509: The editor is MFC-based (_AFXDLL) and requires the dynamic
+# CRT (/MD, /MDd). The root CMakeLists.txt sets CMAKE_MSVC_RUNTIME_LIBRARY
+# to static (/MT) for the game, so override it back to dynamic here.
+if(MSVC)
+  set_target_properties(Descent3Editor PROPERTIES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+  )
+endif()
+
 target_include_directories(Descent3Editor PRIVATE
   ${PROJECT_SOURCE_DIR}/lib
   ${PROJECT_SOURCE_DIR}
