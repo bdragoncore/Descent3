@@ -84,6 +84,8 @@ static const char *kTestSub =
 class SubtitlesTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    // Ensure the temp dir exists; std::ofstream does not create parent dirs.
+    std::filesystem::create_directories("/tmp/opencode");
     // Reset args to empty set so FindArg("-subtitles") is false
     GatherArgs((const char *)"");
     g_puts_calls.clear();

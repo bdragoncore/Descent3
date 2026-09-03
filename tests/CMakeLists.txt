@@ -4,10 +4,16 @@
 # Put all test executables in tests/ directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
 
-# Platform defines so tests that include lib/ (crossplat.h, bitmap.h) compile on Linux
+# Platform defines so tests that include lib/ (crossplat.h, bitmap.h) compile.
+# Mirrors the platform block in the top-level CMakeLists.txt. Tests are added
+# via add_subdirectory(tests) before the parent's add_compile_definitions, so
+# they do NOT inherit those defines.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   add_compile_definitions(POSIX __LINUX__)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  add_compile_definitions(POSIX MACOSX=1)
 endif()
+# On Windows, WIN32 is defined by the compiler/platform automatically.
 
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
@@ -128,11 +134,19 @@ target_include_directories(lib_util_tests PRIVATE
 )
 gtest_discover_tests(lib_util_tests)
 
-add_executable(ddio_file_tests
-    cpp_src/ddio_file_tests.cpp
-    ${PROJECT_SOURCE_DIR}/ddio/lnxfile.cpp
-    ${PROJECT_SOURCE_DIR}/ddio/key.cpp
-)
+# ddio_file_tests: use lnxfile.cpp on POSIX, winfile.cpp on Windows
+if(WIN32)
+  set(DDIO_FILE_TEST_SOURCES
+      cpp_src/ddio_file_tests.cpp
+      ${PROJECT_SOURCE_DIR}/ddio/winfile.cpp
+      ${PROJECT_SOURCE_DIR}/ddio/key.cpp)
+else()
+  set(DDIO_FILE_TEST_SOURCES
+      cpp_src/ddio_file_tests.cpp
+      ${PROJECT_SOURCE_DIR}/ddio/lnxfile.cpp
+      ${PROJECT_SOURCE_DIR}/ddio/key.cpp)
+endif()
+add_executable(ddio_file_tests ${DDIO_FILE_TEST_SOURCES})
 target_link_libraries(ddio_file_tests PRIVATE GTest::gtest_main logger ddebug mem)
 target_include_directories(ddio_file_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/ddio
@@ -3999,6 +4013,13 @@ gtest_discover_tests(cfile_integration_tests)
 # ============================================================================
 
 # Compile cfile sources directly so linker wrapping applies to them
+if(WIN32)
+  set(CFILE_REAL_TEST_DDIO_SOURCES
+      ${PROJECT_SOURCE_DIR}/ddio/winfile.cpp)
+else()
+  set(CFILE_REAL_TEST_DDIO_SOURCES
+      ${PROJECT_SOURCE_DIR}/ddio/lnxfile.cpp)
+endif()
 add_executable(cfile_real_tests
     cpp_src/cfile_real_tests.cpp
     cpp_src/cfile_io_wrappers.cpp
@@ -4007,7 +4028,7 @@ add_executable(cfile_real_tests
     ${PROJECT_SOURCE_DIR}/cfile/hogfile.cpp
     ${PROJECT_SOURCE_DIR}/cfile/inffile.cpp
     # Compile ddio file functions directly so they use wrapped C functions
-    ${PROJECT_SOURCE_DIR}/ddio/lnxfile.cpp
+    ${CFILE_REAL_TEST_DDIO_SOURCES}
 )
 
 target_include_directories(cfile_real_tests PRIVATE
