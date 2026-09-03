@@ -48,6 +48,7 @@ endif()
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
 
+
 # Note: On Arch, GMock is available as GTest::gmock (not GMock::gmock)
 
 # Test data generators (header-only, included in test sources)
