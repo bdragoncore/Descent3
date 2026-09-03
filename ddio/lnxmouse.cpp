@@ -131,7 +131,14 @@ bool ddio_MouseGetGrab() {
 }
 
 void ddio_MouseSetGrab(bool grab) {
+  // BUGFIX #676: Actually call SDL to apply/release mouse grab, instead of
+  // only maintaining a disconnected boolean. This ensures the SDL window
+  // state stays in sync with the ddio grab state.
   ddio_mouseGrabbed = grab;
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, grab);
+  }
 }
 
 int ddio_MouseGetCaps(int *buttons, int *axes) {
@@ -177,13 +184,42 @@ void ddio_MouseReset() {
 
 static int Mouse_counter = 0;
 
-void ddio_MouseShow() { Mouse_counter++; }
+void ddio_MouseShow() {
+  // BUGFIX #676: Actually show/hide the OS cursor via SDL. Previously these
+  // only maintained a counter and never touched SDL, so the desktop cursor
+  // remained visible during gameplay (showing both cursors simultaneously).
+  Mouse_counter++;
+  if (Mouse_counter >= 0) {
+    SDL_ShowCursor();
+  }
+}
 
-void ddio_MouseHide() { Mouse_counter--; }
+void ddio_MouseHide() {
+  Mouse_counter--;
+  if (Mouse_counter < 0) {
+    Mouse_counter = 0;
+  }
+  SDL_HideCursor();
+}
 
-void ddio_InternalMouseSuspend(void) {}
+void ddio_InternalMouseSuspend(void) {
+  // BUGFIX #676: Release the mouse grab when the app is suspended (e.g.
+  // alt-tab, focus loss). SDL3 automatically releases relative mouse mode
+  // on focus loss, but we must remember the desired state so it can be
+  // re-applied on resume.
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, false);
+  }
+}
 
-void ddio_InternalMouseResume(void) {}
+void ddio_InternalMouseResume(void) {
+  // BUGFIX #676: Re-apply the mouse grab on resume (focus regained).
+  extern SDL_Window *GSDLWindow;
+  if (GSDLWindow && ddio_mouseGrabbed) {
+    SDL_SetWindowRelativeMouseMode(GSDLWindow, true);
+  }
+}
 
 void ddio_MouseMode(int mode) { Mouse_mode = mode; }
 

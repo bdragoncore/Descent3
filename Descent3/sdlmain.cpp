@@ -196,6 +196,16 @@ bool SDLCALL d3SDLEventFilter(void *userdata, SDL_Event *event) {
     return (sdlMouseButtonDownFilter(event));
   case SDL_EVENT_MOUSE_WHEEL:
     return (sdlMouseWheelFilter(event));
+  // BUGFIX #676: Re-apply mouse grab when the window regains focus.
+  // SDL3 automatically releases relative mouse mode on focus loss, so
+  // without this handler the mouse is never re-captured after alt-tab.
+  case SDL_EVENT_WINDOW_FOCUS_GAINED: {
+    extern SDL_Window *GSDLWindow;
+    if (GSDLWindow && ddio_MouseGetGrab()) {
+      SDL_SetWindowRelativeMouseMode(GSDLWindow, true);
+    }
+    break;
+  }
   case SDL_EVENT_QUIT:
     SDL_Quit();
     _exit(0);
