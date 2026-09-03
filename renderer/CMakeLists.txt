@@ -50,7 +50,9 @@ target_link_libraries(renderer PRIVATE
 # This library provides headless OpenGL rendering using Mesa's software rasterizer
 # (llvmpipe) for unit testing purposes. It uses EGL with surfaceless platform to
 # create an offscreen OpenGL context without requiring a display server.
+# Only built on Linux where PkgConfig + EGL + Mesa are available.
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 # Find EGL and OpenGL using pkg-config for headless rendering
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
@@ -80,3 +82,4 @@ target_link_libraries(mesaopengl PRIVATE
   module
   rtperformance
 )
+endif()
