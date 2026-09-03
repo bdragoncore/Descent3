@@ -1747,6 +1747,9 @@ add_executable(player_real_tests
 target_link_libraries(player_real_tests PRIVATE GTest::gtest_main logger)
 gtest_discover_tests(player_real_tests)
 
+# Linked real tests require GNU ld features (--wrap, --start-group/--end-group)
+# that Apple's ld64 does not support. Skip on Apple.
+if(NOT APPLE)
 add_executable(player_linked_real_tests
     cpp_src/player_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/Player.cpp
@@ -2763,6 +2766,7 @@ target_include_directories(soar_helpers_linked_real_tests PRIVATE
 )
 target_compile_definitions(soar_helpers_linked_real_tests PRIVATE RELEASE POSIX __LINUX__ MEM_USE_RTL PRIMARY_HOG="d3-linux.hog")
 add_test(NAME soar_helpers_linked_real_tests COMMAND soar_helpers_linked_real_tests)
+endif() # NOT APPLE
 
 add_executable(loadlevel_real_tests
     cpp_src/loadlevel_real_tests.cpp
@@ -4033,6 +4037,8 @@ target_link_libraries(cfile_integration_tests PRIVATE
 
 gtest_discover_tests(cfile_integration_tests)
 
+# cfile_real_tests uses --wrap for stdio functions (GNU ld only)
+if(NOT APPLE)
 # ============================================================================
 # CFile Real Tests with Linker-Wrapped C IO Functions
 # Tests the REAL cfile library with intercepted C stdio functions
@@ -4098,6 +4104,7 @@ target_link_options(cfile_real_tests PRIVATE
 )
 
 gtest_discover_tests(cfile_real_tests)
+endif() # NOT APPLE
 
 # ============================================================================
 # Stub libraries for dependencies (ddebug, ddio, args)
