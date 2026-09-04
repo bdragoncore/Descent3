@@ -20,6 +20,9 @@
 #define __HARDWARE_INTERNAL_H__
 
 #define MAX_POINTS_IN_POLY 100
+// BUGFIX #560: batched triangle-list draws (terrain) can submit many more
+// vertices than a single polygon, so size the vertex array accordingly.
+#define MAX_POINTS_IN_POLY_LIST 6144
 
 // These structs are for drawing with vertex arrays
 // Useful for fast indexing
@@ -74,6 +77,15 @@ extern float gTransformFull[4][4];
 void g3_UpdateFullTransform();
 void g3_ForceTransformRefresh(void);
 
+// Instance model-matrix stack (g3 replacement, Phase 3): the composed instance
+// transform in the g3 row-vector convention (world = src * ~orient + pos).
+// When no instance is active, orient is identity and pos is zero.
+void g3_GetInstanceTransform(matrix *orient, vector *pos);
+// Recomputes gTransformModelView as view * model (the composed instance model
+// matrix, identity when no instance is active). Shared by g3_StartInstanceMatrix,
+// g3_DoneInstance and rend_SetZBias so the model transform is never lost.
+void g3_UpdateModelViewMatrix();
+
 void rend_TransformSetToPassthru(void);
 void rend_TransformSetViewport(int lx, int ty, int width, int height);
 void rend_TransformSetProjection(float trans[4][4]);
@@ -86,8 +98,19 @@ void gpu_SetMultitextureBlendMode(bool state);
 void gpu_BindTexture(int handle, int map_type, int slot);
 void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv);
 void gpu_RenderPolygonUV2(PosColorUV2Vertex *vData, uint32_t nv);
+void gpu_RenderPolygonList(PosColorUVVertex *vData, uint32_t nv);
+void gpu_RenderPolygonList(PosColorUV2Vertex *vData, uint32_t nv);
 void gpu_DrawFlatPolygon3D(g3Point **p, int nv);
 void rend_DrawMultitexturePolygon3D(int handle, g3Point **p, int nv, int map_type);
+void rend_DrawMultitexturePolygonList3D(int handle, g3Point **p, int ntri, int map_type);
+
+// BUGFIX: polygon face batching — when active, gpu_RenderPolygon accumulates
+// triangles into a static buffer instead of issuing a GL draw call per face.
+// Call gpu_FlushBatch() to draw all accumulated triangles with the currently
+// bound texture.  Used by RenderSubmodelFacesUnsorted to batch consecutive
+// same-texture faces into one GL_TRIANGLES draw call.
+void gpu_SetBatchMode(bool active);
+void gpu_FlushBatch();
 
 /*
 * Returns the color to use for a given point, based on lighting and alpha modes
@@ -98,5 +121,13 @@ void rend_DrawMultitexturePolygon3D(int handle, g3Point **p, int nv, int map_typ
 * flatColorForNoLight - if set and cur_light_state == LS_NONE, ignore pnt-supplied color
 */
 color_array DeterminePointColor(g3Point const* pnt, bool disableGouraud = false, bool checkTextureQuality = false, bool flatColorForNoLight = false);
+
+// Computes the new texture-enable bitmask for a setTextureEnabled call.
+// Returns the new value; the caller should skip the uniform upload if it
+// equals the current value.  Extracted as a pure function for unit testing.
+inline int ComputeTextureEnable(int current, unsigned int index, bool enabled) {
+  int bit = 1 << index;
+  return enabled ? (current | bit) : (current & ~bit);
+}
 
 #endif
