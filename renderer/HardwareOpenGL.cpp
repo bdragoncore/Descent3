@@ -107,12 +107,13 @@ struct Renderer {
   }
 
   void setTextureEnabled(GLuint index, bool enabled) {
-    GLint bit = 1 << index;
-    if (enabled) {
-      texture_enable_ |= bit;
-    } else {
-      texture_enable_ &= ~bit;
-    }
+    GLint new_texture_enable = ComputeTextureEnable(texture_enable_, index, enabled);
+    // Skip redundant uniform upload when the bitmask hasn't changed.
+    // This avoids a glUniform1i driver call on every polygon when the
+    // multitexture unit is already disabled (the common case).
+    if (new_texture_enable == texture_enable_)
+      return;
+    texture_enable_ = new_texture_enable;
     shader_.setUniform1i("u_texture_enable", texture_enable_);
   }
 
@@ -1406,6 +1407,26 @@ void gpu_BindTexture(int handle, int map_type, int slot) {
   opengl_MakeFilterTypeCurrent(handle, map_type, slot);
 }
 
+// BUGFIX: polygon face batching — accumulate triangles from consecutive
+// same-texture faces into a single GL_TRIANGLES draw call instead of one
+// GL_TRIANGLE_FAN per face.  Used by RenderSubmodelFacesUnsorted when
+// StateLimited is true and lighting is gouraud (no per-face lightmap overlay).
+static PosColorUVVertex sBatchBuffer[MAX_POINTS_IN_POLY_LIST];
+static int sBatchCount = 0;
+static bool sBatchActive = false;
+
+void gpu_SetBatchMode(bool active) { sBatchActive = active; }
+
+void gpu_FlushBatch() {
+  if (sBatchCount == 0)
+    return;
+  size_t start = gRenderer->addVertexData(sBatchBuffer, sBatchBuffer + sBatchCount);
+  dglDrawArrays(GL_TRIANGLES, start, sBatchCount);
+  OpenGL_polys_drawn += sBatchCount / 3;
+  OpenGL_verts_processed += sBatchCount;
+  sBatchCount = 0;
+}
+
 void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
   if (gpu_state.cur_texture_quality == 0) {
     // force disable textures
@@ -1414,8 +1435,19 @@ void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
 
   gRenderer->setTextureEnabled(1, false);
 
-  // draw the data in the arrays
-  dglDrawArrays(GL_TRIANGLE_FAN, gRenderer->addVertexData(vData, vData + nv), nv);
+  if (sBatchActive && nv >= 3) {
+    // Fan-triangulate and accumulate into batch buffer.
+    // nv vertices form a convex fan: vData[0] is the fan center,
+    // triangles are (0, i, i+1) for i = 1..nv-2.
+    for (uint32_t i = 1; i + 1 < nv && sBatchCount + 3 <= MAX_POINTS_IN_POLY_LIST; i++) {
+      sBatchBuffer[sBatchCount++] = vData[0];
+      sBatchBuffer[sBatchCount++] = vData[i];
+      sBatchBuffer[sBatchCount++] = vData[i + 1];
+    }
+  } else {
+    // draw the data in the arrays
+    dglDrawArrays(GL_TRIANGLE_FAN, gRenderer->addVertexData(vData, vData + nv), nv);
+  }
 
   if (gpu_state.cur_texture_quality == 0) {
     // re-enable textures
@@ -1476,7 +1508,9 @@ void rend_SetLighting(light_state state) {
   if (state == gpu_state.cur_light_state)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetLighting does not touch texture state; the glActiveTexture call
+  // was a redundant driver call on every lighting state change.
 
   OpenGL_sets_this_frame[4]++;
 
@@ -1517,7 +1551,11 @@ void rend_SetTextureType(texture_type state) {
   if (state == gpu_state.cur_texture_type)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetTextureType only calls setTextureEnabled (a uniform upload);
+  // the glActiveTexture call was a redundant driver call on every texture
+  // type change.
+
   OpenGL_sets_this_frame[3]++;
 
   switch (state) {
@@ -1705,7 +1743,10 @@ void rend_SetAlphaType(int8_t atype) {
   if (atype == gpu_state.cur_alpha_type)
     return; // don't set it redundantly
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetAlphaType only toggles GL_BLEND and the blend function; the
+  // glActiveTexture call was a redundant driver call on every alpha change.
+
   OpenGL_sets_this_frame[6]++;
 
   if (atype == AT_ALWAYS) {

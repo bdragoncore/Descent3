@@ -178,9 +178,12 @@ void rend_SetZBias(float z_bias) {
   if (Z_bias != z_bias) {
     Z_bias = z_bias;
 
-    // Force refresh our transforms to take the Zbias into account
-    g3_GetModelViewMatrix(&View_position, &Unscaled_matrix, (float *)gTransformModelView);
-    g3_UpdateFullTransform();
+    // Force refresh our transforms to take the Zbias into account.
+    // BUGFIX (g3 replacement, Phase 3): recompute through g3_UpdateModelViewMatrix
+    // so an active instance model transform is preserved; the old code rebuilt
+    // the model-view from the (now always-true) globals, which would have
+    // dropped the model matrix when called during instancing.
+    g3_UpdateModelViewMatrix();
     g3_ForceTransformRefresh();
   }
 }
