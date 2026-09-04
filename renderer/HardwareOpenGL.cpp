@@ -1438,6 +1438,29 @@ void gpu_RenderPolygonUV2(PosColorUV2Vertex *vData, uint32_t nv) {
   CHECK_ERROR(10)
 }
 
+// BUGFIX #560: draw a list of triangles (3 vertices each) in a single call.
+// Used by the terrain renderer to batch many cells into one draw call.
+void gpu_RenderPolygonList(PosColorUVVertex *vData, uint32_t nv) {
+  gRenderer->setTextureEnabled(1, false);
+
+  dglDrawArrays(GL_TRIANGLES, gRenderer->addVertexData(vData, vData + nv), nv);
+  OpenGL_polys_drawn++;
+  OpenGL_verts_processed += nv;
+
+  CHECK_ERROR(10)
+}
+
+// BUGFIX #560: multitexture variant of the batched triangle-list draw.
+void gpu_RenderPolygonList(PosColorUV2Vertex *vData, uint32_t nv) {
+  gRenderer->setTextureEnabled(1, true);
+
+  dglDrawArrays(GL_TRIANGLES, gRenderer->addVertexData(vData, vData + nv), nv);
+  OpenGL_polys_drawn++;
+  OpenGL_verts_processed += nv;
+
+  CHECK_ERROR(10)
+}
+
 void rend_SetFlatColor(ddgr_color color) { gpu_state.cur_color = color; }
 
 // Sets the fog state to TRUE or FALSE

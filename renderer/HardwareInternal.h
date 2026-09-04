@@ -20,6 +20,9 @@
 #define __HARDWARE_INTERNAL_H__
 
 #define MAX_POINTS_IN_POLY 100
+// BUGFIX #560: batched triangle-list draws (terrain) can submit many more
+// vertices than a single polygon, so size the vertex array accordingly.
+#define MAX_POINTS_IN_POLY_LIST 6144
 
 // These structs are for drawing with vertex arrays
 // Useful for fast indexing
@@ -86,8 +89,11 @@ void gpu_SetMultitextureBlendMode(bool state);
 void gpu_BindTexture(int handle, int map_type, int slot);
 void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv);
 void gpu_RenderPolygonUV2(PosColorUV2Vertex *vData, uint32_t nv);
+void gpu_RenderPolygonList(PosColorUVVertex *vData, uint32_t nv);
+void gpu_RenderPolygonList(PosColorUV2Vertex *vData, uint32_t nv);
 void gpu_DrawFlatPolygon3D(g3Point **p, int nv);
 void rend_DrawMultitexturePolygon3D(int handle, g3Point **p, int nv, int map_type);
+void rend_DrawMultitexturePolygonList3D(int handle, g3Point **p, int ntri, int map_type);
 
 /*
 * Returns the color to use for a given point, based on lighting and alpha modes

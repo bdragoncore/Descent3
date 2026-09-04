@@ -232,6 +232,14 @@ free_points:;
   */
 }
 
+// BUGFIX #560: draws ntri triangles (3 vertices each) in a single draw call.
+// The terrain renderer batches cells sharing a (texture, lightmap) into one
+// call, cutting the per-cell draw-call count dramatically.
+int g3_DrawPolyList(int ntri, g3Point **pointlist, int bm, int map_type) {
+  rend_DrawPolygonList3D(bm, pointlist, ntri, map_type);
+  return 1;
+}
+
 // draw a sortof sphere - i.e., the 2d radius is proportional to the 3d
 // radius, but not to the distance from the eye
 void g3_DrawSphere(ddgr_color color, g3Point *pnt, float rad) {

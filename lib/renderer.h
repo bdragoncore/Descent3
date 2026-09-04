@@ -447,6 +447,8 @@ void rend_SetTextureType(texture_type);
 
 // Given a handle to a bitmap and nv point vertices, draws a 3D polygon
 void rend_DrawPolygon3D(int handle, g3Point **p, int nv, int map_type = MAP_TYPE_BITMAP);
+// BUGFIX #560: draws ntri triangles (3 vertices each) in a single draw call.
+void rend_DrawPolygonList3D(int handle, g3Point **p, int ntri, int map_type = MAP_TYPE_BITMAP);
 
 // Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 void rend_DrawPolygon2D(int handle, g3Point **p, int nv);
