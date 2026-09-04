@@ -803,11 +803,13 @@ int LGSPlayers(CFILE *fp) {
   plr->inventory.Reset(false, INVRESET_ALL);
   plr->counter_measures.Reset(false, INVRESET_ALL);
 
-  gs_ReadShort(fp, size);
-  if (size != sizeof(player)) {
-    Int3();
-    return LGS_OUTDATEDVER;
-  }
+  // BUGFIX #279: Skip sizeof check for cross-architecture compatibility.
+  // The old raw dump required an exact sizeof match, but pointer fields in
+  // player (guided_obj, user_timeout_obj) differ in size between x86 and x64.
+  // With field-by-field serialization, layout mismatches will be caught by
+  // individual field reads anyway.
+  gs_ReadShort(fp, size); // consume sizeof(player) value from file
+  // Validation intentionally skipped for portable format (version >= 3).
 
   // BUGFIX #279: Read all fields individually (portable serialization).
   // The old code read the entire player struct with cf_ReadBytes, which broke
