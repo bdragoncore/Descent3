@@ -18,6 +18,9 @@
 
 #include <cstring>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "3d.h"
 #include "HardwareInternal.h"
 #include "renderer.h"
@@ -40,13 +43,17 @@ void g3_GetViewPortMatrix(float *viewMat) {
   float viewportWidthOverTwo = ((float)viewportWidth) * 0.5f;
   float viewportHeightOverTwo = ((float)viewportHeight) * 0.5f;
 
-  // setup the matrix
-  memset(viewMat, 0, sizeof(float) * 16);
-  viewMat[0] = viewportWidthOverTwo;
-  viewMat[5] = -viewportHeightOverTwo;
-  viewMat[12] = viewportWidthOverTwo + (float)viewportX;
-  viewMat[13] = viewportHeightOverTwo + (float)viewportY;
-  viewMat[10] = viewMat[15] = 1.0f;
+  // GLM refactor (Phase 1): build the viewport matrix with GLM. Column-major
+  // layout: [0][0] scales x by w/2, [1][1] flips y by -h/2, [2][2]=1, and
+  // [3][0]/[3][1] translate to the viewport center plus origin.
+  glm::mat4 view(0.0f);
+  view[0][0] = viewportWidthOverTwo;
+  view[1][1] = -viewportHeightOverTwo;
+  view[2][2] = 1.0f;
+  view[3][0] = viewportWidthOverTwo + (float)viewportX;
+  view[3][1] = viewportHeightOverTwo + (float)viewportY;
+  view[3][3] = 1.0f;
+  memcpy(viewMat, glm::value_ptr(view), 16 * sizeof(float));
 }
 
 void g3_GetProjectionMatrix(float zoom, float *projMat) {
@@ -57,31 +64,27 @@ void g3_GetProjectionMatrix(float zoom, float *projMat) {
   float s = ((float)viewportWidth) / ((float)viewportHeight);
   float vertical_fov = zoom * 3.0f / 4.0f;
 
-  // setup the matrix
-  memset(projMat, 0, sizeof(float) * 16);
-
   // BUGFIX (PiccuEngine #2): Use constant near/far planes instead of
   // dividing by zoom. The original code scaled znear and zfar by zoom,
   // which caused depth range issues when FOV was changed.
   float oOT = 1.0f / vertical_fov;
 
-  // fill in the matrix
-  // Go read https://www.songho.ca/opengl/gl_projectionmatrix.html
-  // if you feel like doing the math again :)
-	if (s <= 1.0f)
-	{
-		projMat[0] = oOT;
-		projMat[5] = oOT * s;
-	}
-	else
-	{
-		projMat[0] = oOT / s;
-		projMat[5] = oOT;
-	}
-
-  projMat[10] = 1.0f;
-  projMat[11] = 1.0f;
-  projMat[14] = -1.0f;
+  // GLM refactor (Phase 1): build the projection matrix with GLM. The matrix
+  // is column-major: [0][0] is the horizontal scale, [1][1] the vertical
+  // scale, [2][2]=1 and [2][3]=1 encode the near=0/far=infinity convention,
+  // and [3][2]=-1 is the perspective divide term.
+  glm::mat4 proj(0.0f);
+  if (s <= 1.0f) {
+    proj[0][0] = oOT;
+    proj[1][1] = oOT * s;
+  } else {
+    proj[0][0] = oOT / s;
+    proj[1][1] = oOT;
+  }
+  proj[2][2] = 1.0f;
+  proj[2][3] = 1.0f;
+  proj[3][2] = -1.0f;
+  memcpy(projMat, glm::value_ptr(proj), 16 * sizeof(float));
 }
 
 // start the frame
@@ -143,11 +146,29 @@ void g3_EndFrame(void) {
 }
 
 // get the current view position
-void g3_GetViewPosition(vector *vp) { *vp = View_position; }
+void g3_GetViewPosition(vector *vp) {
+  // BUGFIX (g3 replacement, Phase 3): during instancing the old code returned
+  // the re-based view position. The globals now always hold the true view
+  // state, so express the view position in the object's local frame (identity
+  // transform when no instance is active).
+  matrix orient;
+  vector pos;
+  g3_GetInstanceTransform(&orient, &pos);
+  *vp = (View_position - pos) * orient;
+}
 
 void g3_GetViewMatrix(matrix *mat) { *mat = View_matrix; }
 
-void g3_GetUnscaledMatrix(matrix *mat) { *mat = Unscaled_matrix; }
+void g3_GetUnscaledMatrix(matrix *mat) {
+  // BUGFIX (g3 replacement, Phase 3): during instancing the old code returned
+  // the re-based unscaled matrix. The globals now always hold the true view
+  // state, so express the unscaled matrix in the object's local frame (identity
+  // transform when no instance is active).
+  matrix orient;
+  vector pos;
+  g3_GetInstanceTransform(&orient, &pos);
+  *mat = ~orient * Unscaled_matrix;
+}
 
 // Gets the matrix scale vector
 void g3_GetMatrixScale(vector *matrix_scale) { *matrix_scale = Matrix_scale; }

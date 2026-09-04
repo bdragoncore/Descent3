@@ -39,6 +39,7 @@ endif()
 
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
+find_package(glm REQUIRED)
 
 # BUGFIX #509: Verify the MSVC runtime library is set to static CRT.
 # The dynamic debug CRT (ucrtbased.dll) is not redistributable, so Debug
@@ -3735,6 +3736,100 @@ target_include_directories(terrainrender_linked_real_tests PRIVATE
 target_compile_definitions(terrainrender_linked_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
 gtest_discover_tests(terrainrender_linked_real_tests)
 
+add_executable(g3_transform_real_tests
+    cpp_src/g3_transform_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+)
+target_link_libraries(g3_transform_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_transform_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_transform_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_transform_real_tests)
+
+add_executable(g3_drawpath_real_tests
+    cpp_src/g3_drawpath_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+)
+target_link_libraries(g3_drawpath_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_drawpath_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_drawpath_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_drawpath_real_tests)
+
+add_executable(g3_instance_real_tests
+    cpp_src/g3_instance_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwarePoints.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareClipper.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+)
+target_link_libraries(g3_instance_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_instance_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_instance_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_instance_real_tests)
+
+add_executable(renderer_state_cache_real_tests
+    cpp_src/renderer_state_cache_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwarePoints.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareClipper.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+)
+target_link_libraries(renderer_state_cache_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(renderer_state_cache_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(renderer_state_cache_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(renderer_state_cache_real_tests)
+
 add_executable(damage_linked_real_tests
     cpp_src/damage_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/damage.cpp
@@ -4503,6 +4598,40 @@ endif()
 # Verifies ddio mouse grab state management. The SDL window grab calls
 # require a running SDL context, so only the state layer is unit-tested.
 # ============================================================================
+
+# ============================================================================
+# Polymodel face batching tests (Phase 5)
+# Compiles the real model/newstyle.cpp with stubbed renderer/game subsystems
+# and verifies gpu_SetBatchMode / gpu_FlushBatch orchestration in
+# RenderSubmodelFacesUnsorted.
+# ============================================================================
+
+add_executable(polymodel_batch_real_tests
+    cpp_src/polymodel_batch_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/model/newstyle.cpp
+)
+target_link_libraries(polymodel_batch_real_tests PRIVATE GTest::gtest_main vecmat fix ddebug logger mem misc)
+target_include_directories(polymodel_batch_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/model
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${PROJECT_SOURCE_DIR}/cfile
+    ${PROJECT_SOURCE_DIR}/bitmap
+    ${PROJECT_SOURCE_DIR}/ddio
+    ${PROJECT_SOURCE_DIR}/module
+    ${PROJECT_SOURCE_DIR}/sndlib
+    ${PROJECT_SOURCE_DIR}/physics
+    ${PROJECT_SOURCE_DIR}/Descent3
+    ${CMAKE_BINARY_DIR}/lib
+    ${CMAKE_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(polymodel_batch_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(polymodel_batch_real_tests)
 
 add_executable(mouse_focus_tests
     cpp_src/mouse_focus_tests.cpp

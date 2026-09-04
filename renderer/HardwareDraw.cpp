@@ -107,7 +107,18 @@ void g3_DrawSpecialLine(g3Point *p0, g3Point *p1) {
 bool g3_CheckNormalFacing(vector *v, vector *norm) {
   vector tempv;
 
-  tempv = View_position - *v;
+  // BUGFIX (g3 replacement, Phase 3): the old code compared the re-based view
+  // position against the object-space point. The globals now always hold the
+  // true view state, so transform the point to world space (identity when no
+  // instance is active) and rotate the viewer-minus-point vector back into the
+  // object's local frame so the dot product with the object-space normal is
+  // still valid.
+  matrix orient;
+  vector pos;
+  g3_GetInstanceTransform(&orient, &pos);
+  vector world = (*v * ~orient) + pos;
+
+  tempv = (View_position - world) * orient;
 
   return (vm_Dot3Product(tempv, *norm) > 0);
 }
@@ -143,93 +154,14 @@ int Triangulate_test = 0;
 //					pointlist - a pointer to a list of pointers to points
 //					bm - the bitmap handle if texturing.  ignored if flat shading
 // Returns 0 if clipped away
+// BUGFIX (g3 replacement, Phase 2): the GPU performs projection and clipping,
+// so this submits the world-space p3_vecPreRot vertices straight to
+// rend_DrawPolygon3D. The old software clip/project path (g3_ClipPolygon +
+// g3_ProjectPoint + the temp-point pool) was removed; it is still used by the
+// portal/mirror culling and 2D line paths, which are unaffected.
 int g3_DrawPoly(int nv, g3Point **pointlist, int bm, int map_type, g3Codes *clip_codes) {
   rend_DrawPolygon3D(bm, pointlist, nv, map_type);
   return 1;
-
-  /*
-  int i;
-  g3Codes cc;
-  bool was_clipped=0;
-
-  if( Triangulate_test && (nv > 3) )
-  {
-          g3Point *tripoints[3];
-          int sum=0;
-
-          for (i=0;i<nv-2;i++)
-          {
-                  tripoints[0] = pointlist[0];
-                  tripoints[1] = pointlist[i+1];
-                  tripoints[2] = pointlist[i+2];
-                  sum += g3_DrawPoly( 3, tripoints, bm, map_type );
-          }
-
-          return sum;
-  }
-
-  //Initialize or just used the ones passed in
-  if( clip_codes )
-  {
-          cc = *clip_codes;
-  }
-  else
-  {
-          cc.cc_or  = 0;
-          cc.cc_and = 0xff;
-
-          //Get codes for this polygon, and copy uvls into points
-          for( i = 0; i < nv; ++i )
-          {
-                  uint8_t c = pointlist[i]->p3_codes;
-                  cc.cc_and &= c;
-                  cc.cc_or  |= c;
-          }
-  }
-
-  //All points off screen?
-  if( cc.cc_and )
-          return 0;
-
-  //One or more point off screen, so clip
-  if( cc.cc_or )
-  {
-          //Clip the polygon, getting pointer to new buffer
-          pointlist = g3_ClipPolygon( pointlist, &nv, &cc );
-
-          //Flag as clipped so temp points will be freed
-          was_clipped = 1;
-
-          //Check for polygon clipped away, or clip otherwise failed
-          if( (nv==0) || (cc.cc_or&CC_BEHIND) || cc.cc_and )
-                  goto free_points;
-  }
-
-  //Make list of 2d coords (& check for overflow)
-  for( i = 0; i < nv; ++i )
-  {
-          g3Point *p = pointlist[i];
-
-          //Project if needed
-          if( !(p->p3_flags&PF_PROJECTED) )
-          {
-                  g3_ProjectPoint(p);
-          }
-  }
-
-  //Draw!
-  rend_DrawPolygon3D( bm, pointlist, nv, map_type );
-
-free_points:;
-
-  //If was clipped, free temp points
-  if( was_clipped )
-  {
-          g3_FreeTempPoints( pointlist, nv );
-  }
-
-  return 1;
-  */
 }
 
 // BUGFIX #560: draws ntri triangles (3 vertices each) in a single draw call.

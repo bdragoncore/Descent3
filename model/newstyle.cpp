@@ -95,6 +95,11 @@
 static float face_depth[MAX_POLYGON_VECS];
 static uint8_t triangulated_faces[MAX_FACES_PER_ROOM];
 
+// BUGFIX: polygon face batching — declared here (not via HardwareInternal.h)
+// to avoid adding a renderer include dependency to the model library.
+extern void gpu_SetBatchMode(bool active);
+extern void gpu_FlushBatch();
+
 static uint8_t FacingPass = 0;
 static int Multicolor_texture = -1;
 
@@ -783,9 +788,34 @@ void RenderSubmodelFacesUnsorted(poly_model *pm, bsp_info *sm) {
 
   if (StateLimited) {
     SortStates(State_elements, rcount);
+
+    // BUGFIX: batch consecutive same-texture faces into a single GL_TRIANGLES
+    // draw call instead of one GL_TRIANGLE_FAN per face.  Only batch when no
+    // lightmap overlay is active (gouraud lighting), since lightmaps require
+    // per-face overlay UVs that prevent batching.
+    extern uint8_t gpu_Overlay_type;
+    bool can_batch = (Polymodel_light_type != POLYMODEL_LIGHTING_LIGHTMAP) && (gpu_Overlay_type == OT_NONE);
+    if (can_batch)
+      gpu_SetBatchMode(true);
+
+    int prev_sort_key = -1;
     for (i = rcount - 1; i >= 0; i--) {
       int facenum = State_elements[i].facenum;
+
+      // Flush batch when texture changes (sort_key = GameTextures index)
+      if (can_batch) {
+        int cur_key = State_elements[i].sort_key;
+        if (prev_sort_key != -1 && cur_key != prev_sort_key)
+          gpu_FlushBatch();
+        prev_sort_key = cur_key;
+      }
+
       RenderSubmodelFace(pm, sm, facenum);
+    }
+
+    if (can_batch) {
+      gpu_FlushBatch();
+      gpu_SetBatchMode(false);
     }
   }
 
