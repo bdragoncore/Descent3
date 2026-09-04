@@ -323,7 +323,9 @@ int LoadGameState(const std::filesystem::path &pathname) {
   D3MusicSetRegion(pending_music_region);
 
   // Times_game_restored = cf_ReadInt(fp);
-  // Read Weather
+  // BUGFIX #279: Portable weather deserialization.
+  // Read fields individually instead of raw struct dump for cross-architecture
+  // compatibility.
   {
     int weather_size = cf_ReadInt(fp);
     if (weather_size != sizeof(Weather)) {
@@ -332,7 +334,17 @@ int LoadGameState(const std::filesystem::path &pathname) {
       goto loadsg_error;
     }
   }
-  cf_ReadBytes((uint8_t *)&Weather, sizeof(Weather), fp);
+  gs_ReadInt(fp, Weather.flags);
+  gs_ReadFloat(fp, Weather.snow_intensity_scalar);
+  gs_ReadFloat(fp, Weather.rain_intensity_scalar);
+  gs_ReadInt(fp, Weather.rain_color);
+  gs_ReadInt(fp, Weather.lightning_color);
+  gs_ReadInt(fp, Weather.sky_flash_color);
+  gs_ReadByte(fp, Weather.lightning_sequence);
+  gs_ReadFloat(fp, Weather.last_lightning_evaluation_time);
+  gs_ReadFloat(fp, Weather.lightning_interval_time);
+  gs_ReadInt(fp, Weather.lightning_rand_value);
+  gs_ReadInt(fp, Weather.snowflakes_to_create);
 
   // Restore active doorways
   {
@@ -722,6 +734,9 @@ void CopyVisStruct(vis_effect *vis, old_vis_effect *old_vis) {
 }
 
 // save viseffects
+// BUGFIX #279: Portable vis_effect deserialization.
+// Read fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 int LGSVisEffects(CFILE *fp) {
   int16_t i, count = 0;
 
@@ -732,27 +747,41 @@ int LGSVisEffects(CFILE *fp) {
     int roomnum, v;
     vis_effect vis;
 
-    cf_ReadBytes((uint8_t *)&vis, sizeof(vis_effect), fp);
+    // BUGFIX #279: Read fields individually instead of raw struct dump
+    memset(&vis, 0, sizeof(vis));
+    gs_ReadVector(fp, vis.pos);
+    gs_ReadVector(fp, vis.end_pos);
+    gs_ReadVector(fp, vis.velocity);
+    gs_ReadFloat(fp, vis.mass);
+    gs_ReadFloat(fp, vis.drag);
+    gs_ReadFloat(fp, vis.size);
+    gs_ReadFloat(fp, vis.lifeleft);
+    gs_ReadFloat(fp, vis.lifetime);
+    gs_ReadFloat(fp, vis.creation_time);
+    gs_ReadInt(fp, vis.roomnum);
+    gs_ReadInt(fp, vis.phys_flags);
+    gs_ReadShort(fp, vis.custom_handle);
+    gs_ReadShort(fp, vis.lighting_color);
+    gs_ReadShort(fp, vis.flags);
+    gs_ReadShort(fp, vis.next);
+    gs_ReadShort(fp, vis.prev);
+    // vis_attach_info
+    gs_ReadInt(fp, vis.attach_info.obj_handle);
+    gs_ReadInt(fp, vis.attach_info.dest_objhandle);
+    gs_ReadShort(fp, vis.attach_info.modelnum);
+    gs_ReadShort(fp, vis.attach_info.vertnum);
+    gs_ReadShort(fp, vis.attach_info.end_vertnum);
+    gs_ReadByte(fp, vis.attach_info.subnum);
+    gs_ReadByte(fp, vis.attach_info.subnum2);
+    // axis_billboard_info
+    gs_ReadByte(fp, vis.billboard_info.width);
+    gs_ReadByte(fp, vis.billboard_info.height);
+    gs_ReadByte(fp, vis.billboard_info.texture);
+    gs_ReadByte(fp, vis.movement_type);
+    gs_ReadByte(fp, vis.type);
+    gs_ReadByte(fp, vis.id);
+
     roomnum = vis.roomnum;
-
-    // Check for old struct, and if found, fix it
-    if ((vis.type != VIS_FIREBALL) || (roomnum == -1) ||
-        (!ROOMNUM_OUTSIDE(roomnum) && ((roomnum > Highest_room_index) || !Rooms[roomnum].used)) ||
-        ((ROOMNUM_OUTSIDE(roomnum) && (CELLNUM(roomnum) > 65535)))) {
-      old_vis_effect old_vis;
-
-      // Copy new into old
-      memcpy((uint8_t *)&old_vis, (uint8_t *)&vis, sizeof(vis_effect));
-
-      // Read extra data from old
-      cf_ReadBytes(((uint8_t *)&old_vis) + sizeof(vis_effect), sizeof(old_vis_effect) - sizeof(vis_effect), fp);
-
-      // Copy from old to new struct
-      CopyVisStruct(&vis, &old_vis);
-
-      // Reset new room number
-      roomnum = vis.roomnum;
-    }
 
     vis.roomnum = vis.prev = vis.next = -1;
     v = VisEffectAllocate();
@@ -1105,13 +1134,27 @@ int LGSObjects(CFILE *fp, int version) {
     op->lighting_render_type = l_rend_type;
 
     // Store whether or not we have a pointer to lighting_info
+    // BUGFIX #279: Read light_info fields individually for portability
     uint8_t has_lightinfo;
     gs_ReadByte(fp, has_lightinfo);
     if (has_lightinfo) {
       if (!op->lighting_info) {
         op->lighting_info = mem_rmalloc<light_info>();
       }
-      cf_ReadBytes((uint8_t *)op->lighting_info, sizeof(*op->lighting_info), fp);
+      gs_ReadInt(fp, op->lighting_info->flags);
+      gs_ReadFloat(fp, op->lighting_info->light_distance);
+      gs_ReadFloat(fp, op->lighting_info->red_light1);
+      gs_ReadFloat(fp, op->lighting_info->green_light1);
+      gs_ReadFloat(fp, op->lighting_info->blue_light1);
+      gs_ReadFloat(fp, op->lighting_info->red_light2);
+      gs_ReadFloat(fp, op->lighting_info->green_light2);
+      gs_ReadFloat(fp, op->lighting_info->blue_light2);
+      gs_ReadFloat(fp, op->lighting_info->time_interval);
+      gs_ReadFloat(fp, op->lighting_info->flicker_distance);
+      gs_ReadFloat(fp, op->lighting_info->directional_dot);
+      gs_ReadInt(fp, op->lighting_info->timebits);
+      gs_ReadByte(fp, op->lighting_info->angle);
+      gs_ReadByte(fp, op->lighting_info->lighting_render_type);
     }
 
     // validate handle.
@@ -1292,25 +1335,138 @@ int LGSObjects(CFILE *fp, int version) {
 
     VERIFY_SAVEFILE;
 
-    //	write out all structures here.
+    // BUGFIX #279: Read union data based on the active type tag rather than
+    // raw struct dumps. This matches the portable format written by SGSObjects.
     // movement info.
-    gs_ReadShort(fp, size);
-    if (size != sizeof(op->mtype)) {
-      Int3();
-      retval = LGS_OUTDATEDVER;
-      goto done;
+    {
+      uint8_t mt_type;
+      gs_ReadByte(fp, mt_type);
+      op->movement_type = mt_type;
+      switch (mt_type) {
+      case MT_PHYSICS: {
+        physics_info *pi = &op->mtype.phys_info;
+        gs_ReadVector(fp, pi->velocity);
+        gs_ReadVector(fp, pi->thrust);
+        gs_ReadVector(fp, pi->rotvel);
+        gs_ReadVector(fp, pi->rotthrust);
+        gs_ReadAngle(fp, pi->turnroll);
+        gs_ReadFloat(fp, pi->last_still_time);
+        gs_ReadInt(fp, pi->num_bounces);
+        gs_ReadFloat(fp, pi->coeff_restitution);
+        gs_ReadFloat(fp, pi->mass);
+        gs_ReadFloat(fp, pi->drag);
+        gs_ReadFloat(fp, pi->rotdrag);
+        gs_ReadFloat(fp, pi->full_thrust);
+        gs_ReadFloat(fp, pi->full_rotthrust);
+        gs_ReadFloat(fp, pi->max_turnroll_rate);
+        gs_ReadFloat(fp, pi->turnroll_ratio);
+        gs_ReadFloat(fp, pi->wiggle_amplitude);
+        gs_ReadFloat(fp, pi->wiggles_per_sec);
+        gs_ReadVector(fp, pi->dest_pos);
+        gs_ReadInt(fp, pi->stuck_room);
+        gs_ReadInt(fp, pi->stuck_portal);
+        gs_ReadInt(fp, pi->flags);
+        break;
+      }
+      case MT_SHOCKWAVE: {
+        shockwave_info *si = &op->mtype.shock_info;
+        for (int d = 0; d < (MAX_OBJECTS / 32) + 1; d++) {
+          gs_ReadInt(fp, si->damaged_list[d]);
+        }
+        break;
+      }
+      case MT_OBJ_LINKED: {
+        object_link_info *li = &op->mtype.obj_link_info;
+        gs_ReadInt(fp, li->parent_handle);
+        gs_ReadInt(fp, li->sobj_index);
+        gs_ReadVector(fp, li->fvec);
+        gs_ReadVector(fp, li->uvec);
+        gs_ReadVector(fp, li->pos);
+        break;
+      }
+      default: {
+        // Unknown movement type -- skip and zero out
+        Int3();
+        memset(&op->mtype, 0, sizeof(op->mtype));
+        break;
+      }
+      }
     }
-    cf_ReadBytes((uint8_t *)&op->mtype, size, fp);
 
     VERIFY_SAVEFILE;
     // Control info, determined by CONTROL_TYPE
-    gs_ReadShort(fp, size);
-    if (size != sizeof(op->ctype)) {
-      Int3();
-      retval = LGS_OUTDATEDVER;
-      goto done;
+    {
+      uint8_t ct_type;
+      gs_ReadByte(fp, ct_type);
+      op->control_type = ct_type;
+      switch (ct_type) {
+      case CT_WEAPON:
+      case CT_AI: {
+        laser_info_s *li = &op->ctype.laser_info;
+        gs_ReadShort(fp, li->parent_type);
+        gs_ReadShort(fp, li->src_gun_num);
+        gs_ReadInt(fp, li->last_hit_handle);
+        gs_ReadInt(fp, li->track_handle);
+        gs_ReadFloat(fp, li->last_track_time);
+        gs_ReadInt(fp, li->hit_status);
+        gs_ReadVector(fp, li->hit_pnt);
+        gs_ReadVector(fp, li->hit_wall_pnt);
+        gs_ReadVector(fp, li->hit_wall_normal);
+        gs_ReadInt(fp, li->hit_room);
+        gs_ReadInt(fp, li->hit_pnt_room);
+        gs_ReadShort(fp, li->hit_face);
+        gs_ReadFloat(fp, li->multiplier);
+        gs_ReadFloat(fp, li->thrust_left);
+        gs_ReadFloat(fp, li->last_drop_time);
+        gs_ReadVector(fp, li->last_smoke_pos);
+        gs_ReadByte(fp, li->casts_light);
+        break;
+      }
+      case CT_EXPLOSION: {
+        blast_info_s *bi = &op->ctype.blast_info;
+        gs_ReadFloat(fp, bi->max_size);
+        gs_ReadInt(fp, bi->bm_handle);
+        break;
+      }
+      case CT_DEBRIS: {
+        dying_info_s *di = &op->ctype.dying_info;
+        gs_ReadInt(fp, di->death_flags);
+        gs_ReadFloat(fp, di->delay_time);
+        gs_ReadInt(fp, di->killer_playernum);
+        gs_ReadFloat(fp, di->last_spark_time);
+        gs_ReadFloat(fp, di->last_fireball_time);
+        gs_ReadFloat(fp, di->last_smoke_time);
+        break;
+      }
+      case CT_POWERUP: {
+        powerup_info_s *pi = &op->ctype.powerup_info;
+        gs_ReadInt(fp, pi->count);
+        break;
+      }
+      case CT_SPLINTER: {
+        splinter_info_s *si = &op->ctype.splinter_info;
+        gs_ReadByte(fp, si->subobj_num);
+        gs_ReadShort(fp, si->facenum);
+        for (int v = 0; v < MAX_VERTS_PER_SPLINTER; v++) {
+          gs_ReadVector(fp, si->verts[v]);
+        }
+        gs_ReadVector(fp, si->center);
+        break;
+      }
+      case CT_SOUNDSOURCE: {
+        soundsource_info_s *ssi = &op->ctype.soundsource_info;
+        gs_ReadInt(fp, ssi->sound_index);
+        gs_ReadFloat(fp, ssi->volume);
+        break;
+      }
+      default: {
+        // Unknown control type -- zero out
+        Int3();
+        memset(&op->ctype, 0, sizeof(op->ctype));
+        break;
+      }
+      }
     }
-    cf_ReadBytes((uint8_t *)&op->ctype, size, fp);
 
     VERIFY_SAVEFILE;
     // remap bitmap handle if this is a fireball!
@@ -1327,13 +1483,56 @@ int LGSObjects(CFILE *fp, int version) {
     VERIFY_SAVEFILE;
 
     // save out rendering information
-    gs_ReadShort(fp, size);
-    if (size != sizeof(op->rtype)) {
-      Int3();
-      retval = LGS_OUTDATEDVER;
-      goto done;
+    // BUGFIX #279: Read rtype fields individually. The polyobj_info struct
+    // contains multi_turret which has pointer fields (keyframes,
+    // last_keyframes) that differ in size between x86 and x64. These pointers
+    // are rebuilt on load, so we only read the non-pointer fields.
+    {
+      uint8_t rt_type;
+      gs_ReadByte(fp, rt_type);
+      op->render_type = rt_type;
+      memset(&op->rtype, 0, sizeof(op->rtype));
+      switch (rt_type) {
+      case RT_POLYOBJ: {
+        polyobj_info *pi = &op->rtype.pobj_info;
+        gs_ReadShort(fp, pi->model_num);
+        gs_ReadShort(fp, pi->dying_model_num);
+        gs_ReadFloat(fp, pi->anim_start_frame);
+        gs_ReadFloat(fp, pi->anim_frame);
+        gs_ReadFloat(fp, pi->anim_end_frame);
+        gs_ReadFloat(fp, pi->anim_time);
+        gs_ReadInt(fp, pi->anim_flags);
+        gs_ReadFloat(fp, pi->max_speed);
+        gs_ReadInt(fp, pi->subobj_flags);
+        gs_ReadInt(fp, pi->tmap_override);
+        // multi_turret_info: only read non-pointer fields
+        gs_ReadFloat(fp, pi->multi_turret_info.time);
+        gs_ReadFloat(fp, pi->multi_turret_info.last_time);
+        gs_ReadByte(fp, pi->multi_turret_info.num_turrets);
+        gs_ReadByte(fp, pi->multi_turret_info.flags);
+        break;
+      }
+      case RT_SHARD: {
+        shard_info_s *si = &op->rtype.shard_info;
+        for (int v = 0; v < 3; v++) {
+          gs_ReadVector(fp, si->points[v]);
+        }
+        for (int v = 0; v < 3; v++) {
+          gs_ReadFloat(fp, si->u[v]);
+          gs_ReadFloat(fp, si->v[v]);
+        }
+        gs_ReadVector(fp, si->normal);
+        gs_ReadShort(fp, si->tmap);
+        break;
+      }
+      case RT_EDITOR_SPHERE: {
+        gs_ReadInt(fp, op->rtype.sphere_color);
+        break;
+      }
+      default:
+        break;
+      }
     }
-    cf_ReadBytes((uint8_t *)&op->rtype, size, fp);
 
     op->size = cf_ReadFloat(fp);
 
@@ -1430,8 +1629,17 @@ int LGSObjects(CFILE *fp, int version) {
         p_info->multi_turret_info.flags = 0;
       }
       // Do Animation stuff
+      // BUGFIX #279: Read custom_anim fields individually for portability
       custom_anim multi_anim_info;
-      cf_ReadBytes((uint8_t *)&multi_anim_info, sizeof(multi_anim_info), fp);
+      gs_ReadFloat(fp, multi_anim_info.server_time);
+      gs_ReadShort(fp, multi_anim_info.server_anim_frame);
+      gs_ReadShort(fp, multi_anim_info.anim_start_frame);
+      gs_ReadShort(fp, multi_anim_info.anim_end_frame);
+      gs_ReadFloat(fp, multi_anim_info.anim_time);
+      gs_ReadFloat(fp, multi_anim_info.max_speed);
+      gs_ReadShort(fp, multi_anim_info.anim_sound_index);
+      gs_ReadByte(fp, multi_anim_info.flags);
+      gs_ReadByte(fp, multi_anim_info.next_anim_type);
       ObjSetAnimUpdate(i, &multi_anim_info);
       break;
     }
@@ -1557,6 +1765,9 @@ done:;
 }
 
 //	loads ai
+// BUGFIX #279: Portable ai_frame deserialization.
+// Read fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 int LGSObjAI(CFILE *fp, ai_frame **pai) {
   int16_t size;
   int8_t read_ai;
@@ -1572,12 +1783,193 @@ int LGSObjAI(CFILE *fp, ai_frame **pai) {
     return LGS_OUTDATEDVER;
 
   auto ai = *pai = mem_rmalloc<ai_frame>();
-  cf_ReadBytes((uint8_t *)ai, size, fp);
+  memset(ai, 0, sizeof(ai_frame));
+
+  gs_ReadByte(fp, ai->ai_class);
+  gs_ReadByte(fp, ai->ai_type);
+
+  // ai_path_info
+  gs_ReadShort(fp, ai->path.cur_path);
+  gs_ReadShort(fp, ai->path.cur_node);
+  gs_ReadShort(fp, ai->path.num_paths);
+  gs_ReadInt(fp, ai->path.goal_uid);
+  gs_ReadInt(fp, ai->path.goal_index);
+  for (int p = 0; p < MAX_JOINED_PATHS; p++) {
+    gs_ReadByte(fp, ai->path.path_id[p]);
+    gs_ReadByte(fp, ai->path.path_type[p]);
+    gs_ReadShort(fp, ai->path.path_start_node[p]);
+    gs_ReadShort(fp, ai->path.path_end_node[p]);
+    gs_ReadShort(fp, ai->path.path_flags[p]);
+  }
+
+  gs_ReadFloat(fp, ai->max_velocity);
+  gs_ReadFloat(fp, ai->max_delta_velocity);
+  gs_ReadFloat(fp, ai->max_turn_rate);
+  gs_ReadFloat(fp, ai->max_delta_turn_rate);
+
+  gs_ReadFloat(fp, ai->attack_vel_percent);
+  gs_ReadFloat(fp, ai->flee_vel_percent);
+  gs_ReadFloat(fp, ai->dodge_vel_percent);
+
+  gs_ReadFloat(fp, ai->circle_distance);
+  gs_ReadFloat(fp, ai->dodge_percent);
+
+  for (int m = 0; m < 2; m++) {
+    gs_ReadFloat(fp, ai->melee_damage[m]);
+    gs_ReadFloat(fp, ai->melee_latency[m]);
+  }
+
+  for (int s = 0; s < MAX_AI_SOUNDS; s++) {
+    gs_ReadInt(fp, ai->sound[s]);
+    gs_ReadFloat(fp, ai->last_sound_time[s]);
+  }
+  gs_ReadShort(fp, ai->last_played_sound_index);
+
+  gs_ReadByte(fp, ai->movement_type);
+  gs_ReadByte(fp, ai->movement_subtype);
+
+  gs_ReadByte(fp, ai->animation_type);
+  gs_ReadByte(fp, ai->next_animation_type);
+
+  gs_ReadByte(fp, ai->next_movement);
+  gs_ReadByte(fp, ai->current_wb_firing);
+  gs_ReadByte(fp, ai->last_special_wb_firing);
+
+  // goals
+  for (int g = 0; g < MAX_GOALS; g++) {
+    goal *gl = &ai->goals[g];
+    uint8_t used;
+    gs_ReadByte(fp, used);
+    gl->used = (used != 0);
+    if (!gl->used)
+      continue;
+
+    gs_ReadInt(fp, gl->type);
+    gs_ReadByte(fp, gl->subtype);
+    gs_ReadByte(fp, gl->activation_level);
+    gs_ReadFloat(fp, gl->creation_time);
+    gs_ReadFloat(fp, gl->min_influence);
+    gs_ReadFloat(fp, gl->influence);
+    for (int r = 0; r < 4; r++) {
+      gs_ReadFloat(fp, gl->ramp_influence_dists[r]);
+    }
+
+    // goal_info
+    gs_ReadInt(fp, gl->g_info.handle);
+    gs_ReadVector(fp, gl->g_info.pos);
+
+    // goal enablers
+    gs_ReadByte(fp, gl->num_enablers);
+    for (int e = 0; e < gl->num_enablers; e++) {
+      gs_ReadByte(fp, gl->enabler[e].enabler_type);
+      gs_ReadInt(fp, gl->enabler[e].flags);
+      gs_ReadFloat(fp, gl->enabler[e].percent_enable);
+      gs_ReadFloat(fp, gl->enabler[e].check_interval);
+      gs_ReadFloat(fp, gl->enabler[e].last_check_time);
+      gs_ReadByte(fp, gl->enabler[e].bool_next_enabler_op);
+    }
+
+    gs_ReadFloat(fp, gl->circle_distance);
+    gs_ReadInt(fp, gl->status_reg);
+    gs_ReadFloat(fp, gl->start_time);
+    gs_ReadFloat(fp, gl->next_path_time);
+    gs_ReadFloat(fp, gl->dist_to_goal);
+    gs_ReadVector(fp, gl->vec_to_target);
+    gs_ReadFloat(fp, gl->next_check_see_target_time);
+    gs_ReadVector(fp, gl->last_see_target_pos);
+    gs_ReadFloat(fp, gl->last_see_target_time);
+    gs_ReadFloat(fp, gl->next_target_update_time);
+    gs_ReadInt(fp, gl->flags);
+    gs_ReadInt(fp, gl->guid);
+    gs_ReadInt(fp, gl->goal_uid);
+    gs_ReadVector(fp, gl->set_fvec);
+    gs_ReadVector(fp, gl->set_uvec);
+  }
+
+  gs_ReadInt(fp, ai->target_handle);
+  gs_ReadFloat(fp, ai->next_target_update_time);
+
+  gs_ReadFloat(fp, ai->dist_to_target_actual);
+  gs_ReadFloat(fp, ai->dist_to_target_perceived);
+  gs_ReadVector(fp, ai->vec_to_target_actual);
+  gs_ReadVector(fp, ai->vec_to_target_perceived);
+
+  gs_ReadFloat(fp, ai->next_check_see_target_time);
+  gs_ReadVector(fp, ai->last_see_target_pos);
+  gs_ReadFloat(fp, ai->last_see_target_time);
+  gs_ReadFloat(fp, ai->last_hear_target_time);
+
+  gs_ReadFloat(fp, ai->weapon_speed);
+
+  gs_ReadFloat(fp, ai->next_melee_time);
+  gs_ReadFloat(fp, ai->last_render_time);
+  gs_ReadFloat(fp, ai->next_flinch_time);
+
+  gs_ReadInt(fp, ai->status_reg);
+  gs_ReadInt(fp, ai->flags);
+  gs_ReadInt(fp, ai->notify_flags);
+
+  gs_ReadVector(fp, ai->movement_dir);
+  gs_ReadVector(fp, ai->rot_thrust_vector);
+
+  gs_ReadFloat(fp, ai->fov);
+
+  gs_ReadInt(fp, ai->anim_sound_handle);
+
+  gs_ReadFloat(fp, ai->avoid_friends_distance);
+
+  gs_ReadFloat(fp, ai->frustration);
+  gs_ReadFloat(fp, ai->curiousity);
+  gs_ReadFloat(fp, ai->life_preservation);
+  gs_ReadFloat(fp, ai->aggression);
+
+  gs_ReadFloat(fp, ai->cur_frustration);
+  gs_ReadFloat(fp, ai->cur_curiousity);
+  gs_ReadFloat(fp, ai->cur_life_preservation);
+  gs_ReadFloat(fp, ai->cur_aggression);
+
+  gs_ReadFloat(fp, ai->mem_time_till_next_update);
+  for (int mem = 0; mem < AI_MEM_DEPTH; mem++) {
+    gs_ReadFloat(fp, ai->memory[mem].shields);
+    gs_ReadShort(fp, ai->memory[mem].num_enemies);
+    gs_ReadShort(fp, ai->memory[mem].num_friends);
+    gs_ReadShort(fp, ai->memory[mem].num_times_hit);
+    gs_ReadShort(fp, ai->memory[mem].num_enemy_shots_fired);
+    gs_ReadShort(fp, ai->memory[mem].num_hit_enemy);
+    gs_ReadShort(fp, ai->memory[mem].num_enemy_shots_dodged);
+  }
+
+  gs_ReadFloat(fp, ai->fire_spread);
+  gs_ReadFloat(fp, ai->night_vision);
+  gs_ReadFloat(fp, ai->fog_vision);
+  gs_ReadFloat(fp, ai->lead_accuracy);
+  gs_ReadFloat(fp, ai->lead_varience);
+  gs_ReadFloat(fp, ai->fight_team);
+  gs_ReadFloat(fp, ai->fight_same);
+  gs_ReadFloat(fp, ai->hearing);
+  gs_ReadFloat(fp, ai->roaming);
+  gs_ReadFloat(fp, ai->leadership);
+  gs_ReadFloat(fp, ai->coop_same);
+  gs_ReadFloat(fp, ai->coop_team);
+
+  gs_ReadFloat(fp, ai->biased_flight_importance);
+  gs_ReadFloat(fp, ai->biased_flight_min);
+  gs_ReadFloat(fp, ai->biased_flight_max);
+
+  gs_ReadVector(fp, ai->last_dodge_dir);
+  gs_ReadFloat(fp, ai->dodge_till_time);
+
+  gs_ReadFloat(fp, ai->awareness);
+
+  gs_ReadMatrix(fp, ai->saved_orient);
 
   return LGS_OK;
 }
 
 //	loads fx
+// BUGFIX #279: Portable effect_info_s deserialization.
+// Read fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 int LGSObjEffects(CFILE *fp, object *op) {
   int16_t size;
   int8_t do_read;
@@ -1591,7 +1983,56 @@ int LGSObjEffects(CFILE *fp, object *op) {
       return LGS_OUTDATEDVER;
 
     auto ei = op->effect_info = mem_rmalloc<effect_info_s>();
-    cf_ReadBytes((uint8_t *)ei, size, fp);
+    memset(ei, 0, sizeof(effect_info_s));
+
+    gs_ReadInt(fp, ei->type_flags);
+    gs_ReadFloat(fp, ei->alpha);
+    gs_ReadFloat(fp, ei->deform_range);
+    gs_ReadFloat(fp, ei->cloak_time);
+    gs_ReadFloat(fp, ei->deform_time);
+    gs_ReadFloat(fp, ei->color_time);
+    gs_ReadFloat(fp, ei->r);
+    gs_ReadFloat(fp, ei->g);
+    gs_ReadFloat(fp, ei->b);
+
+    gs_ReadFloat(fp, ei->fade_time);
+    gs_ReadFloat(fp, ei->fade_max_time);
+
+    gs_ReadFloat(fp, ei->damage_time);
+    gs_ReadFloat(fp, ei->damage_per_second);
+    gs_ReadFloat(fp, ei->last_damage_time);
+    gs_ReadInt(fp, ei->damage_handle);
+
+    gs_ReadFloat(fp, ei->volume_change_time);
+    gs_ReadVector(fp, ei->volume_old_pos);
+    gs_ReadInt(fp, ei->volume_old_room);
+
+    gs_ReadFloat(fp, ei->last_object_hit_time);
+    gs_ReadInt(fp, ei->last_object_hit);
+
+    gs_ReadVector(fp, ei->spec_pos);
+    gs_ReadFloat(fp, ei->spec_mag);
+    gs_ReadFloat(fp, ei->spec_r);
+    gs_ReadFloat(fp, ei->spec_g);
+    gs_ReadFloat(fp, ei->spec_b);
+
+    gs_ReadByte(fp, ei->dynamic_this_frame);
+    gs_ReadFloat(fp, ei->dynamic_red);
+    gs_ReadFloat(fp, ei->dynamic_green);
+    gs_ReadFloat(fp, ei->dynamic_blue);
+
+    gs_ReadFloat(fp, ei->liquid_time_left);
+    gs_ReadByte(fp, ei->liquid_mag);
+
+    gs_ReadFloat(fp, ei->freeze_scalar);
+
+    gs_ReadInt(fp, ei->attach_line_handle);
+
+    gs_ReadInt(fp, ei->sound_handle);
+
+    gs_ReadFloat(fp, ei->spark_delay);
+    gs_ReadFloat(fp, ei->spark_timer);
+    gs_ReadFloat(fp, ei->spark_time_left);
   }
 
   return LGS_OK;
@@ -1649,6 +2090,9 @@ int LGSObjEffects(CFILE *fp, object *op) {
 //@@}
 
 //	loads fx
+// BUGFIX #279: Portable dynamic_wb_info deserialization.
+// Read fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 int LGSObjWB(CFILE *fp, object *op) {
   dynamic_wb_info *dwba = NULL;
   int i;
@@ -1662,7 +2106,18 @@ int LGSObjWB(CFILE *fp, object *op) {
 
   for (i = 0; i < num_wbs; i++) {
     dynamic_wb_info *dwb = &dwba[i];
-    cf_ReadBytes((uint8_t *)dwb, sizeof(dynamic_wb_info), fp);
+    gs_ReadFloat(fp, dwb->last_fire_time);
+    gs_ReadByte(fp, dwb->cur_firing_mask);
+    for (int t = 0; t < MAX_WB_TURRETS; t++) {
+      gs_ReadFloat(fp, dwb->norm_turret_angle[t]);
+      gs_ReadFloat(fp, dwb->turret_next_think_time[t]);
+      gs_ReadByte(fp, dwb->turret_direction[t]);
+    }
+    gs_ReadByte(fp, dwb->wb_anim_mask);
+    gs_ReadFloat(fp, dwb->wb_anim_frame);
+    gs_ReadVector(fp, dwb->cur_target);
+    gs_ReadByte(fp, dwb->upgrade_level);
+    gs_ReadInt(fp, dwb->flags);
   }
   op->dynamic_wb = dwba;
 
@@ -1677,6 +2132,9 @@ int LGSObjSpecial(CFILE *fp, object *op) {
 }
 
 // load spew
+// BUGFIX #279: Portable spewinfo deserialization.
+// Read fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 int LGSSpew(CFILE *fp) {
   int i;
 
@@ -1686,8 +2144,37 @@ int LGSSpew(CFILE *fp) {
   for (i = 0; i < MAX_SPEW_EFFECTS; i++) {
     uint8_t used;
     gs_ReadByte(fp, used);
-    if (used)
-      cf_ReadBytes((uint8_t *)&SpewEffects[i], sizeof(spewinfo), fp);
+    if (used) {
+      spewinfo *se = &SpewEffects[i];
+      memset(se, 0, sizeof(spewinfo));
+      se->inuse = true;
+      gs_ReadByte(fp, se->flags);
+      gs_ReadByte(fp, se->use_gunpoint);
+      gs_ReadByte(fp, se->real_obj);
+      if (se->use_gunpoint) {
+        gs_ReadInt(fp, se->gp.obj_handle);
+        gs_ReadInt(fp, se->gp.gunpoint);
+      } else {
+        gs_ReadVector(fp, se->pt.origin);
+        gs_ReadVector(fp, se->pt.normal);
+        gs_ReadInt(fp, se->pt.room_num);
+      }
+      gs_ReadInt(fp, se->effect_type);
+      gs_ReadInt(fp, se->phys_info);
+      gs_ReadInt(fp, se->random);
+      gs_ReadInt(fp, se->handle);
+      gs_ReadFloat(fp, se->drag);
+      gs_ReadFloat(fp, se->mass);
+      gs_ReadFloat(fp, se->time_int);
+      gs_ReadFloat(fp, se->longevity);
+      gs_ReadFloat(fp, se->lifetime);
+      gs_ReadFloat(fp, se->size);
+      gs_ReadFloat(fp, se->speed);
+      gs_ReadFloat(fp, se->time_until_next_blob);
+      gs_ReadFloat(fp, se->start_time);
+      gs_ReadVector(fp, se->gp_normal);
+      gs_ReadVector(fp, se->gun_point);
+    }
   }
 
   return LGS_OK;

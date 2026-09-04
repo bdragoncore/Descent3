@@ -769,9 +769,21 @@ bool SaveGameState(const std::filesystem::path &pathname, const char *descriptio
   cf_WriteShort(fp, pending_music_region);
 
   // cf_WriteInt(fp,Times_game_restored);
-  // Save weather
+  // BUGFIX #279: Portable weather serialization.
+  // Write fields individually instead of raw struct dump for cross-architecture
+  // compatibility.
   cf_WriteInt(fp, sizeof(Weather));
-  cf_WriteBytes((uint8_t *)&Weather, sizeof(Weather), fp);
+  gs_WriteInt(fp, Weather.flags);
+  gs_WriteFloat(fp, Weather.snow_intensity_scalar);
+  gs_WriteFloat(fp, Weather.rain_intensity_scalar);
+  gs_WriteInt(fp, Weather.rain_color);
+  gs_WriteInt(fp, Weather.lightning_color);
+  gs_WriteInt(fp, Weather.sky_flash_color);
+  gs_WriteByte(fp, Weather.lightning_sequence);
+  gs_WriteFloat(fp, Weather.last_lightning_evaluation_time);
+  gs_WriteFloat(fp, Weather.lightning_interval_time);
+  gs_WriteInt(fp, Weather.lightning_rand_value);
+  gs_WriteInt(fp, Weather.snowflakes_to_create);
 
   // Save active doorways
   cf_WriteInt(fp, MAX_ACTIVE_DOORWAYS);
@@ -1106,7 +1118,10 @@ void SGSPlayers(CFILE *fp) {
   plr->counter_measures.SaveInventory(fp);
 }
 
-// save viseffects
+// BUGFIX #279: Portable vis_effect serialization.
+// The original code dumped the entire vis_effect struct with cf_WriteBytes.
+// While vis_effect has no pointer fields, writing fields individually ensures
+// consistent struct padding across architectures and provides sizeof validation.
 void SGSVisEffects(CFILE *fp) {
   int i, count = 0;
 
@@ -1118,8 +1133,40 @@ void SGSVisEffects(CFILE *fp) {
   gs_WriteShort(fp, (int16_t)count);
 
   for (i = 0; i <= Highest_vis_effect_index; i++) {
-    if (VisEffects[i].type != VIS_NONE)
-      cf_WriteBytes((uint8_t *)&VisEffects[i], sizeof(vis_effect), fp);
+    if (VisEffects[i].type != VIS_NONE) {
+      vis_effect *ve = &VisEffects[i];
+      gs_WriteVector(fp, ve->pos);
+      gs_WriteVector(fp, ve->end_pos);
+      gs_WriteVector(fp, ve->velocity);
+      gs_WriteFloat(fp, ve->mass);
+      gs_WriteFloat(fp, ve->drag);
+      gs_WriteFloat(fp, ve->size);
+      gs_WriteFloat(fp, ve->lifeleft);
+      gs_WriteFloat(fp, ve->lifetime);
+      gs_WriteFloat(fp, ve->creation_time);
+      gs_WriteInt(fp, ve->roomnum);
+      gs_WriteInt(fp, ve->phys_flags);
+      gs_WriteShort(fp, ve->custom_handle);
+      gs_WriteShort(fp, ve->lighting_color);
+      gs_WriteShort(fp, ve->flags);
+      gs_WriteShort(fp, ve->next);
+      gs_WriteShort(fp, ve->prev);
+      // vis_attach_info
+      gs_WriteInt(fp, ve->attach_info.obj_handle);
+      gs_WriteInt(fp, ve->attach_info.dest_objhandle);
+      gs_WriteShort(fp, ve->attach_info.modelnum);
+      gs_WriteShort(fp, ve->attach_info.vertnum);
+      gs_WriteShort(fp, ve->attach_info.end_vertnum);
+      gs_WriteByte(fp, ve->attach_info.subnum);
+      gs_WriteByte(fp, ve->attach_info.subnum2);
+      // axis_billboard_info
+      gs_WriteByte(fp, ve->billboard_info.width);
+      gs_WriteByte(fp, ve->billboard_info.height);
+      gs_WriteByte(fp, ve->billboard_info.texture);
+      gs_WriteByte(fp, ve->movement_type);
+      gs_WriteByte(fp, ve->type);
+      gs_WriteByte(fp, ve->id);
+    }
   }
 }
 
@@ -1197,9 +1244,23 @@ void SGSObjects(CFILE *fp) {
     gs_WriteByte(fp, (int8_t)op->lighting_render_type);
 
     // Store whether or not we have a pointer to lighting_info
+    // BUGFIX #279: Write light_info fields individually for portability
     gs_WriteByte(fp, op->lighting_info ? 1 : 0);
     if (op->lighting_info) {
-      cf_WriteBytes((uint8_t *)op->lighting_info, sizeof(*op->lighting_info), fp);
+      gs_WriteInt(fp, op->lighting_info->flags);
+      gs_WriteFloat(fp, op->lighting_info->light_distance);
+      gs_WriteFloat(fp, op->lighting_info->red_light1);
+      gs_WriteFloat(fp, op->lighting_info->green_light1);
+      gs_WriteFloat(fp, op->lighting_info->blue_light1);
+      gs_WriteFloat(fp, op->lighting_info->red_light2);
+      gs_WriteFloat(fp, op->lighting_info->green_light2);
+      gs_WriteFloat(fp, op->lighting_info->blue_light2);
+      gs_WriteFloat(fp, op->lighting_info->time_interval);
+      gs_WriteFloat(fp, op->lighting_info->flicker_distance);
+      gs_WriteFloat(fp, op->lighting_info->directional_dot);
+      gs_WriteInt(fp, op->lighting_info->timebits);
+      gs_WriteByte(fp, op->lighting_info->angle);
+      gs_WriteByte(fp, op->lighting_info->lighting_render_type);
     }
 
     // these objects FOR NOW won't be saved
@@ -1296,15 +1357,120 @@ void SGSObjects(CFILE *fp) {
     INSURE_SAVEFILE;
 
     //	write out all structures here.
+    // BUGFIX #279: Write union data based on the active type tag rather than
+    // raw struct dumps. This eliminates x86/x64 incompatibility from pointer
+    // size differences (multi_turret in rtype) and struct padding changes.
     // movement info.
-    gs_WriteShort(fp, sizeof(op->mtype));
-    cf_WriteBytes((uint8_t *)&op->mtype, sizeof(op->mtype), fp);
+    gs_WriteByte(fp, op->movement_type);
+    switch (op->movement_type) {
+    case MT_PHYSICS: {
+      physics_info *pi = &op->mtype.phys_info;
+      gs_WriteVector(fp, pi->velocity);
+      gs_WriteVector(fp, pi->thrust);
+      gs_WriteVector(fp, pi->rotvel);
+      gs_WriteVector(fp, pi->rotthrust);
+      gs_WriteAngle(fp, pi->turnroll);
+      gs_WriteFloat(fp, pi->last_still_time);
+      gs_WriteInt(fp, pi->num_bounces);
+      gs_WriteFloat(fp, pi->coeff_restitution);
+      gs_WriteFloat(fp, pi->mass);
+      gs_WriteFloat(fp, pi->drag);
+      gs_WriteFloat(fp, pi->rotdrag);
+      gs_WriteFloat(fp, pi->full_thrust);
+      gs_WriteFloat(fp, pi->full_rotthrust);
+      gs_WriteFloat(fp, pi->max_turnroll_rate);
+      gs_WriteFloat(fp, pi->turnroll_ratio);
+      gs_WriteFloat(fp, pi->wiggle_amplitude);
+      gs_WriteFloat(fp, pi->wiggles_per_sec);
+      gs_WriteVector(fp, pi->dest_pos);
+      gs_WriteInt(fp, pi->stuck_room);
+      gs_WriteInt(fp, pi->stuck_portal);
+      gs_WriteInt(fp, pi->flags);
+      break;
+    }
+    case MT_SHOCKWAVE: {
+      shockwave_info *si = &op->mtype.shock_info;
+      for (int d = 0; d < (MAX_OBJECTS / 32) + 1; d++) {
+        gs_WriteInt(fp, si->damaged_list[d]);
+      }
+      break;
+    }
+    case MT_OBJ_LINKED: {
+      object_link_info *li = &op->mtype.obj_link_info;
+      gs_WriteInt(fp, li->parent_handle);
+      gs_WriteInt(fp, li->sobj_index);
+      gs_WriteVector(fp, li->fvec);
+      gs_WriteVector(fp, li->uvec);
+      gs_WriteVector(fp, li->pos);
+      break;
+    }
+    }
 
     INSURE_SAVEFILE;
 
     // Control info, determined by CONTROL_TYPE
-    gs_WriteShort(fp, sizeof(op->ctype));
-    cf_WriteBytes((uint8_t *)&op->ctype, sizeof(op->ctype), fp);
+    gs_WriteByte(fp, op->control_type);
+    switch (op->control_type) {
+    case CT_WEAPON:
+    case CT_AI: {
+      laser_info_s *li = &op->ctype.laser_info;
+      gs_WriteShort(fp, li->parent_type);
+      gs_WriteShort(fp, li->src_gun_num);
+      gs_WriteInt(fp, li->last_hit_handle);
+      gs_WriteInt(fp, li->track_handle);
+      gs_WriteFloat(fp, li->last_track_time);
+      gs_WriteInt(fp, li->hit_status);
+      gs_WriteVector(fp, li->hit_pnt);
+      gs_WriteVector(fp, li->hit_wall_pnt);
+      gs_WriteVector(fp, li->hit_wall_normal);
+      gs_WriteInt(fp, li->hit_room);
+      gs_WriteInt(fp, li->hit_pnt_room);
+      gs_WriteShort(fp, li->hit_face);
+      gs_WriteFloat(fp, li->multiplier);
+      gs_WriteFloat(fp, li->thrust_left);
+      gs_WriteFloat(fp, li->last_drop_time);
+      gs_WriteVector(fp, li->last_smoke_pos);
+      gs_WriteByte(fp, li->casts_light);
+      break;
+    }
+    case CT_EXPLOSION: {
+      blast_info_s *bi = &op->ctype.blast_info;
+      gs_WriteFloat(fp, bi->max_size);
+      gs_WriteInt(fp, bi->bm_handle);
+      break;
+    }
+    case CT_DEBRIS: {
+      dying_info_s *di = &op->ctype.dying_info;
+      gs_WriteInt(fp, di->death_flags);
+      gs_WriteFloat(fp, di->delay_time);
+      gs_WriteInt(fp, di->killer_playernum);
+      gs_WriteFloat(fp, di->last_spark_time);
+      gs_WriteFloat(fp, di->last_fireball_time);
+      gs_WriteFloat(fp, di->last_smoke_time);
+      break;
+    }
+    case CT_POWERUP: {
+      powerup_info_s *pi = &op->ctype.powerup_info;
+      gs_WriteInt(fp, pi->count);
+      break;
+    }
+    case CT_SPLINTER: {
+      splinter_info_s *si = &op->ctype.splinter_info;
+      gs_WriteByte(fp, si->subobj_num);
+      gs_WriteShort(fp, si->facenum);
+      for (int v = 0; v < MAX_VERTS_PER_SPLINTER; v++) {
+        gs_WriteVector(fp, si->verts[v]);
+      }
+      gs_WriteVector(fp, si->center);
+      break;
+    }
+    case CT_SOUNDSOURCE: {
+      soundsource_info_s *ssi = &op->ctype.soundsource_info;
+      gs_WriteInt(fp, ssi->sound_index);
+      gs_WriteFloat(fp, ssi->volume);
+      break;
+    }
+    }
 
     INSURE_SAVEFILE;
 
@@ -1313,15 +1479,66 @@ void SGSObjects(CFILE *fp) {
 
     INSURE_SAVEFILE;
     // save out rendering information
-    gs_WriteShort(fp, sizeof(op->rtype));
-    cf_WriteBytes((uint8_t *)&op->rtype, sizeof(op->rtype), fp);
+    // BUGFIX #279: Write rtype fields individually. The polyobj_info struct
+    // contains multi_turret which has pointer fields (keyframes,
+    // last_keyframes) that differ in size between x86 and x64. These pointers
+    // are rebuilt on load, so we only serialize the non-pointer fields.
+    gs_WriteByte(fp, op->render_type);
+    switch (op->render_type) {
+    case RT_POLYOBJ: {
+      polyobj_info *pi = &op->rtype.pobj_info;
+      gs_WriteShort(fp, pi->model_num);
+      gs_WriteShort(fp, pi->dying_model_num);
+      gs_WriteFloat(fp, pi->anim_start_frame);
+      gs_WriteFloat(fp, pi->anim_frame);
+      gs_WriteFloat(fp, pi->anim_end_frame);
+      gs_WriteFloat(fp, pi->anim_time);
+      gs_WriteInt(fp, pi->anim_flags);
+      gs_WriteFloat(fp, pi->max_speed);
+      gs_WriteInt(fp, pi->subobj_flags);
+      gs_WriteInt(fp, pi->tmap_override);
+      // multi_turret_info: only serialize non-pointer fields. The keyframes
+      // and last_keyframes pointers are rebuilt on load.
+      gs_WriteFloat(fp, pi->multi_turret_info.time);
+      gs_WriteFloat(fp, pi->multi_turret_info.last_time);
+      gs_WriteByte(fp, pi->multi_turret_info.num_turrets);
+      gs_WriteByte(fp, pi->multi_turret_info.flags);
+      break;
+    }
+    case RT_SHARD: {
+      shard_info_s *si = &op->rtype.shard_info;
+      for (int v = 0; v < 3; v++) {
+        gs_WriteVector(fp, si->points[v]);
+      }
+      for (int v = 0; v < 3; v++) {
+        gs_WriteFloat(fp, si->u[v]);
+        gs_WriteFloat(fp, si->v[v]);
+      }
+      gs_WriteVector(fp, si->normal);
+      gs_WriteShort(fp, si->tmap);
+      break;
+    }
+    case RT_EDITOR_SPHERE: {
+      gs_WriteInt(fp, op->rtype.sphere_color);
+      break;
+    }
+    }
 
     cf_WriteFloat(fp, op->size);
     if (op->render_type == RT_POLYOBJ) {
       // Do Animation stuff
+      // BUGFIX #279: Write custom_anim fields individually for portability
       custom_anim multi_anim_info;
       ObjGetAnimUpdate(i, &multi_anim_info);
-      cf_WriteBytes((uint8_t *)&multi_anim_info, sizeof(multi_anim_info), fp);
+      gs_WriteFloat(fp, multi_anim_info.server_time);
+      gs_WriteShort(fp, multi_anim_info.server_anim_frame);
+      gs_WriteShort(fp, multi_anim_info.anim_start_frame);
+      gs_WriteShort(fp, multi_anim_info.anim_end_frame);
+      gs_WriteFloat(fp, multi_anim_info.anim_time);
+      gs_WriteFloat(fp, multi_anim_info.max_speed);
+      gs_WriteShort(fp, multi_anim_info.anim_sound_index);
+      gs_WriteByte(fp, multi_anim_info.flags);
+      gs_WriteByte(fp, multi_anim_info.next_anim_type);
     }
 
     INSURE_SAVEFILE;
@@ -1346,14 +1563,193 @@ void SGSObjects(CFILE *fp) {
   END_VERIFY_SAVEFILE(fp, "Objects save");
 }
 
-//	saves ai
+// BUGFIX #279: Portable ai_frame serialization.
+// The original code dumped the entire ai_frame struct with cf_WriteBytes.
+// While ai_frame has no pointer fields, the sizeof check on load would fail
+// if struct padding differs between x86 and x64. Write all fields
+// individually for full portability.
 void SGSObjAI(CFILE *fp, const ai_frame *ai) {
   gs_WriteByte(fp, (ai ? 1 : 0));
   if (!ai)
     return;
 
   gs_WriteShort(fp, sizeof(ai_frame));
-  cf_WriteBytes((uint8_t *)ai, sizeof(ai_frame), fp);
+
+  gs_WriteByte(fp, ai->ai_class);
+  gs_WriteByte(fp, ai->ai_type);
+
+  // ai_path_info
+  gs_WriteShort(fp, ai->path.cur_path);
+  gs_WriteShort(fp, ai->path.cur_node);
+  gs_WriteShort(fp, ai->path.num_paths);
+  gs_WriteInt(fp, ai->path.goal_uid);
+  gs_WriteInt(fp, ai->path.goal_index);
+  for (int p = 0; p < MAX_JOINED_PATHS; p++) {
+    gs_WriteByte(fp, ai->path.path_id[p]);
+    gs_WriteByte(fp, ai->path.path_type[p]);
+    gs_WriteShort(fp, ai->path.path_start_node[p]);
+    gs_WriteShort(fp, ai->path.path_end_node[p]);
+    gs_WriteShort(fp, ai->path.path_flags[p]);
+  }
+
+  gs_WriteFloat(fp, ai->max_velocity);
+  gs_WriteFloat(fp, ai->max_delta_velocity);
+  gs_WriteFloat(fp, ai->max_turn_rate);
+  gs_WriteFloat(fp, ai->max_delta_turn_rate);
+
+  gs_WriteFloat(fp, ai->attack_vel_percent);
+  gs_WriteFloat(fp, ai->flee_vel_percent);
+  gs_WriteFloat(fp, ai->dodge_vel_percent);
+
+  gs_WriteFloat(fp, ai->circle_distance);
+  gs_WriteFloat(fp, ai->dodge_percent);
+
+  for (int m = 0; m < 2; m++) {
+    gs_WriteFloat(fp, ai->melee_damage[m]);
+    gs_WriteFloat(fp, ai->melee_latency[m]);
+  }
+
+  for (int s = 0; s < MAX_AI_SOUNDS; s++) {
+    gs_WriteInt(fp, ai->sound[s]);
+    gs_WriteFloat(fp, ai->last_sound_time[s]);
+  }
+  gs_WriteShort(fp, ai->last_played_sound_index);
+
+  gs_WriteByte(fp, ai->movement_type);
+  gs_WriteByte(fp, ai->movement_subtype);
+
+  gs_WriteByte(fp, ai->animation_type);
+  gs_WriteByte(fp, ai->next_animation_type);
+
+  gs_WriteByte(fp, ai->next_movement);
+  gs_WriteByte(fp, ai->current_wb_firing);
+  gs_WriteByte(fp, ai->last_special_wb_firing);
+
+  // goals
+  for (int g = 0; g < MAX_GOALS; g++) {
+    const goal *gl = &ai->goals[g];
+    gs_WriteByte(fp, gl->used ? 1 : 0);
+    if (!gl->used)
+      continue;
+
+    gs_WriteInt(fp, gl->type);
+    gs_WriteByte(fp, gl->subtype);
+    gs_WriteByte(fp, gl->activation_level);
+    gs_WriteFloat(fp, gl->creation_time);
+    gs_WriteFloat(fp, gl->min_influence);
+    gs_WriteFloat(fp, gl->influence);
+    for (int r = 0; r < 4; r++) {
+      gs_WriteFloat(fp, gl->ramp_influence_dists[r]);
+    }
+
+    // goal_info: serialize union based on goal type
+    gs_WriteInt(fp, gl->g_info.handle);
+    gs_WriteVector(fp, gl->g_info.pos);
+
+    // goal enablers
+    gs_WriteByte(fp, gl->num_enablers);
+    for (int e = 0; e < gl->num_enablers; e++) {
+      gs_WriteByte(fp, gl->enabler[e].enabler_type);
+      gs_WriteInt(fp, gl->enabler[e].flags);
+      gs_WriteFloat(fp, gl->enabler[e].percent_enable);
+      gs_WriteFloat(fp, gl->enabler[e].check_interval);
+      gs_WriteFloat(fp, gl->enabler[e].last_check_time);
+      gs_WriteByte(fp, gl->enabler[e].bool_next_enabler_op);
+    }
+
+    gs_WriteFloat(fp, gl->circle_distance);
+    gs_WriteInt(fp, gl->status_reg);
+    gs_WriteFloat(fp, gl->start_time);
+    gs_WriteFloat(fp, gl->next_path_time);
+    gs_WriteFloat(fp, gl->dist_to_goal);
+    gs_WriteVector(fp, gl->vec_to_target);
+    gs_WriteFloat(fp, gl->next_check_see_target_time);
+    gs_WriteVector(fp, gl->last_see_target_pos);
+    gs_WriteFloat(fp, gl->last_see_target_time);
+    gs_WriteFloat(fp, gl->next_target_update_time);
+    gs_WriteInt(fp, gl->flags);
+    gs_WriteInt(fp, gl->guid);
+    gs_WriteInt(fp, gl->goal_uid);
+    gs_WriteVector(fp, gl->set_fvec);
+    gs_WriteVector(fp, gl->set_uvec);
+  }
+
+  gs_WriteInt(fp, ai->target_handle);
+  gs_WriteFloat(fp, ai->next_target_update_time);
+
+  gs_WriteFloat(fp, ai->dist_to_target_actual);
+  gs_WriteFloat(fp, ai->dist_to_target_perceived);
+  gs_WriteVector(fp, ai->vec_to_target_actual);
+  gs_WriteVector(fp, ai->vec_to_target_perceived);
+
+  gs_WriteFloat(fp, ai->next_check_see_target_time);
+  gs_WriteVector(fp, ai->last_see_target_pos);
+  gs_WriteFloat(fp, ai->last_see_target_time);
+  gs_WriteFloat(fp, ai->last_hear_target_time);
+
+  gs_WriteFloat(fp, ai->weapon_speed);
+
+  gs_WriteFloat(fp, ai->next_melee_time);
+  gs_WriteFloat(fp, ai->last_render_time);
+  gs_WriteFloat(fp, ai->next_flinch_time);
+
+  gs_WriteInt(fp, ai->status_reg);
+  gs_WriteInt(fp, ai->flags);
+  gs_WriteInt(fp, ai->notify_flags);
+
+  gs_WriteVector(fp, ai->movement_dir);
+  gs_WriteVector(fp, ai->rot_thrust_vector);
+
+  gs_WriteFloat(fp, ai->fov);
+
+  gs_WriteInt(fp, ai->anim_sound_handle);
+
+  gs_WriteFloat(fp, ai->avoid_friends_distance);
+
+  gs_WriteFloat(fp, ai->frustration);
+  gs_WriteFloat(fp, ai->curiousity);
+  gs_WriteFloat(fp, ai->life_preservation);
+  gs_WriteFloat(fp, ai->aggression);
+
+  gs_WriteFloat(fp, ai->cur_frustration);
+  gs_WriteFloat(fp, ai->cur_curiousity);
+  gs_WriteFloat(fp, ai->cur_life_preservation);
+  gs_WriteFloat(fp, ai->cur_aggression);
+
+  gs_WriteFloat(fp, ai->mem_time_till_next_update);
+  for (int mem = 0; mem < AI_MEM_DEPTH; mem++) {
+    gs_WriteFloat(fp, ai->memory[mem].shields);
+    gs_WriteShort(fp, ai->memory[mem].num_enemies);
+    gs_WriteShort(fp, ai->memory[mem].num_friends);
+    gs_WriteShort(fp, ai->memory[mem].num_times_hit);
+    gs_WriteShort(fp, ai->memory[mem].num_enemy_shots_fired);
+    gs_WriteShort(fp, ai->memory[mem].num_hit_enemy);
+    gs_WriteShort(fp, ai->memory[mem].num_enemy_shots_dodged);
+  }
+
+  gs_WriteFloat(fp, ai->fire_spread);
+  gs_WriteFloat(fp, ai->night_vision);
+  gs_WriteFloat(fp, ai->fog_vision);
+  gs_WriteFloat(fp, ai->lead_accuracy);
+  gs_WriteFloat(fp, ai->lead_varience);
+  gs_WriteFloat(fp, ai->fight_team);
+  gs_WriteFloat(fp, ai->fight_same);
+  gs_WriteFloat(fp, ai->hearing);
+  gs_WriteFloat(fp, ai->roaming);
+  gs_WriteFloat(fp, ai->leadership);
+  gs_WriteFloat(fp, ai->coop_same);
+  gs_WriteFloat(fp, ai->coop_team);
+
+  gs_WriteFloat(fp, ai->biased_flight_importance);
+  gs_WriteFloat(fp, ai->biased_flight_min);
+  gs_WriteFloat(fp, ai->biased_flight_max);
+
+  gs_WriteVector(fp, ai->last_dodge_dir);
+  gs_WriteFloat(fp, ai->dodge_till_time);
+
+  gs_WriteFloat(fp, ai->awareness);
+
+  gs_WriteMatrix(fp, ai->saved_orient);
 }
 
 //	saves script
@@ -1392,18 +1788,70 @@ void SGSObjAI(CFILE *fp, const ai_frame *ai) {
 //@@	}
 //@@}
 
-//	saves fx
+// BUGFIX #279: Portable effect_info_s serialization.
+// Write all fields individually instead of raw struct dump for cross-
+// architecture compatibility.
 void SGSObjEffects(CFILE *fp, const object *op) {
   effect_info_s *ei = op->effect_info;
 
   gs_WriteByte(fp, (ei ? 1 : 0));
   if (ei) {
     gs_WriteShort(fp, sizeof(effect_info_s));
-    cf_WriteBytes((uint8_t *)ei, sizeof(effect_info_s), fp);
+
+    gs_WriteInt(fp, ei->type_flags);
+    gs_WriteFloat(fp, ei->alpha);
+    gs_WriteFloat(fp, ei->deform_range);
+    gs_WriteFloat(fp, ei->cloak_time);
+    gs_WriteFloat(fp, ei->deform_time);
+    gs_WriteFloat(fp, ei->color_time);
+    gs_WriteFloat(fp, ei->r);
+    gs_WriteFloat(fp, ei->g);
+    gs_WriteFloat(fp, ei->b);
+
+    gs_WriteFloat(fp, ei->fade_time);
+    gs_WriteFloat(fp, ei->fade_max_time);
+
+    gs_WriteFloat(fp, ei->damage_time);
+    gs_WriteFloat(fp, ei->damage_per_second);
+    gs_WriteFloat(fp, ei->last_damage_time);
+    gs_WriteInt(fp, ei->damage_handle);
+
+    gs_WriteFloat(fp, ei->volume_change_time);
+    gs_WriteVector(fp, ei->volume_old_pos);
+    gs_WriteInt(fp, ei->volume_old_room);
+
+    gs_WriteFloat(fp, ei->last_object_hit_time);
+    gs_WriteInt(fp, ei->last_object_hit);
+
+    gs_WriteVector(fp, ei->spec_pos);
+    gs_WriteFloat(fp, ei->spec_mag);
+    gs_WriteFloat(fp, ei->spec_r);
+    gs_WriteFloat(fp, ei->spec_g);
+    gs_WriteFloat(fp, ei->spec_b);
+
+    gs_WriteByte(fp, ei->dynamic_this_frame);
+    gs_WriteFloat(fp, ei->dynamic_red);
+    gs_WriteFloat(fp, ei->dynamic_green);
+    gs_WriteFloat(fp, ei->dynamic_blue);
+
+    gs_WriteFloat(fp, ei->liquid_time_left);
+    gs_WriteByte(fp, ei->liquid_mag);
+
+    gs_WriteFloat(fp, ei->freeze_scalar);
+
+    gs_WriteInt(fp, ei->attach_line_handle);
+
+    gs_WriteInt(fp, ei->sound_handle);
+
+    gs_WriteFloat(fp, ei->spark_delay);
+    gs_WriteFloat(fp, ei->spark_timer);
+    gs_WriteFloat(fp, ei->spark_time_left);
   }
 }
 
-//	saves wb
+// BUGFIX #279: Portable dynamic_wb_info serialization.
+// Write fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 void SGSObjWB(CFILE *fp, object *op, int num_wbs) {
   int i;
 
@@ -1411,7 +1859,18 @@ void SGSObjWB(CFILE *fp, object *op, int num_wbs) {
     gs_WriteByte(fp, (int8_t)num_wbs);
     for (i = 0; i < num_wbs; i++) {
       dynamic_wb_info *dwb = &op->dynamic_wb[i];
-      cf_WriteBytes((uint8_t *)dwb, sizeof(dynamic_wb_info), fp);
+      gs_WriteFloat(fp, dwb->last_fire_time);
+      gs_WriteByte(fp, dwb->cur_firing_mask);
+      for (int t = 0; t < MAX_WB_TURRETS; t++) {
+        gs_WriteFloat(fp, dwb->norm_turret_angle[t]);
+        gs_WriteFloat(fp, dwb->turret_next_think_time[t]);
+        gs_WriteByte(fp, dwb->turret_direction[t]);
+      }
+      gs_WriteByte(fp, dwb->wb_anim_mask);
+      gs_WriteFloat(fp, dwb->wb_anim_frame);
+      gs_WriteVector(fp, dwb->cur_target);
+      gs_WriteByte(fp, dwb->upgrade_level);
+      gs_WriteInt(fp, dwb->flags);
     }
   } else {
     gs_WriteByte(fp, 0);
@@ -1421,15 +1880,44 @@ void SGSObjWB(CFILE *fp, object *op, int num_wbs) {
 // saves special object info
 void SGSObjSpecial(CFILE *fp, const object *op) {}
 
-// load spew
+// BUGFIX #279: Portable spewinfo serialization.
+// Write fields individually instead of raw struct dump for cross-architecture
+// compatibility.
 void SGSSpew(CFILE *fp) {
   int i;
 
   gs_WriteShort(fp, (int16_t)spew_count);
   for (i = 0; i < MAX_SPEW_EFFECTS; i++) {
     gs_WriteByte(fp, SpewEffects[i].inuse ? true : false);
-    if (SpewEffects[i].inuse)
-      cf_WriteBytes((uint8_t *)&SpewEffects[i], sizeof(spewinfo), fp);
+    if (SpewEffects[i].inuse) {
+      spewinfo *se = &SpewEffects[i];
+      gs_WriteByte(fp, se->flags);
+      gs_WriteByte(fp, se->use_gunpoint);
+      gs_WriteByte(fp, se->real_obj);
+      if (se->use_gunpoint) {
+        gs_WriteInt(fp, se->gp.obj_handle);
+        gs_WriteInt(fp, se->gp.gunpoint);
+      } else {
+        gs_WriteVector(fp, se->pt.origin);
+        gs_WriteVector(fp, se->pt.normal);
+        gs_WriteInt(fp, se->pt.room_num);
+      }
+      gs_WriteInt(fp, se->effect_type);
+      gs_WriteInt(fp, se->phys_info);
+      gs_WriteInt(fp, se->random);
+      gs_WriteInt(fp, se->handle);
+      gs_WriteFloat(fp, se->drag);
+      gs_WriteFloat(fp, se->mass);
+      gs_WriteFloat(fp, se->time_int);
+      gs_WriteFloat(fp, se->longevity);
+      gs_WriteFloat(fp, se->lifetime);
+      gs_WriteFloat(fp, se->size);
+      gs_WriteFloat(fp, se->speed);
+      gs_WriteFloat(fp, se->time_until_next_blob);
+      gs_WriteFloat(fp, se->start_time);
+      gs_WriteVector(fp, se->gp_normal);
+      gs_WriteVector(fp, se->gun_point);
+    }
   }
 }
 
