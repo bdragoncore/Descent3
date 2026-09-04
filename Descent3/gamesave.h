@@ -118,8 +118,12 @@ struct gs_tables {
 //	0	samir-initial version
 //	1	Added saving/loading of changed textures
 // 2  Added correct saving and restoring of attach points
+// 3  BUGFIX #279: Portable serialization -- replaced raw struct dumps
+//     (cf_WriteBytes) with field-by-field writes using cf_WriteInt/cf_WriteFloat
+//     etc. This eliminates x86/x64 incompatibility caused by pointer size
+//     differences and struct padding changes between architectures.
 
-#define GAMESAVE_VERSION 2
+#define GAMESAVE_VERSION 3
 #define GAMESAVE_OLDVER 0 // any version before this value is obsolete.
 
 /**

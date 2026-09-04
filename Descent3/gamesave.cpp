@@ -962,17 +962,146 @@ void SGSTriggers(CFILE *fp) {
   }
 }
 
-// players
+// BUGFIX #279: Portable player serialization.
+// The original code dumped the entire player struct with cf_WriteBytes, which
+// breaks cross-architecture compatibility because the struct contains pointer
+// fields (guided_obj, user_timeout_obj) and the Inventory C++ class (which has
+// internal pointers). Version 3 writes all fields individually using portable
+// cf_Write* primitives so save files are identical on x86 and x64.
 void SGSPlayers(CFILE *fp) {
-  // player struct needs savin
   player *plr = &Players[0];
 
+  // Write size for backward compatibility (load code checks sizeof)
   gs_WriteShort(fp, sizeof(player));
-  cf_WriteBytes((uint8_t *)plr, sizeof(player), fp);
-  if (plr->guided_obj)
-    gs_WriteInt(fp, plr->guided_obj->handle);
 
-  // save inventory and countermeasures
+  // Write all fixed-size fields individually
+  gs_WriteInt(fp, plr->start_index);
+  gs_WriteVector(fp, plr->start_pos);
+  gs_WriteInt(fp, plr->start_roomnum);
+  gs_WriteMatrix(fp, plr->start_orient);
+  gs_WriteInt(fp, plr->startpos_flags);
+  gs_WriteInt(fp, plr->ship_index);
+
+  // callsign
+  cf_WriteBytes((uint8_t *)plr->callsign, sizeof(plr->callsign), fp);
+
+  gs_WriteInt(fp, plr->flags);
+  gs_WriteInt(fp, plr->score);
+  gs_WriteFloat(fp, plr->damage_magnitude);
+  gs_WriteFloat(fp, plr->edrain_magnitude);
+  gs_WriteFloat(fp, plr->invul_magnitude);
+  gs_WriteFloat(fp, plr->energy);
+  gs_WriteByte(fp, plr->lives);
+  gs_WriteByte(fp, plr->level);
+  gs_WriteByte(fp, plr->starting_level);
+  gs_WriteByte(fp, plr->keys);
+  gs_WriteShort(fp, plr->killer_objnum);
+  gs_WriteFloat(fp, plr->invulnerable_time);
+  gs_WriteFloat(fp, plr->last_hit_wall_sound_time);
+  gs_WriteFloat(fp, plr->last_homing_warning_sound_time);
+  gs_WriteFloat(fp, plr->last_thrust_time);
+  gs_WriteFloat(fp, plr->last_afterburner_time);
+  gs_WriteShort(fp, plr->objnum);
+  gs_WriteByte(fp, plr->team);
+
+  gs_WriteInt(fp, plr->current_auto_waypoint_room);
+
+  gs_WriteFloat(fp, plr->time_level);
+  gs_WriteFloat(fp, plr->time_total);
+  gs_WriteInt(fp, plr->num_hits_level);
+  gs_WriteInt(fp, plr->num_discharges_level);
+  gs_WriteShort(fp, plr->num_kills_level);
+  gs_WriteShort(fp, plr->friendly_kills_level);
+  gs_WriteShort(fp, plr->num_kills_total);
+
+  gs_WriteInt(fp, plr->weapon_flags);
+  for (int i = 0; i < MAX_PLAYER_WEAPONS; i++) {
+    gs_WriteShort(fp, plr->weapon_ammo[i]);
+  }
+
+  for (int i = 0; i < 2; i++) {
+    gs_WriteInt(fp, plr->weapon[i].index);
+    gs_WriteFloat(fp, plr->weapon[i].firing_time);
+    gs_WriteInt(fp, plr->weapon[i].sound_handle);
+  }
+  gs_WriteByte(fp, plr->laser_level);
+
+  gs_WriteFloat(fp, plr->light_dist);
+  gs_WriteFloat(fp, plr->r);
+  gs_WriteFloat(fp, plr->g);
+  gs_WriteFloat(fp, plr->b);
+
+  gs_WriteFloat(fp, plr->ballspeed);
+  gs_WriteByte(fp, plr->num_balls);
+  for (int i = 0; i < 3; i++) {
+    gs_WriteFloat(fp, plr->ball_r[i]);
+    gs_WriteFloat(fp, plr->ball_g[i]);
+    gs_WriteFloat(fp, plr->ball_b[i]);
+  }
+
+  gs_WriteInt(fp, plr->oldroom);
+
+  // Skip Inventory objects -- they are saved separately below
+
+  gs_WriteFloat(fp, plr->last_fire_weapon_time);
+
+  gs_WriteFloat(fp, plr->afterburner_mag);
+  gs_WriteFloat(fp, plr->thrust_mag);
+  gs_WriteInt(fp, plr->afterburner_sound_handle);
+  gs_WriteFloat(fp, plr->afterburn_time_left);
+
+  gs_WriteInt(fp, plr->thruster_sound_handle);
+  gs_WriteInt(fp, plr->thruster_sound_state);
+
+  gs_WriteInt(fp, plr->small_left_obj);
+  gs_WriteInt(fp, plr->small_right_obj);
+  gs_WriteInt(fp, plr->small_dll_obj);
+
+  gs_WriteByte(fp, plr->multiplayer_flags);
+  gs_WriteByte(fp, plr->last_multiplayer_flags);
+  gs_WriteFloat(fp, plr->last_guided_time);
+
+  cf_WriteBytes((uint8_t *)plr->tracker_id, sizeof(plr->tracker_id), fp);
+  gs_WriteInt(fp, plr->kills);
+  gs_WriteInt(fp, plr->deaths);
+  gs_WriteInt(fp, plr->suicides);
+  gs_WriteFloat(fp, plr->rank);
+  gs_WriteFloat(fp, plr->lateral_thrust);
+  gs_WriteFloat(fp, plr->rotational_thrust);
+  gs_WriteInt(fp, plr->time_in_game);
+
+  // BUGFIX #279: guided_obj and user_timeout_obj are pointer fields that differ
+  // in size between x86 (4 bytes) and x64 (8 bytes). Serialize as handles
+  // (int32_t) instead of raw pointer values.
+  gs_WriteInt(fp, plr->guided_obj ? plr->guided_obj->handle : OBJECT_HANDLE_NONE);
+  gs_WriteInt(fp, plr->user_timeout_obj ? plr->user_timeout_obj->handle : OBJECT_HANDLE_NONE);
+
+  gs_WriteFloat(fp, plr->zoom_distance);
+
+  gs_WriteFloat(fp, plr->movement_scalar);
+  gs_WriteFloat(fp, plr->damage_scalar);
+  gs_WriteFloat(fp, plr->armor_scalar);
+  gs_WriteFloat(fp, plr->turn_scalar);
+  gs_WriteFloat(fp, plr->weapon_recharge_scalar);
+  gs_WriteFloat(fp, plr->weapon_speed_scalar);
+
+  gs_WriteInt(fp, plr->piggy_objnum);
+  gs_WriteInt(fp, plr->piggy_sig);
+
+  gs_WriteInt(fp, plr->custom_texture_handle);
+
+  gs_WriteInt(fp, plr->ship_permissions);
+
+  gs_WriteVector(fp, plr->invul_vector);
+
+  gs_WriteInt(fp, plr->controller_bitflags);
+
+  gs_WriteShort(fp, plr->num_markers);
+
+  gs_WriteShort(fp, plr->num_deaths_level);
+  gs_WriteShort(fp, plr->num_deaths_total);
+
+  // Save inventory and countermeasures (these use their own portable serialization)
   plr->inventory.SaveInventory(fp);
   plr->counter_measures.SaveInventory(fp);
 }

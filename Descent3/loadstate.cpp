@@ -778,18 +778,144 @@ int LGSPlayers(CFILE *fp) {
   if (size != sizeof(player)) {
     Int3();
     return LGS_OUTDATEDVER;
-  } else {
-    int guided_handle;
-    cf_ReadBytes((uint8_t *)plr, sizeof(player), fp);
-    if (plr->guided_obj) {
-      gs_ReadInt(fp, guided_handle);
-      plr->guided_obj = &Objects[guided_handle & HANDLE_OBJNUM_MASK];
-    }
-    // save inventory and countermeasures
-    // must do this if we read player struct as whole.
-    plr->inventory.ReadInventory(fp);
-    plr->counter_measures.ReadInventory(fp);
   }
+
+  // BUGFIX #279: Read all fields individually (portable serialization).
+  // The old code read the entire player struct with cf_ReadBytes, which broke
+  // cross-architecture compatibility because the struct contains pointer
+  // fields (guided_obj, user_timeout_obj) and the Inventory C++ class.
+  gs_ReadInt(fp, plr->start_index);
+  gs_ReadVector(fp, plr->start_pos);
+  gs_ReadInt(fp, plr->start_roomnum);
+  gs_ReadMatrix(fp, plr->start_orient);
+  gs_ReadInt(fp, plr->startpos_flags);
+  gs_ReadInt(fp, plr->ship_index);
+
+  cf_ReadBytes((uint8_t *)plr->callsign, sizeof(plr->callsign), fp);
+
+  gs_ReadInt(fp, plr->flags);
+  gs_ReadInt(fp, plr->score);
+  gs_ReadFloat(fp, plr->damage_magnitude);
+  gs_ReadFloat(fp, plr->edrain_magnitude);
+  gs_ReadFloat(fp, plr->invul_magnitude);
+  gs_ReadFloat(fp, plr->energy);
+  gs_ReadByte(fp, plr->lives);
+  gs_ReadByte(fp, plr->level);
+  gs_ReadByte(fp, plr->starting_level);
+  gs_ReadByte(fp, plr->keys);
+  gs_ReadShort(fp, plr->killer_objnum);
+  gs_ReadFloat(fp, plr->invulnerable_time);
+  gs_ReadFloat(fp, plr->last_hit_wall_sound_time);
+  gs_ReadFloat(fp, plr->last_homing_warning_sound_time);
+  gs_ReadFloat(fp, plr->last_thrust_time);
+  gs_ReadFloat(fp, plr->last_afterburner_time);
+  gs_ReadShort(fp, plr->objnum);
+  gs_ReadByte(fp, plr->team);
+
+  gs_ReadInt(fp, plr->current_auto_waypoint_room);
+
+  gs_ReadFloat(fp, plr->time_level);
+  gs_ReadFloat(fp, plr->time_total);
+  gs_ReadInt(fp, plr->num_hits_level);
+  gs_ReadInt(fp, plr->num_discharges_level);
+  gs_ReadShort(fp, plr->num_kills_level);
+  gs_ReadShort(fp, plr->friendly_kills_level);
+  gs_ReadShort(fp, plr->num_kills_total);
+
+  gs_ReadInt(fp, plr->weapon_flags);
+  for (int i = 0; i < MAX_PLAYER_WEAPONS; i++) {
+    gs_ReadShort(fp, plr->weapon_ammo[i]);
+  }
+
+  for (int i = 0; i < 2; i++) {
+    gs_ReadInt(fp, plr->weapon[i].index);
+    gs_ReadFloat(fp, plr->weapon[i].firing_time);
+    gs_ReadInt(fp, plr->weapon[i].sound_handle);
+  }
+  gs_ReadByte(fp, plr->laser_level);
+
+  gs_ReadFloat(fp, plr->light_dist);
+  gs_ReadFloat(fp, plr->r);
+  gs_ReadFloat(fp, plr->g);
+  gs_ReadFloat(fp, plr->b);
+
+  gs_ReadFloat(fp, plr->ballspeed);
+  gs_ReadByte(fp, plr->num_balls);
+  for (int i = 0; i < 3; i++) {
+    gs_ReadFloat(fp, plr->ball_r[i]);
+    gs_ReadFloat(fp, plr->ball_g[i]);
+    gs_ReadFloat(fp, plr->ball_b[i]);
+  }
+
+  gs_ReadInt(fp, plr->oldroom);
+
+  gs_ReadFloat(fp, plr->last_fire_weapon_time);
+
+  gs_ReadFloat(fp, plr->afterburner_mag);
+  gs_ReadFloat(fp, plr->thrust_mag);
+  gs_ReadInt(fp, plr->afterburner_sound_handle);
+  gs_ReadFloat(fp, plr->afterburn_time_left);
+
+  gs_ReadInt(fp, plr->thruster_sound_handle);
+  gs_ReadInt(fp, plr->thruster_sound_state);
+
+  gs_ReadInt(fp, plr->small_left_obj);
+  gs_ReadInt(fp, plr->small_right_obj);
+  gs_ReadInt(fp, plr->small_dll_obj);
+
+  gs_ReadByte(fp, plr->multiplayer_flags);
+  gs_ReadByte(fp, plr->last_multiplayer_flags);
+  gs_ReadFloat(fp, plr->last_guided_time);
+
+  cf_ReadBytes((uint8_t *)plr->tracker_id, sizeof(plr->tracker_id), fp);
+  gs_ReadInt(fp, plr->kills);
+  gs_ReadInt(fp, plr->deaths);
+  gs_ReadInt(fp, plr->suicides);
+  gs_ReadFloat(fp, plr->rank);
+  gs_ReadFloat(fp, plr->lateral_thrust);
+  gs_ReadFloat(fp, plr->rotational_thrust);
+  gs_ReadInt(fp, plr->time_in_game);
+
+  // BUGFIX #279: guided_obj and user_timeout_obj are pointer fields that differ
+  // in size between x86 (4 bytes) and x64 (8 bytes). They are serialized as
+  // object handles (int32_t) and resolved to pointers here.
+  {
+    int32_t guided_handle, user_timeout_handle;
+    gs_ReadInt(fp, guided_handle);
+    gs_ReadInt(fp, user_timeout_handle);
+    plr->guided_obj = (guided_handle != OBJECT_HANDLE_NONE) ? &Objects[guided_handle & HANDLE_OBJNUM_MASK] : NULL;
+    plr->user_timeout_obj =
+        (user_timeout_handle != OBJECT_HANDLE_NONE) ? &Objects[user_timeout_handle & HANDLE_OBJNUM_MASK] : NULL;
+  }
+
+  gs_ReadFloat(fp, plr->zoom_distance);
+
+  gs_ReadFloat(fp, plr->movement_scalar);
+  gs_ReadFloat(fp, plr->damage_scalar);
+  gs_ReadFloat(fp, plr->armor_scalar);
+  gs_ReadFloat(fp, plr->turn_scalar);
+  gs_ReadFloat(fp, plr->weapon_recharge_scalar);
+  gs_ReadFloat(fp, plr->weapon_speed_scalar);
+
+  gs_ReadInt(fp, plr->piggy_objnum);
+  gs_ReadInt(fp, plr->piggy_sig);
+
+  gs_ReadInt(fp, plr->custom_texture_handle);
+
+  gs_ReadInt(fp, plr->ship_permissions);
+
+  gs_ReadVector(fp, plr->invul_vector);
+
+  gs_ReadInt(fp, plr->controller_bitflags);
+
+  gs_ReadShort(fp, plr->num_markers);
+
+  gs_ReadShort(fp, plr->num_deaths_level);
+  gs_ReadShort(fp, plr->num_deaths_total);
+
+  // Read inventory and countermeasures
+  plr->inventory.ReadInventory(fp);
+  plr->counter_measures.ReadInventory(fp);
 
   int ship_index = Players[Player_num].ship_index;
 
