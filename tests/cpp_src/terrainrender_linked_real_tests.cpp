@@ -29,6 +29,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cmath>
+#include <algorithm>
 
 // Link real Descent3/terrainrender.cpp
 #include "pstypes.h"
@@ -53,6 +54,7 @@
 
 // Forward declare internal helper not in terrain.h but global in terrainrender.cpp
 int IsTerrainDynamicChecked(int seg, int bit);
+void InitTerrainRenderSpeedups();
 
 // Globals required by terrainrender.cpp (provide definitions for undefined externs)
 // Defined in terrain.cpp but needed here
@@ -120,10 +122,32 @@ int bm_h(int handle, int miplevel) { return 0; }
 void RenderMine(int a, int b, int c) {}
 void DrawVisEffect(vis_effect *v) {}
 void RenderObject(object *o) {}
-// SortStates is in render.h
-void SortStates(state_limited_element *state_array, int cellcount) {}
+// SortStates is in render.h — provide a real sort by sort_key so the
+// terrain batching (BUGFIX #560) can group cells by (texture, lightmap).
+void SortStates(state_limited_element *state_array, int cellcount) {
+  std::sort(state_array, state_array + cellcount,
+            [](const state_limited_element &a, const state_limited_element &b) {
+              return a.sort_key < b.sort_key;
+            });
+}
 // Remaining g3/rend/fvi stubs — defined weak so libs override if available
-__attribute__((weak)) int g3_DrawPoly(int nv, g3Point **pointlist, int bm, int map_type, g3Codes *clip_codes) { return 0; }
+// Draw-call counters for the terrain batching tests (BUGFIX #560).
+static int g_draw_poly_calls = 0;
+static int g_draw_poly_list_calls = 0;
+static int g_draw_poly_verts = 0;
+static int g_draw_poly_list_verts = 0;
+int g3_DrawPoly(int nv, g3Point **pointlist, int bm, int map_type, g3Codes *clip_codes) {
+  (void)pointlist; (void)bm; (void)map_type; (void)clip_codes;
+  g_draw_poly_calls++;
+  g_draw_poly_verts += nv;
+  return 0;
+}
+int g3_DrawPolyList(int ntri, g3Point **pointlist, int bm, int map_type) {
+  (void)pointlist; (void)bm; (void)map_type;
+  g_draw_poly_list_calls++;
+  g_draw_poly_list_verts += ntri * 3;
+  return 0;
+}
 __attribute__((weak)) uint8_t g3_CodePoint(g3Point *point) { return 0; }
 __attribute__((weak)) uint8_t g3_RotatePoint(g3Point *dest, vector *src) { return 0; }
 __attribute__((weak)) void g3_ProjectPoint(g3Point *p) {}
@@ -154,7 +178,12 @@ __attribute__((weak)) void g3_DrawRotatedBitmap(vector *pos, unsigned short t, f
 __attribute__((weak)) void g3_DrawPlanarRotatedBitmap(vector *a, vector *b, unsigned short c, float d, float e, int f) {}
 __attribute__((weak)) void DrawColoredRing(vector *a, float b, float c, float d, float e, float f, float g, float h, uint8_t i, uint8_t j) {}
 __attribute__((weak)) function_mode GetFunctionMode() { return GAME_MODE; }
-__attribute__((weak)) int GetTextureBitmap(int a, int b, bool c) { return 0; }
+// Strong override: return a distinct bitmap handle per texture index so the
+// terrain batching test (BUGFIX #560) can distinguish texture groups.
+int GetTextureBitmap(int handle, int framenum, bool force) {
+  (void)framenum; (void)force;
+  return handle + 100;
+}
 __attribute__((weak)) int GetVisibleTerrain(vector *a, matrix *b) { return 0; }
 __attribute__((weak)) void MakePointsFromMinMax(vector *a, vector *b, vector *c) { *a = *b; }
 __attribute__((weak)) int GetFPS() { return 30; }
@@ -786,4 +815,120 @@ TEST_F(TerrainRenderLinked, DynamicScalarIgnoresOutOfRangeBit) {
   // With real table all zero, bottom dark (0) top quirk lit (1) blends ~0.9, but observed real returns 1.0 (possible y clamp)
   EXPECT_GE(s, 0.8f);
   EXPECT_LE(s, 1.0f);
+}
+
+// ---- Draw-call batching (BUGFIX #560) ----
+// Exercises the real DisplayTerrainList -> DrawTerrainTrianglesHardware path
+// and counts g3_DrawPoly / g3_DrawPolyList calls. Before the fix each visible
+// cell issued 2 draw calls; after the fix cells sharing a (texture, lightmap)
+// are batched into a single draw call.
+class TerrainRenderDrawCall : public ::testing::Test {
+protected:
+  void SetUp() override {
+    g_draw_poly_calls = 0;
+    g_draw_poly_list_calls = 0;
+    g_draw_poly_verts = 0;
+    g_draw_poly_list_verts = 0;
+    InitTerrainRenderSpeedups();
+    memset(Terrain_seg, 0, sizeof(Terrain_seg));
+    memset(Terrain_tex_seg, 0, sizeof(Terrain_tex_seg));
+    memset(Terrain_list, 0, sizeof(Terrain_list));
+    memset(World_point_buffer, 0, sizeof(g3Point) * 4096);
+    memset(Terrain_rotate_list, 0, sizeof(uint16_t) * 32768);
+    memset(State_elements, 0, sizeof(State_elements));
+    UseHardware = true;
+    StateLimited = false;
+    TS_FrameCount = 0;
+    GlobalTransCount = 0;
+    Terrain_sky.lightsource = vector{0, 1, 0};
+    TerrainLightmaps[0] = 1;
+    memset(&viewer_, 0, sizeof(viewer_));
+    viewer_.effect_info = nullptr;
+    Viewer_object = &viewer_;
+    Clip_scale_left = 0;
+    Clip_scale_right = 640;
+    Clip_scale_top = 0;
+    Clip_scale_bot = 480;
+  }
+
+  object viewer_;
+};
+
+/**
+ * @test TerrainRenderDrawCall.BatchesCellsByTexture
+ * @brief Verifies terrain cells sharing a texture are drawn in a single call.
+ *
+ * @details
+ * Sets up a 16x16 terrain grid with 4 textures scattered across cells and a
+ * single lightmap quad, then renders it through the real DisplayTerrainList.
+ * The number of g3_DrawPoly/g3_DrawPolyList calls must stay well below the
+ * cell count: per-cell drawing issues 2 calls per cell, batching issues one
+ * call per (texture, lightmap) group.
+ *
+ * @see Descent3/terrainrender.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(TerrainRenderDrawCall, BatchesCellsByTexture) {
+  const int CELLS = 256;
+  for (int i = 0; i < CELLS; i++) {
+    Terrain_seg[i].y = -100;
+    Terrain_seg[i].mody = -100;
+    Terrain_seg[i].texseg_index = i % 4;
+    Terrain_seg[i].lm_quad = 0;
+    Terrain_seg[i].flags = 0;
+    Terrain_seg[i].ypos = 0;
+    Terrain_tex_seg[i % 4].tex_index = i % 4;
+    Terrain_tex_seg[i % 4].rotation = 0;
+    Terrain_list[i].segment = i;
+    Terrain_list[i].lod = MAX_TERRAIN_LOD - 1;
+  }
+  // Segments 0..255 are row 0 of the 256-wide terrain; the visibility check
+  // reads the four corners at seg, seg+1, seg+256, seg+257, so populate the
+  // neighbor row as well.
+  for (int j = 0; j < 512; j++) {
+    World_point_buffer[j].p3_vec = vector{(float)((j % 256) * TERRAIN_SIZE), -100, (float)((j / 256) * TERRAIN_SIZE)};
+    World_point_buffer[j].p3_flags = PF_ORIGPOINT;
+  }
+
+  DisplayTerrainList(CELLS, false);
+
+  int total = g_draw_poly_calls + g_draw_poly_list_calls;
+  EXPECT_LT(total, CELLS);
+}
+
+/**
+ * @test TerrainRenderDrawCall.BatchingPreservesTriangleCount
+ * @brief Verifies batching does not drop or duplicate terrain triangles.
+ *
+ * @details
+ * Renders the same 16x16 grid and checks that the total number of vertices
+ * submitted across all draw calls matches the expected 2 triangles per cell.
+ * This guards against batching bugs that would change the rendered geometry.
+ *
+ * @see Descent3/terrainrender.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(TerrainRenderDrawCall, BatchingPreservesTriangleCount) {
+  const int CELLS = 256;
+  for (int i = 0; i < CELLS; i++) {
+    Terrain_seg[i].y = -100;
+    Terrain_seg[i].mody = -100;
+    Terrain_seg[i].texseg_index = i % 4;
+    Terrain_seg[i].lm_quad = 0;
+    Terrain_seg[i].flags = 0;
+    Terrain_seg[i].ypos = 0;
+    Terrain_tex_seg[i % 4].tex_index = i % 4;
+    Terrain_tex_seg[i % 4].rotation = 0;
+    Terrain_list[i].segment = i;
+    Terrain_list[i].lod = MAX_TERRAIN_LOD - 1;
+  }
+  for (int j = 0; j < 512; j++) {
+    World_point_buffer[j].p3_vec = vector{(float)((j % 256) * TERRAIN_SIZE), -100, (float)((j / 256) * TERRAIN_SIZE)};
+    World_point_buffer[j].p3_flags = PF_ORIGPOINT;
+  }
+
+  DisplayTerrainList(CELLS, false);
+
+  // 255 of 256 cells pass the edge guard; each emits 2 triangles = 6 vertices.
+  EXPECT_EQ(g_draw_poly_verts + g_draw_poly_list_verts, 255 * 6);
 }

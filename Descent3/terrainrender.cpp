@@ -823,6 +823,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain, b
 #define LOD_ROW_SIZE (MAX_LOD_SIZE + 1)
 int DrawTerrainTrianglesSoftware(int index, int bm_handle, int upper_left, int lower_right);
 int DrawTerrainTrianglesHardware(int index, int bm_handle, int upper_left, int lower_right);
+int EmitTerrainCellTriangles(int index, int bm_handle, int upper_left, int lower_right);
 int DrawTerrainTrianglesHardwareNoLight(int index, int bm_handle, int upper_left, int lower_right);
 void DrawTerrainLightmapsHardware(int index, int upper_left, int lower_right);
 void DrawSky(vector *veye, matrix *vorient);
@@ -2477,7 +2478,7 @@ void RotateTerrainList(int cellcount, bool from_automap) {
     Terrain_seg[n[1]].mody = Terrain_seg[n[1]].y;
     Terrain_seg[n[2]].mody = Terrain_seg[n[2]].y;
     Terrain_seg[n[3]].mody = Terrain_seg[n[3]].y;
-    if (StateLimited || from_automap) // Setup for sorting later
+    if (StateLimited || from_automap || UseHardware) // Setup for sorting later
     {
       int unique_id;
       unique_id = Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index;
@@ -2555,6 +2556,39 @@ void TerrainCellVisible(int index, int *upper_left, int *lower_right) {
     *lower_right = 0;
 }
 
+// BUGFIX #560: batch terrain cells by (texture, lightmap) into single draw
+// calls. Before this fix every visible cell issued 1-2 g3_DrawPoly calls
+// (each a GL_TRIANGLE_FAN + buffer map/unmap), so thousands of cells meant
+// tens of thousands of draw calls per frame. Cells sharing a texture and
+// lightmap are now emitted as triangles into one buffer and drawn with a
+// single g3_DrawPolyList call.
+#define MAX_TERRAIN_BATCH_TRIS 2048
+static g3Point Terrain_batch_points[MAX_TERRAIN_BATCH_TRIS * 3];
+static g3Point *Terrain_batch_slist[MAX_TERRAIN_BATCH_TRIS * 3];
+static int Terrain_batch_count = 0;
+static int Terrain_batch_bm = -1;
+static int Terrain_batch_lightmap = -1;
+
+static void TerrainBatchAddTriangle(g3Point *a, g3Point *b, g3Point *c) {
+  int idx = Terrain_batch_count * 3;
+  Terrain_batch_points[idx] = *a;
+  Terrain_batch_points[idx + 1] = *b;
+  Terrain_batch_points[idx + 2] = *c;
+  Terrain_batch_slist[idx] = &Terrain_batch_points[idx];
+  Terrain_batch_slist[idx + 1] = &Terrain_batch_points[idx + 1];
+  Terrain_batch_slist[idx + 2] = &Terrain_batch_points[idx + 2];
+  Terrain_batch_count++;
+}
+
+static void FlushTerrainBatch() {
+  if (Terrain_batch_count == 0)
+    return;
+  rend_SetOverlayType(OT_BLEND);
+  rend_SetOverlayMap(Terrain_batch_lightmap);
+  g3_DrawPolyList(Terrain_batch_count, Terrain_batch_slist, Terrain_batch_bm);
+  Terrain_batch_count = 0;
+}
+
 void DisplayTerrainList(int cellcount, bool from_automap) {
   int total = 0, on, t, i, lod, simplemul;
   int bm_handle;
@@ -2578,7 +2612,7 @@ void DisplayTerrainList(int cellcount, bool from_automap) {
     SortTerrainObjectsForRendering(cellcount);
   }
   // If state limited, sort by texture
-  if (StateLimited || from_automap)
+  if (StateLimited || from_automap || UseHardware)
     SortStates(State_elements, cellcount);
   if (from_automap) {
     savecell = cellcount;
@@ -2588,7 +2622,7 @@ void DisplayTerrainList(int cellcount, bool from_automap) {
   for (i = 0; i < cellcount; i++) {
     int cx, cz;
     int seg_to_render;
-    if (StateLimited)
+    if (StateLimited || UseHardware)
       seg_to_render = State_elements[i].facenum;
     else
       seg_to_render = i;
@@ -2614,9 +2648,25 @@ void DisplayTerrainList(int cellcount, bool from_automap) {
       bm_handle = GetTextureBitmap(Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index, 0);
 
       if (UseHardware) {
-        if (draw_lightmap)
-          on = DrawTerrainTrianglesHardware(seg_to_render, bm_handle, ul, lr);
-        else
+        if (draw_lightmap) {
+          // BUGFIX #560: accumulate cells sharing a (texture, lightmap) into
+          // one batch and draw them with a single g3_DrawPolyList call.
+          // When terrain outlines are enabled (editor), fall back to the
+          // per-cell path so outlines are drawn correctly.
+          if (OUTLINE_ON(OM_TERRAIN)) {
+            on = DrawTerrainTrianglesHardware(seg_to_render, bm_handle, ul, lr);
+          } else {
+            int lightmap = TerrainLightmaps[Terrain_seg[t].lm_quad];
+            if (bm_handle != Terrain_batch_bm || lightmap != Terrain_batch_lightmap) {
+              FlushTerrainBatch();
+              Terrain_batch_bm = bm_handle;
+              Terrain_batch_lightmap = lightmap;
+            }
+            if (Terrain_batch_count + 32 > MAX_TERRAIN_BATCH_TRIS)
+              FlushTerrainBatch();
+            on = EmitTerrainCellTriangles(seg_to_render, bm_handle, ul, lr);
+          }
+        } else
           on = DrawTerrainTrianglesHardwareNoLight(seg_to_render, bm_handle, ul, lr);
 
       } else
@@ -2639,6 +2689,9 @@ void DisplayTerrainList(int cellcount, bool from_automap) {
     }
 #endif
   }
+  // BUGFIX #560: flush any terrain cells still sitting in the batch
+  if (UseHardware && draw_lightmap)
+    FlushTerrainBatch();
 #if (defined(EDITOR) || defined(NEWEDITOR))
   if (!UseHardware) {
 #if (!defined(RELEASE) || defined(NEWEDITOR))
@@ -3125,6 +3178,253 @@ draw_lower_right:
   if (OUTLINE_ON(OM_TERRAIN))
     DrawTerrainOutline(n, points_this_triangle, slist);
 #endif
+  return 0;
+}
+// Draws the 2 triangles of the Terrainlist[index] (hardware) — per-cell path
+// used when terrain outlines are enabled (editor builds). The batched path
+// (EmitTerrainCellTriangles) is used for normal gameplay.
+int EmitTerrainCellTriangles(int index, int bm_handle, int upper_left, int lower_right) {
+  int i;
+  int cur_seg;
+  int n = Terrain_list[index].segment;
+  int lod = Terrain_list[index].lod;
+  int bottom_start, left_start, right_start;
+  int point_count = 0;
+  int points_this_triangle = 0;
+
+  terrain_segment *tseg = &Terrain_seg[n];
+  terrain_tex_segment *texseg = &Terrain_tex_seg[tseg->texseg_index];
+  int rotator = texseg->rotation & 0x0F;
+  int tile = texseg->rotation >> 4;
+  int simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
+  int cx, cz, smul_x, smul_z;
+  cx = n % TERRAIN_WIDTH;
+  cz = n / TERRAIN_WIDTH;
+
+  // Get lightmap coordinates
+  float lightmap_u = (cx % 128) / 128.0;
+  float lightmap_v = (128 - ((cz % 128) + simplemul)) / 128.0;
+  float uvadjust;
+  int draw_big_square = 0;
+  int subx = cx % MAX_LOD_SIZE;
+  int subz = (MAX_LOD_SIZE - 1) - ((cz + (simplemul - 1)) % MAX_LOD_SIZE);
+  bool solid_square = 1;
+  int testt = 0, testr = 0, testb = 0, testl = 0;
+  // Check to make sure we don't access memory that is off the map
+  if (cx + simplemul == TERRAIN_WIDTH) {
+    smul_x = simplemul - 1;
+    solid_square = 0;
+  } else
+    smul_x = simplemul;
+  if (cz + simplemul == TERRAIN_DEPTH) {
+    solid_square = 0;
+    smul_z = simplemul - 1;
+  } else
+    smul_z = simplemul;
+  // Build a list of points for our polygon.  We must do it this way to
+  // prevent tjoint cracking
+  // Do simpler operation if at highest level of detail
+  if (lod == (MAX_TERRAIN_LOD - 1)) {
+    uvadjust = (simplemul / 128.0);
+    cur_seg = n + (TERRAIN_WIDTH * smul_z);
+    base[0] = World_point_buffer[cur_seg];
+
+    cur_seg = n + (TERRAIN_WIDTH * smul_z) + smul_x;
+    base[1] = World_point_buffer[cur_seg];
+
+    cur_seg = n + smul_x;
+    base[2] = World_point_buffer[cur_seg];
+
+    base[3] = World_point_buffer[n];
+
+    base[0].p3_u = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx];
+    base[0].p3_v = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx];
+    base[1].p3_u = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + 1];
+    base[1].p3_v = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx + 1];
+    base[2].p3_u = tile * TerrainUSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx + 1];
+    base[2].p3_v = tile * TerrainVSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx + 1];
+    base[3].p3_u = tile * TerrainUSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx];
+    base[3].p3_v = tile * TerrainVSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx];
+
+    base[0].p3_u2 = lightmap_u;
+    base[0].p3_v2 = lightmap_v;
+    base[1].p3_u2 = lightmap_u + uvadjust;
+    base[1].p3_v2 = lightmap_v;
+    base[2].p3_u2 = lightmap_u + uvadjust;
+    base[2].p3_v2 = lightmap_v + uvadjust;
+
+    base[3].p3_u2 = lightmap_u;
+    base[3].p3_v2 = lightmap_v + uvadjust;
+  } else {
+    uvadjust = (simplemul / 128.0) / simplemul;
+    float uvmul = uvadjust * simplemul;
+    if (solid_square) {
+      right_start = Terrain_list[index].top_count;
+      bottom_start = right_start + Terrain_list[index].right_count;
+      left_start = bottom_start + Terrain_list[index].bottom_count;
+      point_count = left_start + Terrain_list[index].left_count;
+
+      for (i = 0; i < simplemul; i++) {
+        // Top edge
+        if (Terrain_list[index].top_edge & (1 << i)) {
+          cur_seg = n + i + (TERRAIN_WIDTH * smul_z);
+          base[testt] = World_point_buffer[cur_seg];
+
+          base[testt].p3_u = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
+          base[testt].p3_v = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
+
+          base[testt].p3_u2 = lightmap_u + (i * uvadjust);
+          base[testt].p3_v2 = lightmap_v;
+          slist[testt] = &base[testt];
+          testt++;
+        }
+        // Right edge
+        if (Terrain_list[index].right_edge & (1 << i)) {
+          cur_seg = n + (TERRAIN_WIDTH * (smul_z - i)) + smul_x;
+          base[right_start + testr] = World_point_buffer[cur_seg];
+
+          base[right_start + testr].p3_u =
+              tile * TerrainUSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + simplemul];
+          base[right_start + testr].p3_v =
+              tile * TerrainVSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + simplemul];
+
+          base[right_start + testr].p3_u2 = lightmap_u + uvmul;
+          base[right_start + testr].p3_v2 = lightmap_v + (i * uvadjust);
+          slist[right_start + testr] = &base[right_start + testr];
+          testr++;
+        }
+        // Bottom edge
+        if (Terrain_list[index].bottom_edge & (1 << i)) {
+          cur_seg = n + (smul_x - i);
+          base[bottom_start + testb] = World_point_buffer[cur_seg];
+
+          base[bottom_start + testb].p3_u =
+              tile * TerrainUSpeedup[rotator][((subz + simplemul) * LOD_ROW_SIZE) + (subx + simplemul) - i];
+          base[bottom_start + testb].p3_v =
+              tile * TerrainVSpeedup[rotator][((subz + simplemul) * LOD_ROW_SIZE) + (subx + simplemul) - i];
+          base[bottom_start + testb].p3_u2 = lightmap_u + uvmul - (i * uvadjust);
+          base[bottom_start + testb].p3_v2 = lightmap_v + uvmul;
+          slist[bottom_start + testb] = &base[bottom_start + testb];
+          testb++;
+        }
+        // left edge
+        if (Terrain_list[index].left_edge & (1 << i)) {
+          cur_seg = n + (TERRAIN_WIDTH * i);
+          base[left_start + testl] = World_point_buffer[cur_seg];
+
+          base[left_start + testl].p3_u =
+              tile * TerrainUSpeedup[rotator][((subz + simplemul - i) * LOD_ROW_SIZE) + subx];
+          base[left_start + testl].p3_v =
+              tile * TerrainVSpeedup[rotator][((subz + simplemul - i) * LOD_ROW_SIZE) + subx];
+
+          base[left_start + testl].p3_u2 = lightmap_u;
+          base[left_start + testl].p3_v2 = lightmap_v + uvmul - (i * uvadjust);
+          slist[left_start + testl] = &base[left_start + testl];
+          testl++;
+        }
+      }
+    } else {
+      right_start = Terrain_list[index].top_count;
+      bottom_start = right_start + Terrain_list[index].right_count;
+      left_start = bottom_start + Terrain_list[index].bottom_count;
+      point_count = left_start + Terrain_list[index].left_count;
+
+      for (i = 0; i < smul_x; i++) {
+        // top edge
+        if (Terrain_list[index].top_edge & (1 << i)) {
+          cur_seg = n + i + (TERRAIN_WIDTH * smul_z);
+          base[testt] = World_point_buffer[cur_seg];
+
+          base[testt].p3_u = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
+          base[testt].p3_v = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE];
+
+          base[testt].p3_u2 = lightmap_u + (i * uvadjust);
+          base[testt].p3_v2 = lightmap_v;
+          slist[testt] = &base[testt];
+          testt++;
+        }
+        // Bottom edge
+        if (Terrain_list[index].bottom_edge & (1 << i)) {
+          cur_seg = n + (smul_x - i);
+          base[bottom_start + testb] = World_point_buffer[cur_seg];
+
+          base[bottom_start + testb].p3_u =
+              tile * TerrainUSpeedup[rotator][((subz + smul_z) * LOD_ROW_SIZE) + subx + smul_x - i];
+          base[bottom_start + testb].p3_v =
+              tile * TerrainVSpeedup[rotator][((subz + smul_z) * LOD_ROW_SIZE) + subx + smul_x - i];
+          base[bottom_start + testb].p3_u2 = lightmap_u + uvmul - (i * uvadjust);
+          base[bottom_start + testb].p3_v2 = lightmap_v + uvmul;
+          slist[bottom_start + testb] = &base[bottom_start + testb];
+          testb++;
+        }
+      }
+
+      for (i = 0; i < smul_z; i++) {
+        // Right edge
+        if (Terrain_list[index].right_edge & (1 << i)) {
+          cur_seg = n + (TERRAIN_WIDTH * (smul_z - i)) + smul_x;
+          base[right_start + testr] = World_point_buffer[cur_seg];
+
+          base[right_start + testr].p3_u = tile * TerrainUSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + smul_x];
+          base[right_start + testr].p3_v = tile * TerrainVSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + smul_x];
+
+          base[right_start + testr].p3_u2 = lightmap_u + uvmul;
+          base[right_start + testr].p3_v2 = lightmap_v + (i * uvadjust);
+          slist[right_start + testr] = &base[right_start + testr];
+          testr++;
+        }
+        // left edge
+        if (Terrain_list[index].left_edge & (1 << i)) {
+          cur_seg = n + (TERRAIN_WIDTH * i);
+          base[left_start + testl] = World_point_buffer[cur_seg];
+
+          base[left_start + testl].p3_u = tile * TerrainUSpeedup[rotator][((subz + smul_z - i) * LOD_ROW_SIZE) + subx];
+          base[left_start + testl].p3_v = tile * TerrainVSpeedup[rotator][((subz + smul_z - i) * LOD_ROW_SIZE) + subx];
+
+          base[left_start + testl].p3_u2 = lightmap_u;
+          base[left_start + testl].p3_v2 = lightmap_v + uvmul - (i * uvadjust);
+          slist[left_start + testl] = &base[left_start + testl];
+          testl++;
+        }
+      }
+    }
+  }
+
+  // BUGFIX #560: emit the cell's triangles into the current batch instead of
+  // drawing them immediately. The overlay (lightmap) is set once per batch in
+  // FlushTerrainBatch, not per cell.
+  // Make sure the triangle faces us and if so emit
+  // Upper left triangle
+  if (lod != (MAX_TERRAIN_LOD - 1))
+    draw_big_square = 1;
+  if (!upper_left && !draw_big_square)
+    goto emit_lower_right;
+
+  if (lod == (MAX_TERRAIN_LOD - 1)) {
+    slist[0] = &base[0];
+    slist[1] = &base[1];
+    slist[2] = &base[3];
+    points_this_triangle = 3;
+  } else {
+    points_this_triangle = point_count;
+  }
+
+  // Emit the polygon as a triangle fan
+  for (i = 1; i < points_this_triangle - 1; i++)
+    TerrainBatchAddTriangle(slist[0], slist[i], slist[i + 1]);
+  // If we're LOD'd, we've already emitted our 1 polygon.  Return!
+  if (draw_big_square)
+    return 0;
+
+// Now do lower right triangle
+emit_lower_right:
+  if (!lower_right)
+    return 0;
+  slist[0] = &base[3];
+  slist[1] = &base[1];
+  slist[2] = &base[2];
+
+  TerrainBatchAddTriangle(slist[0], slist[1], slist[2]);
   return 0;
 }
 // Draws the 2 triangles of the Terrainlist[index] (hardware)

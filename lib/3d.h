@@ -326,6 +326,8 @@ uint8_t g3_AddDeltaVec(g3Point *dest, g3Point *src, vector *deltav);
 //					pointlist - a pointer to a list of pointers to points
 //					bm - the bitmap handle if texturing.  ignored if flat shading
 int g3_DrawPoly(int nv, g3Point **pointlist, int bm, int map_type = 0, g3Codes *clip_codes = NULL);
+// BUGFIX #560: draws ntri triangles (3 vertices each) in a single draw call.
+int g3_DrawPolyList(int ntri, g3Point **pointlist, int bm, int map_type = 0);
 
 // draw a sortof sphere - i.e., the 2d radius is proportional to the 3d
 // radius, but not to the distance from the eye

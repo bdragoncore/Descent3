@@ -62,8 +62,8 @@ int gpu_last_uploaded = 0;
 float gpu_Alpha_factor = 1.0f;
 float gpu_Alpha_multiplier = 1.0f;
 
-PosColorUVVertex vArray[100];
-PosColorUV2Vertex vArray2[100];
+PosColorUVVertex vArray[MAX_POINTS_IN_POLY];
+PosColorUV2Vertex vArray2[MAX_POINTS_IN_POLY_LIST];
 
 // returns the alpha that we should use
 float rend_GetAlphaMultiplier() {
@@ -527,6 +527,51 @@ void rend_DrawPolygon3D(int handle, g3Point **p, int nv, int map_type) {
   }
 }
 
+// BUGFIX #560: draws ntri triangles (3 vertices each) in a single call.
+// Dispatches to the multitexture path when an overlay (lightmap) is active,
+// otherwise draws with the base texture only.
+void rend_DrawPolygonList3D(int handle, g3Point **p, int ntri, int map_type) {
+  g3_RefreshTransforms(false);
+
+  if (gpu_state.cur_texture_quality == 0) {
+    for (int i = 0; i < ntri; i++)
+      gpu_DrawFlatPolygon3D(&p[i * 3], 3);
+    return;
+  }
+
+  if (gpu_Overlay_type != OT_NONE) {
+    rend_DrawMultitexturePolygonList3D(handle, p, ntri, map_type);
+    return;
+  }
+
+  gpu_SetMultitextureBlendMode(false);
+
+  gpu_BindTexture(handle, map_type, 0);
+
+  PosColorUVVertex *vData = &vArray[0];
+
+  // Specify our coordinates
+  for (int i = 0; i < ntri * 3; i++, vData++) {
+    g3Point *pnt = p[i];
+
+    // all points should be original
+    ASSERT(pnt->p3_flags & PF_ORIGPOINT);
+
+    vData->color = DeterminePointColor(pnt);
+
+    vData->uv.s = pnt->p3_u;
+    vData->uv.t = pnt->p3_v;
+    vData->uv.r = 0.0f;
+    vData->uv.w = 1.0f;
+
+    // Finally, specify a vertex
+    vData->pos = pnt->p3_vecPreRot;
+  }
+
+  // And draw!
+  gpu_RenderPolygonList(&vArray[0], ntri * 3);
+}
+
 #endif // DEDICATED_ONLY
 
 // Takes nv vertices and draws the polygon defined by those vertices.  Uses bitmap "handle"
@@ -572,4 +617,52 @@ void rend_DrawMultitexturePolygon3D(int handle, g3Point **p, int nv, int map_typ
   gpu_SetMultitextureBlendMode(true);
 
   gpu_RenderPolygonUV2(&vArray2[0], nv);
+}
+
+// BUGFIX #560: batched multitexture triangle-list draw. Takes ntri triangles
+// (3 vertices each) sharing a single texture + lightmap and submits them in
+// one draw call, replacing the per-cell g3_DrawPoly calls in the terrain
+// renderer. The terrain batching code emits triangles (not fans), so the
+// geometry is identical to the old per-cell path.
+void rend_DrawMultitexturePolygonList3D(int handle, g3Point **p, int ntri, int map_type) {
+  g3Point *pnt;
+
+  float one_over_square_res = 1.0f / GameLightmaps[gpu_Overlay_map].square_res;
+  float xscalar = (float)GameLightmaps[gpu_Overlay_map].width * one_over_square_res;
+  float yscalar = (float)GameLightmaps[gpu_Overlay_map].height * one_over_square_res;
+
+  ASSERT(ntri * 3 <= MAX_POINTS_IN_POLY_LIST);
+
+  PosColorUV2Vertex *vData = &vArray2[0];
+
+  // Specify our coordinates
+  for (int i = 0; i < ntri * 3; i++, vData++) {
+    pnt = p[i];
+    ASSERT(pnt->p3_flags & PF_ORIGPOINT);
+
+    vData->color = DeterminePointColor(pnt, true);
+
+    vData->uv0.s = pnt->p3_u;
+    vData->uv0.t = pnt->p3_v;
+    vData->uv0.r = 0.0f;
+    vData->uv0.w = 1.0f;
+
+    vData->uv1.s = pnt->p3_u2 * xscalar;
+    vData->uv1.t = pnt->p3_v2 * yscalar;
+    vData->uv1.r = 0.0f;
+    vData->uv1.w = 1.0f;
+
+    // Finally, specify a vertex
+    vData->pos = pnt->p3_vecPreRot;
+  }
+
+  // make sure our bitmap is ready to be drawn
+  gpu_BindTexture(handle, map_type, 0);
+
+  // make sure our bitmap is ready to be drawn
+  gpu_BindTexture(gpu_Overlay_map, MAP_TYPE_LIGHTMAP, 1);
+
+  gpu_SetMultitextureBlendMode(true);
+
+  gpu_RenderPolygonList(&vArray2[0], ntri * 3);
 }
