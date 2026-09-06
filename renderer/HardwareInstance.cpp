@@ -41,11 +41,14 @@ static const glm::mat4 &GetInstanceModelMatrix() {
   return sInstanceModelStack[sInstanceDepth - 1];
 }
 
-// Returns the composed instance transform in the g3 row-vector convention:
-// world = src * ~orient + pos. When no instance is active, orient is identity
-// and pos is zero. The decomposed form is cached at push time to avoid
-// decomposing the 4x4 model matrix per-vertex in g3_RotatePoint and
-// g3_CheckNormalFacing.
+// Returns the composed instance transform. The GPU model matrix maps a local
+// point src to src.x*rvec + src.y*uvec + src.z*fvec + pos, which in the
+// Descent3 v*M operator convention is world = src * orient + pos with the
+// returned orient (equivalently src * ~input_orient + pos, the classic g3
+// formula, since the cached orient is the transpose of the input orient).
+// When no instance is active, orient is identity and pos is zero. The
+// decomposed form is cached at push time to avoid decomposing the 4x4 model
+// matrix per-vertex in g3_RotatePoint and g3_CheckNormalFacing.
 void g3_GetInstanceTransform(matrix *orient, vector *pos) {
   if (sInstanceDepth == 0) {
     static const matrix identity = [] {

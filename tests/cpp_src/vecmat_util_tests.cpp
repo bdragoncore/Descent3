@@ -884,6 +884,123 @@ TEST(VecmatUtil, vm_MakeInverseMatrix_DoesNotDependOnInput) {
 }
 
 // ============================================================================
+// vm_MatrixInverse
+// ============================================================================
+
+/**
+ * @test VecmatUtil.vm_MatrixInverse_Identity
+ * @brief Verifies the inverse of the identity matrix is the identity.
+ *
+ * @see vecmat/vector.cpp, lib/vecmat.h
+ * @ingroup descent3_tests
+ */
+TEST(VecmatUtil, vm_MatrixInverse_Identity) {
+    matrix m, inv;
+    vm_MakeIdentity(&m);
+    EXPECT_TRUE(vm_MatrixInverse(&m, &inv));
+    EXPECT_FLOAT_EQ(inv.rvec.x(), 1.0f);
+    EXPECT_FLOAT_EQ(inv.uvec.y(), 1.0f);
+    EXPECT_FLOAT_EQ(inv.fvec.z(), 1.0f);
+    EXPECT_FLOAT_EQ(inv.rvec.y(), 0.0f);
+    EXPECT_FLOAT_EQ(inv.rvec.z(), 0.0f);
+    EXPECT_FLOAT_EQ(inv.uvec.x(), 0.0f);
+    EXPECT_FLOAT_EQ(inv.uvec.z(), 0.0f);
+    EXPECT_FLOAT_EQ(inv.fvec.x(), 0.0f);
+    EXPECT_FLOAT_EQ(inv.fvec.y(), 0.0f);
+}
+
+/**
+ * @test VecmatUtil.vm_MatrixInverse_OrthonormalIsTranspose
+ * @brief Verifies the inverse of an orthonormal matrix equals its transpose.
+ *
+ * @see vecmat/vector.cpp, lib/vecmat.h
+ * @ingroup descent3_tests
+ */
+TEST(VecmatUtil, vm_MatrixInverse_OrthonormalIsTranspose) {
+    // Exactly-orthonormal matrix (90-degree rotation around Z). vm_AnglesToMatrix
+    // is not used because sincos_table is not initialized in the test env and
+    // would produce a zero matrix.
+    matrix m, inv;
+    vm_MakeIdentity(&m);
+    m.rvec = vector{0, 1, 0};
+    m.uvec = vector{-1, 0, 0};
+    m.fvec = vector{0, 0, 1};
+    EXPECT_TRUE(vm_MatrixInverse(&m, &inv));
+    matrix expected = ~m;
+    EXPECT_FLOAT_EQ(inv.rvec.x(), expected.rvec.x());
+    EXPECT_FLOAT_EQ(inv.rvec.y(), expected.rvec.y());
+    EXPECT_FLOAT_EQ(inv.rvec.z(), expected.rvec.z());
+    EXPECT_FLOAT_EQ(inv.uvec.x(), expected.uvec.x());
+    EXPECT_FLOAT_EQ(inv.uvec.y(), expected.uvec.y());
+    EXPECT_FLOAT_EQ(inv.uvec.z(), expected.uvec.z());
+    EXPECT_FLOAT_EQ(inv.fvec.x(), expected.fvec.x());
+    EXPECT_FLOAT_EQ(inv.fvec.y(), expected.fvec.y());
+    EXPECT_FLOAT_EQ(inv.fvec.z(), expected.fvec.z());
+}
+
+/**
+ * @test VecmatUtil.vm_MatrixInverse_ScaledOrient
+ * @brief Verifies the inverse of a diagonal-scale times rotation matrix
+ *        (the widescreen cockpit orient) is the transpose of the rotation
+ *        times the reciprocal scale.
+ *
+ * @see vecmat/vector.cpp, lib/vecmat.h
+ * @ingroup descent3_tests
+ */
+TEST(VecmatUtil, vm_MatrixInverse_ScaledOrient) {
+    // 45-degree rotation around Z with rvec scaled by h_scale (widescreen
+    // cockpit correction): orient = S * R with S = diag(h, 1, 1).
+    matrix m;
+    vm_MakeIdentity(&m);
+    float c45 = 0.70710678f;
+    m.rvec = vector{c45, c45, 0.0f};
+    m.uvec = vector{-c45, c45, 0.0f};
+    m.fvec = vector{0.0f, 0.0f, 1.0f};
+    float h_scale = 4.0f / 3.0f;
+    m.rvec = m.rvec * h_scale;
+
+    matrix inv;
+    EXPECT_TRUE(vm_MatrixInverse(&m, &inv));
+
+    // Verify M * M^-1 = I by transforming basis vectors.
+    vector e0{1, 0, 0};
+    vector e1{0, 1, 0};
+    vector e2{0, 0, 1};
+    vector r0 = e0 * m;
+    vector r1 = e1 * m;
+    vector r2 = e2 * m;
+    vector back0 = r0 * inv;
+    vector back1 = r1 * inv;
+    vector back2 = r2 * inv;
+    EXPECT_NEAR(back0.x(), 1.0f, 1e-4f);
+    EXPECT_NEAR(back0.y(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back0.z(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back1.x(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back1.y(), 1.0f, 1e-4f);
+    EXPECT_NEAR(back1.z(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back2.x(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back2.y(), 0.0f, 1e-4f);
+    EXPECT_NEAR(back2.z(), 1.0f, 1e-4f);
+}
+
+/**
+ * @test VecmatUtil.vm_MatrixInverse_SingularReturnsFalse
+ * @brief Verifies a singular matrix returns false and leaves dest as identity.
+ *
+ * @see vecmat/vector.cpp, lib/vecmat.h
+ * @ingroup descent3_tests
+ */
+TEST(VecmatUtil, vm_MatrixInverse_SingularReturnsFalse) {
+    matrix m, inv;
+    vm_MakeIdentity(&m);
+    m.rvec = vector{0.0f, 0.0f, 0.0f}; // zero row -> singular
+    EXPECT_FALSE(vm_MatrixInverse(&m, &inv));
+    EXPECT_FLOAT_EQ(inv.rvec.x(), 1.0f);
+    EXPECT_FLOAT_EQ(inv.uvec.y(), 1.0f);
+    EXPECT_FLOAT_EQ(inv.fvec.z(), 1.0f);
+}
+
+// ============================================================================
 // vm_SinCosToMatrix
 // ============================================================================
 

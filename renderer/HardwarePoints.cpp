@@ -66,10 +66,15 @@ uint8_t g3_RotatePoint(g3Point *dest, vector *src) {
   // vertices against the re-based view state. The globals now always hold the
   // true view state, so transform the vertex to world space first (identity
   // when no instance is active) before computing the view-space position.
+  //
+  // BUGFIX #692: the GPU model matrix maps a local point src to
+  // src.x*rvec + src.y*uvec + src.z*fvec + pos, i.e. world = (src *
+  // cached_orient) + pos in the Descent3 v*M convention. The tilde here
+  // transposed the instance rotation and disagreed with the GPU transform.
   matrix orient;
   vector pos;
   g3_GetInstanceTransform(&orient, &pos);
-  vector world = (*src * ~orient) + pos;
+  vector world = (*src * orient) + pos;
 
   // find the point offset from the view/camera position
   vector tempv = world - View_position;

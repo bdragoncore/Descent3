@@ -154,7 +154,19 @@ void g3_GetViewPosition(vector *vp) {
   matrix orient;
   vector pos;
   g3_GetInstanceTransform(&orient, &pos);
-  *vp = (View_position - pos) * orient;
+
+  // BUGFIX #692: The widescreen cockpit scales the instance orient's rvec by
+  // aspect/(4/3), making the orient non-orthonormal. The GPU model matrix maps
+  // a local point src to src.x*rvec + src.y*uvec + src.z*fvec + pos, so the
+  // local-frame view position is cached^-1 * (View_position - pos) (standard
+  // math) = d * orient_inv in the Descent3 v*M operator convention. The
+  // pre-#692 code (d * orient) only agreed for orthonormal orients; a plain
+  // transpose fix is wrong because the cached orient (= transpose of the input
+  // orient) must be INVERTED, not transposed back.
+  vector d = View_position - pos;
+  matrix orient_inv;
+  vm_MatrixInverse(&orient, &orient_inv);
+  *vp = d * orient_inv;
 }
 
 void g3_GetViewMatrix(matrix *mat) { *mat = View_matrix; }
@@ -164,10 +176,16 @@ void g3_GetUnscaledMatrix(matrix *mat) {
   // the re-based unscaled matrix. The globals now always hold the true view
   // state, so express the unscaled matrix in the object's local frame (identity
   // transform when no instance is active).
+  //
+  // BUGFIX #692: the old re-based code computed Unscaled_r = (~input) *
+  // Unscaled_matrix, which in terms of the cached orient (= ~input) is
+  // cached * Unscaled_matrix (the Descent3 A*B operator is standard B*A). The
+  // tilde here transposed it and gave wrong fog-plane/bumpmap axes for any
+  // non-symmetric instance orient.
   matrix orient;
   vector pos;
   g3_GetInstanceTransform(&orient, &pos);
-  *mat = ~orient * Unscaled_matrix;
+  *mat = orient * Unscaled_matrix;
 }
 
 // Gets the matrix scale vector
