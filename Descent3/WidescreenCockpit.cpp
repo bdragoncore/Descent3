@@ -40,18 +40,19 @@ WidescreenCockpit::WidescreenCockpit() : LegacyCockpit() {}
 WidescreenCockpit::~WidescreenCockpit() {}
 
 // Compute the horizontal correction scale factor.
-// The cockpit polymodel is authored for 4:3. On wider screens, the projection
-// matrix stretches it horizontally. We counteract by scaling rvec by:
-//   (4/3) / (current_aspect)
-// Example: 16:9 (1.778) => scale = 0.75 (narrower)
-//          21:9 (2.333) => scale = 0.571
+// The cockpit polymodel is authored for 4:3. On wider screens the projection
+// matrix (Matrix_scale.x = (h/w)/zoom') compresses the model horizontally, so
+// it only fills the center of the screen. We counteract by scaling rvec by:
+//   (current_aspect) / (4/3)
+// Example: 16:9 (1.778) => scale = 1.333 (wider)
+//          21:9 (2.389) => scale = 1.792
 //          4:3  (1.333) => scale = 1.0  (no change)
 float WidescreenCockpit::ComputeHorizontalScale() const {
   float current_aspect = (float)Game_window_w / (float)Game_window_h;
   if (current_aspect <= 0.0f)
     return 1.0f;
   constexpr float k4by3 = 4.0f / 3.0f;
-  return k4by3 / current_aspect;
+  return current_aspect / k4by3;
 }
 
 void WidescreenCockpit::Render() {
@@ -90,9 +91,9 @@ void WidescreenCockpit::Render() {
   view_tmat.rvec = -view_tmat.rvec;
 
   // BUGFIX (PiccuEngine #3): Apply horizontal scale to counteract widescreen
-  // stretching. The cockpit polymodel is authored for 4:3, so on wider screens
-  // the projection matrix stretches it. Scaling rvec narrows the model to
-  // maintain its intended proportions.
+  // compression. The cockpit polymodel is authored for 4:3, so on wider screens
+  // the projection matrix (Matrix_scale.x = (h/w)/zoom') compresses it. Scaling
+  // rvec by aspect/(4/3) widens the model back to fill the screen.
   float h_scale = ComputeHorizontalScale();
   view_tmat.rvec = view_tmat.rvec * h_scale;
 

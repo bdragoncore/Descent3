@@ -118,6 +118,52 @@ static glm::mat4 GetBaseModelViewGLM() {
   return glm::make_mat4x4(view);
 }
 
+// GPU ground truth: the composed model matrix maps a local point src to
+// src.x*rvec + src.y*uvec + src.z*fvec + pos, so the local-frame coordinates
+// of a world point are model^-1 * world. Computed here with GLM directly,
+// independently of the CPU matrix code under test.
+static vector GtLocalFromWorld(const glm::mat4 &model, const vector &world) {
+  glm::vec4 local = glm::inverse(model) * glm::vec4(world.x(), world.y(), world.z(), 1.0f);
+  return vector{local.x, local.y, local.z};
+}
+
+// GPU ground truth for the facing check: rotate the viewer-minus-world-point
+// vector back into the object's local frame with model^-1 and dot with the
+// object-space normal.
+static bool GtFacing(const glm::mat4 &model, const vector &viewPos, const vector &v, const vector &norm) {
+  glm::vec4 worldG = model * glm::vec4(v.x(), v.y(), v.z(), 1.0f);
+  glm::vec4 dG = glm::vec4(viewPos.x(), viewPos.y(), viewPos.z(), 1.0f) - worldG;
+  glm::vec4 tG = glm::inverse(model) * dG;
+  vector tempv{tG.x, tG.y, tG.z};
+  return (vm_Dot3Product(tempv, norm) > 0);
+}
+
+// Builds a non-symmetric exactly-orthonormal orient (90-degree rotation around
+// Z). Hand-built because vm_AnglesToMatrix produces a zero matrix in the test
+// environment (sincos_table is not initialized), which made the old
+// expectations pass trivially.
+static matrix MakeOrient90Z() {
+  matrix m;
+  vm_MakeIdentity(&m);
+  m.rvec = vector{0, 1, 0};
+  m.uvec = vector{-1, 0, 0};
+  m.fvec = vector{0, 0, 1};
+  return m;
+}
+
+// Builds the widescreen-cockpit orient: 45-degree rotation around Z with the
+// rvec scaled by h_scale (aspect/(4/3)), making it non-orthonormal.
+static matrix MakeScaledOrient(float h_scale) {
+  matrix m;
+  vm_MakeIdentity(&m);
+  float c45 = 0.70710678f;
+  m.rvec = vector{c45, c45, 0.0f};
+  m.uvec = vector{-c45, c45, 0.0f};
+  m.fvec = vector{0.0f, 0.0f, 1.0f};
+  m.rvec = m.rvec * h_scale;
+  return m;
+}
+
 // Asserts gTransformModelView equals the given GLM matrix (column-major).
 static void ExpectModelViewEquals(const glm::mat4 &expected) {
   for (int c = 0; c < 4; c++) {
@@ -217,27 +263,28 @@ TEST_F(G3InstanceTest, ModelViewEqualsViewTimesModelNested) {
 
 /**
  * @test G3InstanceTest.RotatePointEquivalence
- * @brief Verifies g3_RotatePoint during instancing produces the same view-space
- *        position as the old re-based formula.
+ * @brief Verifies g3_RotatePoint during instancing maps the object-space point
+ *        to the same view-space position as the GPU model-view matrix.
  *
  * @details
- * The old code rotated object-space vertices against the re-based view state;
- * the new code transforms the vertex to world space first. Both must agree.
+ * The GPU model matrix maps a local point src to
+ * src.x*rvec + src.y*uvec + src.z*fvec + pos; the CPU code must agree or the
+ * facing checks disagree with what is rendered. The expectation is computed
+ * with GLM directly (independent of the CPU code under test).
  *
  * @see renderer/HardwarePoints.cpp
  * @ingroup descent3_tests
  */
 TEST_F(G3InstanceTest, RotatePointEquivalence) {
   matrix viewOrient;
-  vm_AnglesToMatrix(&viewOrient, 0x2000, 0x1000, 0x3000);
+  vm_MakeIdentity(&viewOrient);
   vector viewPos{5, -7, 11};
   g3_StartFrame(&viewPos, &viewOrient, 1.0f);
 
   vector trueViewPos = View_position;
   matrix trueViewMat = View_matrix;
 
-  matrix objOrient;
-  vm_AnglesToMatrix(&objOrient, 0x1000, 0x2000, 0x0500);
+  matrix objOrient = MakeOrient90Z();
   vector objPos{3, -2, 8};
   g3_StartInstanceMatrix(&objPos, &objOrient);
 
@@ -245,7 +292,10 @@ TEST_F(G3InstanceTest, RotatePointEquivalence) {
   g3Point pt;
   g3_RotatePoint(&pt, &src);
 
-  vector world = (src * ~objOrient) + objPos;
+  // Ground truth from the GPU model matrix.
+  glm::mat4 model = MakeModelMatrix(objPos, objOrient);
+  glm::vec4 worldG = model * glm::vec4(src.x(), src.y(), src.z(), 1.0f);
+  vector world{worldG.x, worldG.y, worldG.z};
   vector expected = (world - trueViewPos) * trueViewMat;
 
   ExpectVectorEq(pt.p3_vec, expected);
@@ -263,20 +313,23 @@ TEST_F(G3InstanceTest, RotatePointEquivalence) {
  */
 TEST_F(G3InstanceTest, GetViewPositionEquivalence) {
   matrix viewOrient;
-  vm_AnglesToMatrix(&viewOrient, 0x2000, 0x1000, 0x3000);
+  vm_MakeIdentity(&viewOrient);
   vector viewPos{5, -7, 11};
   g3_StartFrame(&viewPos, &viewOrient, 1.0f);
 
   vector trueViewPos = View_position;
 
-  matrix objOrient;
-  vm_AnglesToMatrix(&objOrient, 0x1000, 0x2000, 0x0500);
+  matrix objOrient = MakeOrient90Z();
   vector objPos{3, -2, 8};
   g3_StartInstanceMatrix(&objPos, &objOrient);
 
   vector vp;
   g3_GetViewPosition(&vp);
-  vector expected = (trueViewPos - objPos) * objOrient;
+
+  // Ground truth: the model matrix maps local points to world, so the
+  // local-frame view position is model^-1 * View_position.
+  glm::mat4 model = MakeModelMatrix(objPos, objOrient);
+  vector expected = GtLocalFromWorld(model, trueViewPos);
 
   ExpectVectorEq(vp, expected);
   g3_DoneInstance();
@@ -292,19 +345,22 @@ TEST_F(G3InstanceTest, GetViewPositionEquivalence) {
  */
 TEST_F(G3InstanceTest, GetUnscaledMatrixEquivalence) {
   matrix viewOrient;
-  vm_AnglesToMatrix(&viewOrient, 0x2000, 0x1000, 0x3000);
+  vm_MakeIdentity(&viewOrient);
   vector viewPos{5, -7, 11};
   g3_StartFrame(&viewPos, &viewOrient, 1.0f);
 
   matrix trueUnscaled = Unscaled_matrix;
 
-  matrix objOrient;
-  vm_AnglesToMatrix(&objOrient, 0x1000, 0x2000, 0x0500);
+  matrix objOrient = MakeOrient90Z();
   vector objPos{3, -2, 8};
   g3_StartInstanceMatrix(&objPos, &objOrient);
 
   matrix m;
   g3_GetUnscaledMatrix(&m);
+
+  // Old re-based behavior (the shipped semantic): Unscaled_r = (~input) *
+  // Unscaled_matrix. Expressed with the input orient this is exact for all
+  // orients, non-orthonormal included.
   matrix expected = ~objOrient * trueUnscaled;
 
   ExpectMatrixEq(m, expected);
@@ -327,8 +383,7 @@ TEST_F(G3InstanceTest, CheckNormalFacingEquivalence) {
 
   vector trueViewPos = View_position;
 
-  matrix objOrient;
-  vm_AnglesToMatrix(&objOrient, 0x1000, 0x2000, 0x0500);
+  matrix objOrient = MakeOrient90Z();
   vector objPos{3, -2, 8};
   g3_StartInstanceMatrix(&objPos, &objOrient);
 
@@ -336,11 +391,194 @@ TEST_F(G3InstanceTest, CheckNormalFacingEquivalence) {
   vector norm{0, 0, 1};
   bool actual = g3_CheckNormalFacing(&v, &norm);
 
-  vector world = (v * ~objOrient) + objPos;
-  vector tempv = (trueViewPos - world) * objOrient;
-  bool expected = (vm_Dot3Product(tempv, norm) > 0);
+  // Ground truth computed with GLM directly.
+  glm::mat4 model = MakeModelMatrix(objPos, objOrient);
+  bool expected = GtFacing(model, trueViewPos, v, norm);
 
   EXPECT_EQ(actual, expected);
+  g3_DoneInstance();
+}
+
+// ---- Widescreen cockpit scaled-orient tests (BUGFIX #692) ----
+
+/**
+ * @test G3InstanceTest.GetViewPositionScaledOrient
+ * @brief Verifies g3_GetViewPosition returns the correct local-frame view
+ *        position when the instance orient has a scaled rvec (the widescreen
+ *        cockpit's aspect/(4/3) correction).
+ *
+ * @details
+ * The widescreen cockpit scales the instance orient's rvec to counteract
+ * projection compression, making the orient non-orthonormal. The local-frame
+ * view position must be model^-1 * View_position (GLM ground truth), which for
+ * a non-orthonormal orient differs from any plain multiply or transpose. This
+ * is the #692 regression pin: it fails on the pre-fix code (plain multiply)
+ * and on transposed variants.
+ *
+ * @see renderer/HardwareSetup.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(G3InstanceTest, GetViewPositionScaledOrient) {
+  // Build a known non-zero view state (vm_MakeIdentity avoids sincos_table).
+  vector viewPos{5, -7, 11};
+  matrix viewOrient;
+  vm_MakeIdentity(&viewOrient);
+  g3_StartFrame(&viewPos, &viewOrient, 1.0f);
+
+  // Widescreen-cockpit orient: 45-degree rotation around Z with a scaled rvec.
+  float h_scale = 4.0f / 3.0f;
+  matrix objOrient = MakeScaledOrient(h_scale);
+
+  vector objPos{3, -2, 8};
+  g3_StartInstanceMatrix(&objPos, &objOrient);
+
+  vector vp;
+  g3_GetViewPosition(&vp);
+
+  // Ground truth computed with GLM directly (independent of the CPU inverse).
+  glm::mat4 model = MakeModelMatrix(objPos, objOrient);
+  vector expected = GtLocalFromWorld(model, View_position);
+
+  ExpectVectorEq(vp, expected);
+  g3_DoneInstance();
+}
+
+/**
+ * @test G3InstanceTest.GetViewPositionScaledOrientNested
+ * @brief Verifies g3_GetViewPosition returns the correct local-frame view
+ *        position for a NESTED instance under a scaled (non-orthonormal) root
+ *        orient.
+ *
+ * @details
+ * The widescreen cockpit scales the root instance orient's rvec. Submodels are
+ * then pushed as nested instances, composing the scaled root orient with the
+ * submodel's rotation. The composed orient's columns are NOT orthogonal, so the
+ * earlier column-length correction (valid only for the root instance) gives the
+ * wrong local-frame position here. The full matrix inverse is correct at every
+ * instance depth. This test fails on the column-length fix and passes on the
+ * inverse fix.
+ *
+ * @see renderer/HardwareSetup.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(G3InstanceTest, GetViewPositionScaledOrientNested) {
+  // Build a known non-zero view state (vm_MakeIdentity avoids sincos_table).
+  vector viewPos{5, -7, 11};
+  matrix viewOrient;
+  vm_MakeIdentity(&viewOrient);
+  g3_StartFrame(&viewPos, &viewOrient, 1.0f);
+
+  // Root instance: widescreen cockpit with scaled rvec.
+  float h_scale = 4.0f / 3.0f;
+  matrix o1 = MakeScaledOrient(h_scale);
+  vector p1{3, -2, 8};
+
+  // Nested instance: submodel rotated 45 degrees around Z with a translation.
+  matrix o2 = MakeScaledOrient(1.0f);
+  vector p2{0.5f, 0.0f, 0.0f};
+
+  g3_StartInstanceMatrix(&p1, &o1);
+  g3_StartInstanceMatrix(&p2, &o2);
+
+  vector vp;
+  g3_GetViewPosition(&vp);
+
+  // Ground truth: composed model matrix (root * nested), inverted with GLM.
+  glm::mat4 model = MakeModelMatrix(p1, o1) * MakeModelMatrix(p2, o2);
+  vector expected = GtLocalFromWorld(model, View_position);
+
+  ExpectVectorEq(vp, expected);
+  g3_DoneInstance();
+  g3_DoneInstance();
+}
+
+/**
+ * @test G3InstanceTest.CheckNormalFacingScaledOrient
+ * @brief Verifies g3_CheckNormalFacing agrees with the correct inverse
+ *        transform when the instance orient has a scaled rvec (widescreen
+ *        cockpit).
+ *
+ * @details
+ * With a non-orthonormal orient the viewer-minus-point vector must be
+ * transformed by orient^-T (via the full matrix inverse), not by orient. This
+ * test pins that correction; it fails on the pre-fix code which used the plain
+ * * orient and could wrongly cull faces.
+ *
+ * @see renderer/HardwareDraw.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(G3InstanceTest, CheckNormalFacingScaledOrient) {
+  // Build a known non-zero view state (vm_MakeIdentity avoids sincos_table).
+  vector viewPos{5, -7, 12};
+  matrix viewOrient;
+  vm_MakeIdentity(&viewOrient);
+  g3_StartFrame(&viewPos, &viewOrient, 1.0f);
+
+  // Widescreen-cockpit orient: 45-degree rotation around Z with a scaled rvec.
+  float h_scale = 4.0f / 3.0f;
+  matrix objOrient = MakeScaledOrient(h_scale);
+
+  vector objPos{3, -2, 8};
+  g3_StartInstanceMatrix(&objPos, &objOrient);
+
+  vector v{1, 2, 3};
+  vector norm{1, 0, -0.5f};
+  bool actual = g3_CheckNormalFacing(&v, &norm);
+
+  // Ground truth computed with GLM directly (independent of the CPU inverse).
+  glm::mat4 model = MakeModelMatrix(objPos, objOrient);
+  bool expected = GtFacing(model, View_position, v, norm);
+
+  EXPECT_EQ(actual, expected);
+  g3_DoneInstance();
+}
+
+/**
+ * @test G3InstanceTest.CheckNormalFacingScaledOrientNested
+ * @brief Verifies g3_CheckNormalFacing agrees with the correct inverse
+ *        transform for a NESTED instance under a scaled (non-orthonormal) root
+ *        orient.
+ *
+ * @details
+ * Submodels of the widescreen cockpit are pushed as nested instances, composing
+ * the scaled root orient with the submodel's rotation. The composed orient's
+ * columns are NOT orthogonal, so the earlier column-length correction gives the
+ * wrong local-frame vector here. The full matrix inverse is correct at every
+ * instance depth. This test fails on the column-length fix and passes on the
+ * inverse fix.
+ *
+ * @see renderer/HardwareDraw.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(G3InstanceTest, CheckNormalFacingScaledOrientNested) {
+  // Build a known non-zero view state (vm_MakeIdentity avoids sincos_table).
+  vector viewPos{5, -7, 12};
+  matrix viewOrient;
+  vm_MakeIdentity(&viewOrient);
+  g3_StartFrame(&viewPos, &viewOrient, 1.0f);
+
+  // Root instance: widescreen cockpit with scaled rvec.
+  float h_scale = 4.0f / 3.0f;
+  matrix o1 = MakeScaledOrient(h_scale);
+  vector p1{3, -2, 8};
+
+  // Nested instance: submodel rotated 45 degrees around Z with a translation.
+  matrix o2 = MakeScaledOrient(1.0f);
+  vector p2{0.5f, 0.0f, 0.0f};
+
+  g3_StartInstanceMatrix(&p1, &o1);
+  g3_StartInstanceMatrix(&p2, &o2);
+
+  vector v{1, 2, 3};
+  vector norm{1, 0, -0.5f};
+  bool actual = g3_CheckNormalFacing(&v, &norm);
+
+  // Ground truth: composed model matrix (root * nested), with GLM.
+  glm::mat4 model = MakeModelMatrix(p1, o1) * MakeModelMatrix(p2, o2);
+  bool expected = GtFacing(model, View_position, v, norm);
+
+  EXPECT_EQ(actual, expected);
+  g3_DoneInstance();
   g3_DoneInstance();
 }
 

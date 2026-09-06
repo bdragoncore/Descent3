@@ -301,6 +301,10 @@ scalar vm_DistToPlane(const vector *checkp, const vector *norm, const vector *pl
 // returns the value of a determinant
 scalar calc_det_value(const matrix *det);
 
+// Computes the inverse of a general (possibly non-orthonormal) 3x3 matrix.
+// Returns false if the matrix is singular (dest is left as the identity).
+bool vm_MatrixInverse(const matrix *src, matrix *dest);
+
 void vm_MakeInverseMatrix(matrix *dest);
 void vm_SinCosToMatrix(matrix *m, scalar sinp, scalar cosp, scalar sinb, scalar cosb, scalar sinh, scalar cosh);
 

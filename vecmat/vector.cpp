@@ -617,6 +617,27 @@ scalar calc_det_value(const matrix *det) {
          det->rvec.z() * det->uvec.x() * det->fvec.y() - det->rvec.z() * det->uvec.y() * det->fvec.x();
 }
 
+// Computes the inverse of a general (possibly non-orthonormal) 3x3 matrix via
+// the adjugate formula. Returns false if the matrix is singular (dest is left
+// as the identity).
+bool vm_MatrixInverse(const matrix *src, matrix *dest) {
+  const scalar a = src->rvec.x(), b = src->rvec.y(), c = src->rvec.z();
+  const scalar d = src->uvec.x(), e = src->uvec.y(), f = src->uvec.z();
+  const scalar g = src->fvec.x(), h = src->fvec.y(), i = src->fvec.z();
+
+  const scalar det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (fabs(det) < 1e-12f) {
+    vm_MakeIdentity(dest);
+    return false;
+  }
+  const scalar inv_det = 1.0f / det;
+
+  dest->rvec = vector{(e * i - f * h) * inv_det, (c * h - b * i) * inv_det, (b * f - c * e) * inv_det};
+  dest->uvec = vector{(f * g - d * i) * inv_det, (a * i - c * g) * inv_det, (c * d - a * f) * inv_det};
+  dest->fvec = vector{(d * h - e * g) * inv_det, (b * g - a * h) * inv_det, (a * e - b * d) * inv_det};
+  return true;
+}
+
 // computes the delta angle between two vectors.
 // vectors need not be normalized. if they are, call vm_vec_delta_ang_norm()
 // the forward vector (third parameter) can be NULL, in which case the absolute

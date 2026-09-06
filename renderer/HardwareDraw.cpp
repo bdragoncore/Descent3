@@ -113,12 +113,25 @@ bool g3_CheckNormalFacing(vector *v, vector *norm) {
   // instance is active) and rotate the viewer-minus-point vector back into the
   // object's local frame so the dot product with the object-space normal is
   // still valid.
+  //
+  // BUGFIX #692: the GPU model matrix maps a local point v to
+  // v.x*rvec + v.y*uvec + v.z*fvec + pos, i.e. world = (v * cached_orient) +
+  // pos in the Descent3 v*M convention, and the viewer-minus-point vector
+  // comes back into the local frame via cached_orient^-1 * d = d * orient_inv.
+  // The previous code transposed both steps (~orient / ~(orient_inv)), which
+  // flips the facing result for any non-symmetric instance orient (the
+  // widescreen cockpit's aspect-scaled orient), culling visible faces.
   matrix orient;
   vector pos;
   g3_GetInstanceTransform(&orient, &pos);
-  vector world = (*v * ~orient) + pos;
+  vector world = (*v * orient) + pos;
 
-  tempv = (View_position - world) * orient;
+  {
+    vector d = View_position - world;
+    matrix orient_inv;
+    vm_MatrixInverse(&orient, &orient_inv);
+    tempv = d * orient_inv;
+  }
 
   return (vm_Dot3Product(tempv, *norm) > 0);
 }
