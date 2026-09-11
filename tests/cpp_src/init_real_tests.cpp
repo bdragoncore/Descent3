@@ -355,6 +355,7 @@ void SaveControlConfig(pilot *) { REC("savectlcfg"); }
 pilot::pilot() {}
 pilot::~pilot() {}
 void ConfigSetDetailLevel(int level) { REC(std::string("detaillevel:") + std::to_string(level)); }
+void ConfigSetDetailLevelMax() { REC("detaillevelmax"); }
 
 // ==== subsystem init recorders ====
 void InitObjectInfo() { REC("objinfo"); }
@@ -885,6 +886,8 @@ TEST_F(InitTest, FullBootSequenceRunsInOrder) {
 
   // settings load (via detail preset) happens inside IO init, before ddio
   EXPECT_LT(Pos("detaillevel:1"), Pos("ddioinit"));
+  // the max-detail override is applied right after the saved preset is loaded
+  EXPECT_LT(Pos("detaillevel:1"), Pos("detaillevelmax"));
   // table files come up before string tables and graphics
   EXPECT_LT(Pos("mng_init"), Pos("strings"));
   EXPECT_LT(Pos("bm_InitBitmaps"), Pos("textures"));

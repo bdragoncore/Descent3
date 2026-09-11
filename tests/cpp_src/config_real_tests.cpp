@@ -978,6 +978,43 @@ TEST_F(ConfigTest, UnknownLevelSkipsPresetButRecordsLevel) {
   EXPECT_EQ(Default_detail_level, 99);
 }
 
+/**
+ * @test ConfigTest.MaxDetailForcesEverySettingToMaximum
+ * @brief Verifies max Detail Forces Every Setting To Maximum.
+ *
+ * @details
+ * Exercises the ConfigTest code path and asserts observable
+ * post-conditions. Stubbed subsystems provide deterministic
+ * inputs; no external I/O is performed.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MaxDetailForcesEverySettingToMaximum) {
+  // start from a low preset so the max override visibly changes everything
+  ConfigSetDetailLevel(DETAIL_LEVEL_LOW);
+  Detail_settings.Fast_headlight_on = false; // user toggle must be preserved
+
+  ConfigSetDetailLevelMax();
+
+  EXPECT_FLOAT_EQ(Detail_settings.Terrain_render_distance, MAXIMUM_RENDER_DIST * TERRAIN_SIZE);
+  EXPECT_FLOAT_EQ(Detail_settings.Pixel_error, MINIMUM_TERRAIN_DETAIL);
+  EXPECT_TRUE(Detail_settings.Specular_lighting);
+  EXPECT_TRUE(Detail_settings.Dynamic_lighting);
+  EXPECT_TRUE(Detail_settings.Mirrored_surfaces);
+  EXPECT_TRUE(Detail_settings.Fog_enabled);
+  EXPECT_TRUE(Detail_settings.Coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Procedurals_enabled);
+  EXPECT_TRUE(Detail_settings.Powerup_halos);
+  EXPECT_TRUE(Detail_settings.Scorches_enabled);
+  EXPECT_TRUE(Detail_settings.Weapon_coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Bumpmapping_enabled);
+  EXPECT_EQ(Detail_settings.Specular_mapping_type, 1);
+  EXPECT_EQ(Detail_settings.Object_complexity, 2);
+  EXPECT_FALSE(Detail_settings.Fast_headlight_on); // untouched by the override
+  EXPECT_EQ(Default_detail_level, DETAIL_LEVEL_VERY_HIGH);
+}
+
 // ---------------------------------------------------------------------------
 // OptionsMenu integration: forced bail-out runs every finish hook and saves
 // ---------------------------------------------------------------------------
@@ -1018,13 +1055,11 @@ TEST_F(ConfigTest, ForceQuitRunsAllFinishHooksAndSaves) {
   EXPECT_EQ(Default_player_terrain_leveling, 2);
   EXPECT_EQ(Default_player_room_leveling, 2);
 
-  // details.finish wrote preset radio back to database
-  ASSERT_GE(g_database.writes.size(), 1u);
-  bool found_db_write = false;
+  // details.finish no longer writes the preset radio back to the database:
+  // detail settings are forced to max on modern platforms, so only the Fast
+  // Headlight toggle is read back from the sheet.
   for (auto &[label, val] : g_database.writes)
-    if (label == std::string("PredefDetailSetting") && val == DETAIL_LEVEL_MED)
-      found_db_write = true;
-  EXPECT_TRUE(found_db_write);
+    EXPECT_NE(label, std::string("PredefDetailSetting"));
 
   // sound.finish applied slider-derived volumes
   EXPECT_FLOAT_EQ(s_set_master_vol, 1.0f);

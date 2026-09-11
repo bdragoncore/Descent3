@@ -1406,6 +1406,12 @@ void LoadGameSettings() {
   Database->read_int("PredefDetailSetting", &level);
   ConfigSetDetailLevel(level);
 
+  // BUGFIX #1: Modern platforms can run at true maximum detail, so force every
+  // detail setting to its maximum value regardless of the saved preset.  The
+  // Fast Headlight toggle is intentionally left untouched so the player can
+  // still choose between the fast and full-quality headlight paths.
+  ConfigSetDetailLevelMax();
+
   // Motion blur
   Use_motion_blur = 0;
   if (Katmai || FindArg("-motionblur")) {
