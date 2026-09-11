@@ -174,20 +174,6 @@ void rend_SetAlphaValue(uint8_t val) {
 // Sets the texture wrapping type
 void rend_SetWrapType(wrap_type val) { gpu_state.cur_wrap_type = val; }
 
-void rend_SetZBias(float z_bias) {
-  if (Z_bias != z_bias) {
-    Z_bias = z_bias;
-
-    // Force refresh our transforms to take the Zbias into account.
-    // BUGFIX (g3 replacement, Phase 3): recompute through g3_UpdateModelViewMatrix
-    // so an active instance model transform is preserved; the old code rebuilt
-    // the model-view from the (now always-true) globals, which would have
-    // dropped the model matrix when called during instancing.
-    g3_UpdateModelViewMatrix();
-    g3_ForceTransformRefresh();
-  }
-}
-
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)
 // useful for motion blur effect
 void rend_SetAlphaFactor(float val) { gpu_Alpha_factor = std::clamp(val, 0.0f, 1.0f); }

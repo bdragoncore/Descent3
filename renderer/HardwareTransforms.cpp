@@ -28,7 +28,6 @@
 // Whether or not to use T&L transforms or the pass-thru ones
 static int sUseTransformPassthru = -1;
 
-extern float Z_bias;
 void g3_GetModelViewMatrix(const vector *viewPos, const matrix *viewMatrix, float *mvMat) {
   matrix localOrient = (*viewMatrix);
   vector localPos = -((vector)*viewPos);
@@ -43,7 +42,7 @@ void g3_GetModelViewMatrix(const vector *viewPos, const matrix *viewMatrix, floa
       glm::vec4(localOrient.rvec.y(), localOrient.uvec.y(), localOrient.fvec.y(), 0.0f),
       glm::vec4(localOrient.rvec.z(), localOrient.uvec.z(), localOrient.fvec.z(), 0.0f),
       glm::vec4(vm_Dot3Product(localPos, localOrient.rvec), vm_Dot3Product(localPos, localOrient.uvec),
-                vm_Dot3Product(localPos, localOrient.fvec) + Z_bias, 1.0f));
+                vm_Dot3Product(localPos, localOrient.fvec), 1.0f));
   memcpy(mvMat, glm::value_ptr(mv), 16 * sizeof(float));
 }
 

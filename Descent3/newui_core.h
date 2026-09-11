@@ -128,6 +128,13 @@ void newuiCore_PageInBitmaps();
 // call when NO newui menus open
 void newuiCore_ReleaseBitmaps();
 
+// returns true if the preloaded UI bitmaps are currently paged in.
+// The video/details menus compute layout from art heights at runtime;
+// in-level (after newuiCore_ReleaseBitmaps ran on leaving the main menu)
+// the art is gone and heights read 0, collapsing the layout. Callers can
+// page in on entry and release on exit when this returns false.
+bool newuiCore_BitmapsPaged();
+
 //	 C interface to load and free bitmap resources
 UIBitmapItem *newui_LoadBitmap(const char *filename);
 

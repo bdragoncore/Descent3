@@ -960,6 +960,8 @@ void rend_SetFlatColor(ddgr_color color) { gpu_state.cur_color = color; }
 
 void rend_SetFogState(int8_t state) {}
 void rend_SetFogBorders(float nearz, float farz) {}
+void rend_SetSharpening(float strength) {}
+void rend_SetZBias(float z_bias) { Z_bias = z_bias; }
 
 void rend_SetRendererType(renderer_type state) {
   Renderer_type = state;
