@@ -145,6 +145,8 @@ struct Renderer {
 
   void setSharpening(float strength) { shader_.setUniform1f("u_sharpen", strength); }
 
+  void setZBias(float z_bias) { shader_.setUniform1f("u_z_bias", z_bias); }
+
   void setFogColor(ddgr_color color) {
     shader_.setUniform4fv("u_fog_color", GR_COLOR_RED(color) / 255.0f, GR_COLOR_GREEN(color) / 255.0f,
                           GR_COLOR_BLUE(color) / 255.0f, 1);
@@ -1942,6 +1944,21 @@ void rend_SetCoplanarPolygonOffset(float factor) {
   } else {
     dglEnable(GL_POLYGON_OFFSET_FILL);
     dglPolygonOffset(-1.0f, -1.0f);
+  }
+}
+
+// BUGFIX: Z-bias is applied per-vertex in the vertex shader (matching the D3D
+// renderer) instead of being baked into the model-view matrix. Baking it into
+// the matrix shifted view-space Z before the perspective divide, which also
+// shifted screen-space X/Y and made scorch marks/particles misalign with walls.
+// The Z_bias global is still kept for rend_DrawSpecialLine, which applies the
+// bias to screen-space Z directly.
+void rend_SetZBias(float z_bias) {
+  if (Z_bias != z_bias) {
+    Z_bias = z_bias;
+    if (gRenderer) {
+      gRenderer->setZBias(z_bias);
+    }
   }
 }
 
