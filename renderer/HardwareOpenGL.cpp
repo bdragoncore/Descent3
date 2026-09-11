@@ -84,6 +84,7 @@ struct Renderer {
     // these are effectively just constants, for now
     shader_.setUniform1i("u_texture0", 0);
     shader_.setUniform1i("u_texture1", 1);
+    shader_.setUniform1f("u_sharpen", 0.0f);
   }
 
   /**
@@ -141,6 +142,8 @@ struct Renderer {
   }
 
   void setGammaCorrection(float gamma) { shader_.setUniform1f("u_gamma", gamma); }
+
+  void setSharpening(float strength) { shader_.setUniform1f("u_sharpen", strength); }
 
   void setFogColor(ddgr_color color) {
     shader_.setUniform4fv("u_fog_color", GR_COLOR_RED(color) / 255.0f, GR_COLOR_GREEN(color) / 255.0f,
@@ -1524,6 +1527,10 @@ void rend_SetFogState(int8_t state) { gRenderer->setFogEnabled(state); }
 
 // Sets the near and far plane of fog
 void rend_SetFogBorders(float nearz, float farz) { gRenderer->setFogBorders(nearz, farz); }
+
+// BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).
+// Used by grtext to keep magnified glyphs crisp on high-res displays.
+void rend_SetSharpening(float strength) { gRenderer->setSharpening(strength); }
 
 void rend_SetRendererType(renderer_type state) {
   Renderer_type = state;
