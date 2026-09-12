@@ -39,6 +39,7 @@ endif()
 
 # Find GTest (includes GMock on Arch Linux)
 find_package(GTest REQUIRED)
+find_package(glm REQUIRED)
 
 # Note: On Arch, GMock is available as GTest::gmock (not GMock::gmock)
 
@@ -91,6 +92,14 @@ target_link_libraries(vecmat_util_tests
 )
 target_include_directories(vecmat_util_tests PRIVATE ${PROJECT_SOURCE_DIR}/lib)
 gtest_discover_tests(vecmat_util_tests)
+
+# TelCom UI art-space scaling helpers (BUGFIX #685) - header-only, gtest only
+add_executable(telcomui_tests
+    cpp_src/telcomui_tests.cpp
+)
+target_link_libraries(telcomui_tests PRIVATE GTest::gtest_main)
+target_include_directories(telcomui_tests PRIVATE ${PROJECT_SOURCE_DIR}/Descent3 ${PROJECT_SOURCE_DIR}/lib)
+gtest_discover_tests(telcomui_tests)
 
 # ============================================================================
 # Standalone utility tests (self-contained, gtest only)
@@ -3742,6 +3751,100 @@ target_include_directories(terrainrender_linked_real_tests PRIVATE
 target_compile_definitions(terrainrender_linked_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
 gtest_discover_tests(terrainrender_linked_real_tests)
 
+add_executable(g3_transform_real_tests
+    cpp_src/g3_transform_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+)
+target_link_libraries(g3_transform_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_transform_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_transform_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_transform_real_tests)
+
+add_executable(g3_drawpath_real_tests
+    cpp_src/g3_drawpath_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+)
+target_link_libraries(g3_drawpath_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_drawpath_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_drawpath_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_drawpath_real_tests)
+
+add_executable(g3_instance_real_tests
+    cpp_src/g3_instance_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwarePoints.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareClipper.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+)
+target_link_libraries(g3_instance_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(g3_instance_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(g3_instance_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(g3_instance_real_tests)
+
+add_executable(renderer_state_cache_real_tests
+    cpp_src/renderer_state_cache_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareInstance.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareSetup.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareTransforms.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareGlobalVars.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwarePoints.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareClipper.cpp
+    ${PROJECT_SOURCE_DIR}/renderer/HardwareDraw.cpp
+)
+target_link_libraries(renderer_state_cache_real_tests PRIVATE GTest::gtest_main vecmat glm::glm)
+target_include_directories(renderer_state_cache_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/renderer
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${CMAKE_BINARY_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(renderer_state_cache_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(renderer_state_cache_real_tests)
+
 add_executable(damage_linked_real_tests
     cpp_src/damage_linked_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/damage.cpp
@@ -4511,6 +4614,40 @@ endif()
 # require a running SDL context, so only the state layer is unit-tested.
 # ============================================================================
 
+# ============================================================================
+# Polymodel face batching tests (Phase 5)
+# Compiles the real model/newstyle.cpp with stubbed renderer/game subsystems
+# and verifies gpu_SetBatchMode / gpu_FlushBatch orchestration in
+# RenderSubmodelFacesUnsorted.
+# ============================================================================
+
+add_executable(polymodel_batch_real_tests
+    cpp_src/polymodel_batch_real_tests.cpp
+    ${PROJECT_SOURCE_DIR}/model/newstyle.cpp
+)
+target_link_libraries(polymodel_batch_real_tests PRIVATE GTest::gtest_main vecmat fix ddebug logger mem misc)
+target_include_directories(polymodel_batch_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/model
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/logger
+    ${PROJECT_SOURCE_DIR}/cfile
+    ${PROJECT_SOURCE_DIR}/bitmap
+    ${PROJECT_SOURCE_DIR}/ddio
+    ${PROJECT_SOURCE_DIR}/module
+    ${PROJECT_SOURCE_DIR}/sndlib
+    ${PROJECT_SOURCE_DIR}/physics
+    ${PROJECT_SOURCE_DIR}/Descent3
+    ${CMAKE_BINARY_DIR}/lib
+    ${CMAKE_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/builds/linux/vcpkg_installed/x64-linux/include
+)
+target_compile_definitions(polymodel_batch_real_tests PRIVATE RELEASE POSIX __LINUX__ PRIMARY_HOG="d3-linux.hog")
+gtest_discover_tests(polymodel_batch_real_tests)
+
 add_executable(mouse_focus_tests
     cpp_src/mouse_focus_tests.cpp
 )
@@ -4526,3 +4663,32 @@ target_include_directories(mouse_focus_tests PRIVATE
 )
 target_compile_definitions(mouse_focus_tests PRIVATE RELEASE)
 gtest_discover_tests(mouse_focus_tests)
+
+# theora_movie_tests exercises the real Descent3/theora_movie.cpp decoder.
+# A small test .ogv is generated at configure time with ffmpeg so the test
+# is self-contained and does not depend on the game data being installed.
+# Skipped when libtheora is unavailable (HAVE_THEORA off).
+find_program(FFMPEG_EXECUTABLE ffmpeg)
+if(FFMPEG_EXECUTABLE AND HAVE_THEORA)
+  set(THEORA_TEST_MOVIE "${CMAKE_CURRENT_BINARY_DIR}/theora_test.ogv")
+  add_custom_command(
+    OUTPUT ${THEORA_TEST_MOVIE}
+    COMMAND ${FFMPEG_EXECUTABLE} -y -f lavfi -i "testsrc2=size=64x48:rate=10:duration=1"
+            -c:v libtheora -q:v 5 ${THEORA_TEST_MOVIE}
+    COMMENT "Generating test .ogv for theora_movie_tests"
+    VERBATIM
+  )
+  add_executable(theora_movie_tests
+      cpp_src/theora_movie_tests.cpp
+      ${PROJECT_SOURCE_DIR}/Descent3/theora_movie.cpp
+  )
+  target_link_libraries(theora_movie_tests PRIVATE GTest::gtest_main PkgConfig::THEORA PkgConfig::OGG)
+  target_include_directories(theora_movie_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/Descent3
+      ${PROJECT_SOURCE_DIR}/logger
+  )
+  target_compile_definitions(theora_movie_tests PRIVATE THEORA_TEST_MOVIE="${THEORA_TEST_MOVIE}")
+  add_custom_target(theora_test_movie DEPENDS ${THEORA_TEST_MOVIE})
+  add_dependencies(theora_movie_tests theora_test_movie)
+  gtest_discover_tests(theora_movie_tests)
+endif()

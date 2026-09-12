@@ -425,6 +425,19 @@ bool sdlMouseMotionFilter(SDL_Event const *event) {
     DDIO_mouse_state.dy = event->jball.yrel / 100.0f;
     DDIO_mouse_state.x += DDIO_mouse_state.dx;
     DDIO_mouse_state.y += DDIO_mouse_state.dy;
+  } else if (!ddio_mouseGrabbed && Lnx_app_obj && Lnx_app_obj->m_W > 0 && Lnx_app_obj->m_H > 0) {
+    // BUGFIX #676: When the mouse is not grabbed (e.g. -nomousegrab), SDL
+    // reports xrel/yrel as 0 because the cursor is not locked, so the virtual
+    // position never updates and the cursor appears stuck. Map the absolute
+    // window position into the virtual coordinate space instead.
+    float scale_x = (float)(DDIO_mouse_state.r - DDIO_mouse_state.l) / (float)Lnx_app_obj->m_W;
+    float scale_y = (float)(DDIO_mouse_state.b - DDIO_mouse_state.t) / (float)Lnx_app_obj->m_H;
+    float new_x = event->motion.x * scale_x + DDIO_mouse_state.l;
+    float new_y = event->motion.y * scale_y + DDIO_mouse_state.t;
+    DDIO_mouse_state.dx = new_x - DDIO_mouse_state.x;
+    DDIO_mouse_state.dy = new_y - DDIO_mouse_state.y;
+    DDIO_mouse_state.x = new_x;
+    DDIO_mouse_state.y = new_y;
   } else {
     DDIO_mouse_state.dx += event->motion.xrel;
     DDIO_mouse_state.dy += event->motion.yrel;

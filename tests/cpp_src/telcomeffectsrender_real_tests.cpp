@@ -39,6 +39,7 @@
 #include "hlsoundlib.h"
 #include "cinematics.h"
 #include "vecmat.h"
+#include "telcomui.h"
 
 // public in TelcomEffectsRender.cpp but missing from headers
 void BlurBitmapArea(uint16_t *srcbm, uint16_t *dstbm, int16_t width, int16_t height, int16_t startx, int16_t starty,
@@ -58,6 +59,15 @@ int bm_h(int handle, int miplevel) { return g_bm_h[handle]; }
 // BltBmpToScreen/UploadChunk are real (TelComEffects.cpp); count the
 // blits they forward into the rend_ stub
 void rend_DrawChunkedBitmap(chunked_bitmap *cb, int dx, int dy, unsigned char) { g_blit_count++; }
+// BUGFIX #685: BltBmpToScreen now scales to the window via this entry point;
+// keep the blit counting working for the tests.
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, unsigned char) { g_blit_count++; }
+// TelCom art->window scaling (normally in TelCom.cpp); reference resolution.
+int Max_window_w = FIXED_SCREEN_WIDTH, Max_window_h = FIXED_SCREEN_HEIGHT;
+int TelcomScaleX(int x) { return TelcomScaledX(x, Max_window_w); }
+int TelcomScaleY(int y) { return TelcomScaledY(y, Max_window_h); }
+int TelcomUnscaleX(int x) { return TelcomUnscaledX(x, Max_window_w); }
+int TelcomUnscaleY(int y) { return TelcomUnscaledY(y, Max_window_h); }
 void rend_SetColorModel(color_model) {}
 void rend_SetLighting(light_state) {}
 void rend_SetWrapType(wrap_type) {}

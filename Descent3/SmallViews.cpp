@@ -309,9 +309,15 @@ void RenderSmallWindow(int left, int top, int right, int bot, object *viewer, ve
     rend_SetColorModel(CM_MONO);
     rend_SetOverlayType(OT_NONE);
     rend_SetWrapType(WT_CLAMP);
-    rend_SetFiltering(0);
+
+    // BUGFIX: use bilinear filtering for the static bitmap and restore the
+    // default state so this draw does not leak GL_NEAREST into subsequent
+    // rendering (e.g. menu backgrounds).
+    rend_SetFiltering(1);
 
     rend_DrawScaledBitmap(0, 0, width - 1, height - 1, bm_handle, 0.0, 0.0, 1.0, 1.0);
+
+    rend_SetFiltering(1);
   } else {
     // draw 3D view
     ASSERT(viewer != NULL);

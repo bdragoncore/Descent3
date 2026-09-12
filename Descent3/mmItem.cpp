@@ -178,6 +178,9 @@ void mmItem::ClearEffects() { m_fxqueue.flush(); }
 void mmItem::OnFormat() {
   if (m_Flags & UIF_FIT) {
     ui_DrawSetFont(MMITEM_FONT);
+    // BUGFIX #1: set font scale before measuring so text dimensions match
+    // the scaled rendering and gadgets are sized correctly at high resolutions.
+    grtext_SetFontScale(MMITEM_FONT_SCALE);
 
     m_W = (m_text ? ui_GetTextWidth(m_text) : 0);
     m_H = (m_text ? ui_GetTextHeight(m_text) : 0);
@@ -241,13 +244,20 @@ void mmItem::OnDraw() {
     int i;
 
     ui_DrawSetFont(MMITEM_FONT);
+    // BUGFIX #1: scale the menu text with the window height so it stays
+    // readable and proportionally sized on high-resolution displays.
+    // grtext_Flush() resets Grtext_scale to 1.0 after each draw, so we
+    // must re-apply the scale before every ui_DrawString call.
     ui_DrawSetTextType(0);
     ui_SetCharAlpha(255);
+    grtext_SetFontScale(MMITEM_FONT_SCALE);
     ui_DrawString(m_colors[0], 0, 0, m_text);
     ui_DrawSetTextType(UI_TEXTTYPE_SATURATE);
     ui_SetCharAlpha((uint8_t)m_alpha);
-    for (i = 0; i < m_satcount; i++)
+    for (i = 0; i < m_satcount; i++) {
+      grtext_SetFontScale(MMITEM_FONT_SCALE);
       ui_DrawString(m_colors[0], 0, 0, m_text);
+    }
   }
 
   if ((UI_TIME() - m_last_frametime) >= m_process_speed) {
@@ -380,7 +390,7 @@ bool mmInterface::AddItem(int id, int key, const char *text, int type) {
     return false;
   }
 
-  m_menuitems[m_nmenu_items].Create(id, key, MMITEM_X, MMITEM_Y + (m_nmenu_items * 20), text,
+  m_menuitems[m_nmenu_items].Create(id, key, MMITEM_X, MMITEM_Y + (m_nmenu_items * MMITEM_SPACING), text,
                                     (type == 1)   ? UIF_GROUP_START
                                     : (type == 2) ? UIF_GROUP_END
                                     : (type == 3) ? (UIF_GROUP_START + UIF_GROUP_END)
@@ -393,6 +403,10 @@ bool mmInterface::AddItem(int id, int key, const char *text, int type) {
 // When interface is being nuked.
 void mmInterface::OnDestroy() {
   UIWindow::OnDestroy();
+
+  // BUGFIX #1: reset font scale to default so other UI systems aren't
+  // affected by the menu's scaled font after the menu is destroyed.
+  grtext_SetFontScale(1.0f);
 
   D3MusicStop();
   Sound_system.StopAllSounds();
@@ -435,10 +449,14 @@ void mmInterface::CopyrightText() {
     strcat(type, "Ver");
   }
 
-  int x = Max_window_w - 164, y = Max_window_h - 29; // was -128 and -16
+  // BUGFIX #1: scale the copyright text position and font with the window
+  // size so it stays aligned with the menu on high-resolution displays.
+  int x = Max_window_w - (164 * Max_window_w / FIXED_SCREEN_WIDTH);
+  int y = Max_window_h - (29 * Max_window_h / FIXED_SCREEN_HEIGHT);
 
   // attempt to print text nicely.
   grtext_SetFont(BRIEFING_FONT);
+  grtext_SetFontScale(MMITEM_FONT_SCALE);
   grtext_SetAlpha(192);
   grtext_SetColor(GR_RGB(255, 32, 32));
 

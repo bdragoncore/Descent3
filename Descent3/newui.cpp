@@ -789,6 +789,10 @@ int LoadLargeBitmap(const char *filename, tLargeBitmap *bmp) {
   bmp->bmps_w = chunk.w;
   bmp->bmps_h = chunk.h;
   bmp->bm_array = chunk.bm_array;
+  // BUGFIX #685: remember the source art's pixel dimensions so DrawLargeBitmap
+  // can scale it to the current window size.
+  bmp->pw = chunk.pw;
+  bmp->ph = chunk.ph;
 
   return 1;
 }
@@ -808,7 +812,12 @@ void DrawLargeBitmap(tLargeBitmap *bmp, int x, int y, float alpha) {
   chunk.w = bmp->bmps_w;
   chunk.h = bmp->bmps_h;
   chunk.bm_array = bmp->bm_array;
-  rend_DrawChunkedBitmap(&chunk, x, y, alpha * 255);
+  // BUGFIX #685: scale the art to the current window size instead of drawing
+  // it at native 640x480, which left the menu as a small image in the corner
+  // on high-resolution displays.
+  chunk.pw = bmp->pw;
+  chunk.ph = bmp->ph;
+  rend_DrawScaledChunkedBitmap(&chunk, x, y, Max_window_w, Max_window_h, alpha * 255);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

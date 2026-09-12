@@ -84,6 +84,7 @@ struct Renderer {
     // these are effectively just constants, for now
     shader_.setUniform1i("u_texture0", 0);
     shader_.setUniform1i("u_texture1", 1);
+    shader_.setUniform1f("u_sharpen", 0.0f);
     shader_.setUniform1f("u_plasma_glow", 0.0f);
     shader_.setUniform1f("u_age", 0.0f);
   }
@@ -109,12 +110,13 @@ struct Renderer {
   }
 
   void setTextureEnabled(GLuint index, bool enabled) {
-    GLint bit = 1 << index;
-    if (enabled) {
-      texture_enable_ |= bit;
-    } else {
-      texture_enable_ &= ~bit;
-    }
+    GLint new_texture_enable = ComputeTextureEnable(texture_enable_, index, enabled);
+    // Skip redundant uniform upload when the bitmask hasn't changed.
+    // This avoids a glUniform1i driver call on every polygon when the
+    // multitexture unit is already disabled (the common case).
+    if (new_texture_enable == texture_enable_)
+      return;
+    texture_enable_ = new_texture_enable;
     shader_.setUniform1i("u_texture_enable", texture_enable_);
   }
 
@@ -142,6 +144,10 @@ struct Renderer {
   }
 
   void setGammaCorrection(float gamma) { shader_.setUniform1f("u_gamma", gamma); }
+
+  void setSharpening(float strength) { shader_.setUniform1f("u_sharpen", strength); }
+
+  void setZBias(float z_bias) { shader_.setUniform1f("u_z_bias", z_bias); }
 
   void setPlasmaGlow(float glow, const glm::vec4& color) {
     shader_.setUniform1f("u_plasma_glow", glow);
@@ -223,6 +229,14 @@ uint16_t *opengl_packed_Translate_table = nullptr;
 uint16_t *opengl_packed_4444_translate_table = nullptr;
 
 extern rendering_state gpu_state;
+
+// Fullscreen scaling mode (from game.h enum: FILL=0, FIT=1, NATIVE=2)
+extern int Render_fullscreen_scale_mode;
+enum {
+  FULLSCREEN_SCALE_FILL = 0,
+  FULLSCREEN_SCALE_FIT = 1,
+  FULLSCREEN_SCALE_NATIVE = 2
+};
 extern renderer_preferred_state gpu_preferred_state;
 
 bool OpenGL_multitexture_state = false;
@@ -452,24 +466,40 @@ void HardwareOpenGL::PresentFrame() const {
 
     int scaledHeight;
     int scaledWidth;
-    if (w < h) {
-      scaledWidth = w;
-      scaledHeight = static_cast<int>((static_cast<double>(framebuffer_height_) / static_cast<double>(framebuffer_width_)) *
-                                      static_cast<double>(w));
-    } else {
-      scaledHeight = h;
-      scaledWidth = static_cast<int>((static_cast<double>(framebuffer_width_) / static_cast<double>(framebuffer_height_)) *
-                                     static_cast<double>(h));
-    }
+    int centerX;
+    int centerY;
 
-    const int centeredX = (w - scaledWidth) / 2;
-    const int centeredY = (h - scaledHeight) / 2;
+    switch (Render_fullscreen_scale_mode) {
+    case FULLSCREEN_SCALE_FILL:
+      // Stretch to fill the window, ignoring aspect ratio.
+      scaledWidth = w;
+      scaledHeight = h;
+      centerX = 0;
+      centerY = 0;
+      break;
+
+    case FULLSCREEN_SCALE_FIT:
+    default:
+      // Maintain aspect ratio, letterbox (original behavior).
+      if (w < h) {
+        scaledWidth = w;
+        scaledHeight = static_cast<int>((static_cast<double>(framebuffer_height_) / static_cast<double>(framebuffer_width_)) *
+                                        static_cast<double>(w));
+      } else {
+        scaledHeight = h;
+        scaledWidth = static_cast<int>((static_cast<double>(framebuffer_width_) / static_cast<double>(framebuffer_height_)) *
+                                       static_cast<double>(h));
+      }
+      centerX = (w - scaledWidth) / 2;
+      centerY = (h - scaledHeight) / 2;
+      break;
+    }
 
     dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     dglClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     dglClear(GL_COLOR_BUFFER_BIT);
-    dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, centeredX, centeredY, centeredX + scaledWidth,
-                       centeredY + scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, centerX, centerY, centerX + scaledWidth,
+                       centerY + scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     dglBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
@@ -1417,6 +1447,26 @@ void gpu_BindTexture(int handle, int map_type, int slot) {
   opengl_MakeFilterTypeCurrent(handle, map_type, slot);
 }
 
+// BUGFIX: polygon face batching — accumulate triangles from consecutive
+// same-texture faces into a single GL_TRIANGLES draw call instead of one
+// GL_TRIANGLE_FAN per face.  Used by RenderSubmodelFacesUnsorted when
+// StateLimited is true and lighting is gouraud (no per-face lightmap overlay).
+static PosColorUVVertex sBatchBuffer[MAX_POINTS_IN_POLY_LIST];
+static int sBatchCount = 0;
+static bool sBatchActive = false;
+
+void gpu_SetBatchMode(bool active) { sBatchActive = active; }
+
+void gpu_FlushBatch() {
+  if (sBatchCount == 0)
+    return;
+  size_t start = gRenderer->addVertexData(sBatchBuffer, sBatchBuffer + sBatchCount);
+  dglDrawArrays(GL_TRIANGLES, start, sBatchCount);
+  OpenGL_polys_drawn += sBatchCount / 3;
+  OpenGL_verts_processed += sBatchCount;
+  sBatchCount = 0;
+}
+
 void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
   if (gpu_state.cur_texture_quality == 0) {
     // force disable textures
@@ -1425,8 +1475,19 @@ void gpu_RenderPolygon(PosColorUVVertex *vData, uint32_t nv) {
 
   gRenderer->setTextureEnabled(1, false);
 
-  // draw the data in the arrays
-  dglDrawArrays(GL_TRIANGLE_FAN, gRenderer->addVertexData(vData, vData + nv), nv);
+  if (sBatchActive && nv >= 3) {
+    // Fan-triangulate and accumulate into batch buffer.
+    // nv vertices form a convex fan: vData[0] is the fan center,
+    // triangles are (0, i, i+1) for i = 1..nv-2.
+    for (uint32_t i = 1; i + 1 < nv && sBatchCount + 3 <= MAX_POINTS_IN_POLY_LIST; i++) {
+      sBatchBuffer[sBatchCount++] = vData[0];
+      sBatchBuffer[sBatchCount++] = vData[i];
+      sBatchBuffer[sBatchCount++] = vData[i + 1];
+    }
+  } else {
+    // draw the data in the arrays
+    dglDrawArrays(GL_TRIANGLE_FAN, gRenderer->addVertexData(vData, vData + nv), nv);
+  }
 
   if (gpu_state.cur_texture_quality == 0) {
     // re-enable textures
@@ -1478,6 +1539,10 @@ void rend_SetFogState(int8_t state) { gRenderer->setFogEnabled(state); }
 // Sets the near and far plane of fog
 void rend_SetFogBorders(float nearz, float farz) { gRenderer->setFogBorders(nearz, farz); }
 
+// BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).
+// Used by grtext to keep magnified glyphs crisp on high-res displays.
+void rend_SetSharpening(float strength) { gRenderer->setSharpening(strength); }
+
 void rend_SetRendererType(renderer_type state) {
   Renderer_type = state;
   LOG_DEBUG.printf("RendererType is set to %d.", state);
@@ -1487,7 +1552,9 @@ void rend_SetLighting(light_state state) {
   if (state == gpu_state.cur_light_state)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetLighting does not touch texture state; the glActiveTexture call
+  // was a redundant driver call on every lighting state change.
 
   OpenGL_sets_this_frame[4]++;
 
@@ -1528,7 +1595,11 @@ void rend_SetTextureType(texture_type state) {
   if (state == gpu_state.cur_texture_type)
     return; // No redundant state setting
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetTextureType only calls setTextureEnabled (a uniform upload);
+  // the glActiveTexture call was a redundant driver call on every texture
+  // type change.
+
   OpenGL_sets_this_frame[3]++;
 
   switch (state) {
@@ -1716,7 +1787,10 @@ void rend_SetAlphaType(int8_t atype) {
   if (atype == gpu_state.cur_alpha_type)
     return; // don't set it redundantly
 
-  dglActiveTexture(GL_TEXTURE0_ARB + 0);
+  // BUGFIX (g3 optimization): removed dglActiveTexture(GL_TEXTURE0_ARB + 0)
+  // — rend_SetAlphaType only toggles GL_BLEND and the blend function; the
+  // glActiveTexture call was a redundant driver call on every alpha change.
+
   OpenGL_sets_this_frame[6]++;
 
   if (atype == AT_ALWAYS) {
@@ -1882,9 +1956,24 @@ void rend_SetCoplanarPolygonOffset(float factor) {
   }
 }
 
+// BUGFIX: Z-bias is applied per-vertex in the vertex shader (matching the D3D
+// renderer) instead of being baked into the model-view matrix. Baking it into
+// the matrix shifted view-space Z before the perspective divide, which also
+// shifted screen-space X/Y and made scorch marks/particles misalign with walls.
+// The Z_bias global is still kept for rend_DrawSpecialLine, which applies the
+// bias to screen-space Z directly.
+void rend_SetZBias(float z_bias) {
+  if (Z_bias != z_bias) {
+    Z_bias = z_bias;
+    if (gRenderer) {
+      gRenderer->setZBias(z_bias);
+    }
+  }
+}
+
 // BUGFIX: Plasma glow / effect age uniforms for the 3D weapon impact trail.
 // Routes the game-level rend_* calls to the shader uniforms (u_plasma_glow,
-// u_plasma_color, u_age). Guarded by gRenderer null check.
+// u_plasma_color, u_age). Guarded by gRenderer null check like rend_SetZBias.
 void rend_SetPlasmaGlow(float glow, float r, float g, float b) {
   if (gRenderer) {
     gRenderer->setPlasmaGlow(glow, glm::vec4(r, g, b, 1.0f));

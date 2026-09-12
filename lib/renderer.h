@@ -486,6 +486,10 @@ void rend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, flo
 // Sets the state of bilinear filtering for our textures
 void rend_SetFiltering(int8_t state);
 
+// BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).
+// Used by grtext to keep magnified glyphs crisp on high-res displays.
+void rend_SetSharpening(float strength);
+
 // Sets the state of zbuffering to on or off
 void rend_SetZBufferState(int8_t state);
 

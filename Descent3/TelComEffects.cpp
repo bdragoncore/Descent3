@@ -1277,7 +1277,10 @@ void BltBmpToScreen(int dx, int dy, chunked_bitmap *src_bmp) {
   BltBmpToScreen(dx, dy, src_bmp, 0, 0, src_bmp->pw, src_bmp->ph);
 }
 void BltBmpToScreen(int dx, int dy, chunked_bitmap *src_bmp, int sx, int sy, int sw, int sh) {
-  rend_DrawChunkedBitmap(src_bmp, dx, dy, 255);
+  // BUGFIX #685: the position and source rect are in TelCom art coordinates
+  // (640x480); scale them to the current window so effect bitmaps and buttons
+  // land on the stretched TelCom art at their authored spots.
+  rend_DrawScaledChunkedBitmap(src_bmp, TelcomScaleX(dx), TelcomScaleY(dy), TelcomScaleX(sw), TelcomScaleY(sh), 255);
 }
 // forces a chunk bitmap to be uploaded
 void UploadChunk(chunked_bitmap *bmp) {

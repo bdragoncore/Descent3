@@ -160,6 +160,11 @@ void grtext_SetFont(int font_handle);
 //	sets font scale (1.0 = normal, 0.5 = 1/2, 2.0 = twice as large.
 void grtext_SetFontScale(float scale);
 
+//	set font scale for measurement only (no buffer write).  Use this
+//	inside width()/height() measurement functions so stale SCALE
+//	commands don't pollute the grtext render buffer.
+void grtext_SetFontScaleImmediate(float scale);
+
 // gets the current font
 int grtext_GetFont();
 

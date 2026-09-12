@@ -34,6 +34,7 @@ uniform vec4 u_fog_color;
 uniform float u_fog_start;
 uniform float u_fog_end;
 uniform float u_gamma; // Gamma correction
+uniform float u_sharpen; // Unsharp-mask strength for text (0 = off)
 uniform float u_plasma_glow; // Plasma impact glow strength (0 = off, 1 = full)
 uniform vec4 u_plasma_color; // Plasma impact core color
 
@@ -46,12 +47,26 @@ float branchless_invert_or_zero(in float value) {
 
 void main()
 {
+    // BUGFIX: When text is magnified on high-res displays the plain bilinear
+    // sample blurs glyph edges.  A small unsharp mask restores edge contrast.
+    // Only enabled during grtext_Render via rend_SetSharpening().
+    vec4 tex0 = texture(u_texture0, vertex_uv0);
+    if (u_sharpen > 0.0) {
+        vec2 texel = 1.0 / vec2(textureSize(u_texture0, 0));
+        vec4 s = tex0 * (1.0 + 4.0 * u_sharpen)
+            - u_sharpen * (texture(u_texture0, vertex_uv0 + vec2(texel.x, 0.0))
+                         + texture(u_texture0, vertex_uv0 - vec2(texel.x, 0.0))
+                         + texture(u_texture0, vertex_uv0 + vec2(0.0, texel.y))
+                         + texture(u_texture0, vertex_uv0 - vec2(0.0, texel.y)));
+        tex0 = clamp(s, 0.0, 1.0);
+    }
+
     out_color = vertex_color
         // take advantage of the fact that we're multiplying to make vec4(1) represent a "disabled"
         // texture sample. a real sample will always have component values <= 1, bool is defined
         // to cast to either 0 or 1, so taking the max() of the sample and an _inverted_ enable
         // signal lets this ignore a texture w/o branching. we use a bitfield to save bandwidth.
-        * max(texture(u_texture0, vertex_uv0), vec4(float(!bool((u_texture_enable >> 0) & 1))))
+        * max(tex0, vec4(float(!bool((u_texture_enable >> 0) & 1))))
         * max(texture(u_texture1, vertex_uv1), vec4(float(!bool((u_texture_enable >> 1) & 1))));
 
     // Plasma impact glow effect: when enabled, blend a procedural glow over

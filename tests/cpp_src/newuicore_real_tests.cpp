@@ -122,6 +122,13 @@ char *mem_strdup_sub(const char *s, const char *, int) { return strdup(s); }
 // ---------------------------------------------------------------------------
 // input stubs: dead keyboard/mouse
 // ---------------------------------------------------------------------------
+// Stub for the renderer's global window pointer referenced by ddio/lnxmouse.cpp.
+struct SDL_Window;
+SDL_Window *GSDLWindow = nullptr;
+// Globals referenced by real libgrtext (pulled in via ui linkage).
+#include "bitmap.h"
+bms_bitmap GameBitmaps[MAX_BITMAPS];
+bool Game_fullscreen = false;
 int ddio_GetAdjKeyState(int) { return 0; }
 void ddio_KeyFlush() {}
 int ddio_KeyInKey() { return 0; }
@@ -154,6 +161,7 @@ void ddio_MouseSetVCoords(int, int) {}
 void rend_ClearScreen(ddgr_color) { REC("clearscreen"); }
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) {}
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -168,6 +176,8 @@ void rend_SetOverlayType(uint8_t) {}
 void rend_SetTextureType(texture_type) {}
 void rend_SetWrapType(wrap_type) {}
 void rend_SetZBufferState(int8_t) {}
+void rend_SetFiltering(int8_t) {}
+void rend_SetSharpening(float) {}
 
 void StartFrame(bool) { REC("startframe"); }
 void StartFrame(int, int, int, int, bool, bool) { REC("startframe"); }
@@ -194,6 +204,9 @@ void grtext_SetColor(ddgr_color) {}
 void grtext_SetAlpha(uint8_t) {}
 void grtext_SetFont(int) {}
 void grtext_Flush() {}
+void grtext_Reset() {}
+void grtext_SetFontScale(float) {}
+void grtext_SetFontScaleImmediate(float) {}
 int grfont_GetHeight(int) { return 12; }
 int grfont_KeyToAscii(int, int) { return 'a'; }
 }
@@ -574,6 +587,66 @@ TEST_F(NewuiCoreTest, SheetAddTextAndChangeableText) {
   UIGadget *txt = sheet->GetGadget(-1);
   EXPECT_NE(txt, nullptr);
   EXPECT_FALSE(sheet->HasChanged(dyn));
+  sheet->Unrealize();
+  menu.Destroy();
+}
+
+/**
+ * @test NewuiCoreTest.ScrollableSheetScrollsAndClipsGadgets
+ * @brief Verifies a scrollable sheet scrolls, clamps, and hides out-of-view gadgets.
+ *
+ * @details
+ * A sheet with a small visible area and enough gadgets to overflow it is
+ * realized.  The scroll range must be positive, scrolling must move the
+ * offset (clamped at both ends), and gadgets scrolled out of view must be
+ * flagged UIF_HIDDEN so UIWindow::Render skips them.
+ *
+ * @see Descent3/newuicore.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(NewuiCoreTest, ScrollableSheetScrollsAndClipsGadgets) {
+  newuiCore_Init();
+  newuiMenu menu;
+  menu.Create();
+
+  newuiSheet *sheet = menu.AddOption(10, "Options", 20, true, 0);
+  ASSERT_NE(sheet, nullptr);
+
+  // small visible area so the content overflows.
+  sheet->SetScrollArea(200, 100);
+
+  // add enough sliders to overflow the 100px visible area.
+  sheet->NewGroup("Group", 0, 0);
+  for (int i = 0; i < 10; i++) {
+    char name[32];
+    snprintf(name, sizeof(name), "Item %d", i);
+    sheet->AddSlider(name, 20, 0, nullptr, 100 + i);
+  }
+
+  sheet->Realize();
+
+  EXPECT_TRUE(sheet->IsScrollable());
+  EXPECT_GT(sheet->GetScrollRange(), 0);
+  EXPECT_EQ(sheet->GetScrollY(), 0);
+
+  // scroll down by 50px.
+  sheet->ScrollBy(50);
+  EXPECT_EQ(sheet->GetScrollY(), 50);
+
+  // scrolling past the bottom clamps at the range.
+  sheet->ScrollBy(100000);
+  EXPECT_EQ(sheet->GetScrollY(), sheet->GetScrollRange());
+
+  // a gadget scrolled out of view is hidden so it is not drawn.
+  UIGadget *first = sheet->GetGadget(100);
+  ASSERT_NE(first, nullptr);
+  EXPECT_TRUE((first->GetFlags() & UIF_HIDDEN) != 0);
+
+  // scrolling back to the top clamps at 0 and un-hides the gadget.
+  sheet->ScrollBy(-100000);
+  EXPECT_EQ(sheet->GetScrollY(), 0);
+  EXPECT_FALSE((first->GetFlags() & UIF_HIDDEN) != 0);
+
   sheet->Unrealize();
   menu.Destroy();
 }

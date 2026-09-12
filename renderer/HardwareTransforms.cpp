@@ -18,6 +18,9 @@
 
 #include <cstring>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "3d.h"
 #include "HardwareInternal.h"
 #include "renderer.h"
@@ -25,50 +28,41 @@
 // Whether or not to use T&L transforms or the pass-thru ones
 static int sUseTransformPassthru = -1;
 
-extern float Z_bias;
 void g3_GetModelViewMatrix(const vector *viewPos, const matrix *viewMatrix, float *mvMat) {
   matrix localOrient = (*viewMatrix);
   vector localPos = -((vector)*viewPos);
-  mvMat[0] = localOrient.rvec.x();
-  mvMat[1] = localOrient.uvec.x();
-  mvMat[2] = localOrient.fvec.x();
-  mvMat[3] = 0.0f;
-  mvMat[4] = localOrient.rvec.y();
-  mvMat[5] = localOrient.uvec.y();
-  mvMat[6] = localOrient.fvec.y();
-  mvMat[7] = 0.0f;
-  mvMat[8] = localOrient.rvec.z();
-  mvMat[9] = localOrient.uvec.z();
-  mvMat[10] = localOrient.fvec.z();
-  mvMat[11] = 0.0f;
-  mvMat[12] = vm_Dot3Product(localPos, localOrient.rvec);
-  mvMat[13] = vm_Dot3Product(localPos, localOrient.uvec);
-  mvMat[14] = vm_Dot3Product(localPos, localOrient.fvec) + Z_bias;
-  mvMat[15] = 1.0f;
+
+  // GLM refactor (Phase 1): build the model-view matrix with GLM. The matrix
+  // is stored column-major (OpenGL convention): column 0 holds the x
+  // components of rvec/uvec/fvec, column 1 the y components, column 2 the z
+  // components, and column 3 the translation. glm::value_ptr yields the same
+  // layout as the previous hand-rolled code.
+  glm::mat4 mv = glm::mat4(
+      glm::vec4(localOrient.rvec.x(), localOrient.uvec.x(), localOrient.fvec.x(), 0.0f),
+      glm::vec4(localOrient.rvec.y(), localOrient.uvec.y(), localOrient.fvec.y(), 0.0f),
+      glm::vec4(localOrient.rvec.z(), localOrient.uvec.z(), localOrient.fvec.z(), 0.0f),
+      glm::vec4(vm_Dot3Product(localPos, localOrient.rvec), vm_Dot3Product(localPos, localOrient.uvec),
+                vm_Dot3Product(localPos, localOrient.fvec), 1.0f));
+  memcpy(mvMat, glm::value_ptr(mv), 16 * sizeof(float));
 }
 
 void g3_TransformMult(float res[4][4], float a[4][4], float b[4][4]) {
-  float temp[4][4];
-
-  int x, y;
-  for (y = 0; y < 4; ++y) {
-    for (x = 0; x < 4; ++x) {
-      temp[y][x] = (a[y][0] * b[0][x]) + (a[y][1] * b[1][x]) + (a[y][2] * b[2][x]) + (a[y][3] * b[3][x]);
-    }
-  }
-  memcpy(res, temp, 16 * sizeof(float));
+  // GLM refactor (Phase 1): the matrices are stored column-major (OpenGL
+  // convention). The original hand-rolled loop indexed the arrays as
+  // row-major, which computes b*a in column-major terms, so the GLM product
+  // must be mb * ma to produce byte-identical output.
+  glm::mat4 ma = glm::make_mat4x4(&a[0][0]);
+  glm::mat4 mb = glm::make_mat4x4(&b[0][0]);
+  glm::mat4 mr = mb * ma;
+  memcpy(res, glm::value_ptr(mr), 16 * sizeof(float));
 }
 
 void g3_TransformTrans(float res[4][4], float t[4][4]) {
-  float temp[4][4];
-  int y;
-  for (y = 0; y < 4; ++y) {
-    int x;
-    for (x = 0; x < 4; ++x) {
-      temp[x][y] = t[y][x];
-    }
-  }
-  memcpy(res, temp, 16 * sizeof(float));
+  // GLM refactor (Phase 1): glm::transpose on the column-major matrix yields
+  // the same layout as the previous hand-rolled transpose.
+  glm::mat4 mt = glm::make_mat4x4(&t[0][0]);
+  glm::mat4 mr = glm::transpose(mt);
+  memcpy(res, glm::value_ptr(mr), 16 * sizeof(float));
 }
 
 void g3_UpdateFullTransform() {

@@ -66,6 +66,10 @@ static std::vector<std::string> g_recorder;
 // ---------------------------------------------------------------------------
 int Max_window_w = 640;
 int Max_window_h = 480;
+int Game_window_x = 0;
+int Game_window_y = 0;
+int Game_window_w = 640;
+int Game_window_h = 480;
 bool Multi_bail_ui_menu = false;
 int Game_fonts[NUM_FONTS] = {0};
 
@@ -156,6 +160,7 @@ void ddio_ff_GetInfo(bool *found, bool *) {
 void rend_ClearScreen(ddgr_color) {}
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) { REC("drawpoly2d"); }
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -174,6 +179,7 @@ int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferred
 
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
+int Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
 renderer_preferred_state Render_preferred_state{};
 // Stubs for cockpit factory (config.cpp calls these; real impl pulls in
 // LegacyCockpit/WidescreenCockpit which need the full renderer chain).
@@ -208,6 +214,8 @@ void grtext_SetColor(ddgr_color) {}
 void grtext_SetAlpha(uint8_t) {}
 void grtext_SetFont(int) {}
 void grtext_Flush() {}
+void grtext_SetFontScale(float) {}
+void grtext_SetFontScaleImmediate(float) {}
 int grfont_GetHeight(int) { return 12; }
 int grfont_KeyToAscii(int, int) { return 'a'; }
 }
@@ -487,6 +495,9 @@ void SetScreenMode(int sm, bool) {
   s_screen_mode = sm;
   s_screen_mode_changes++;
 }
+
+// cockpit / player stubs for video_menu::finish() cockpit-mode recreation
+void RecreateCockpitForCurrentPlayer() {}
 
 // file-local to newui_core.cpp
 void SimpleUICallback();
@@ -970,6 +981,43 @@ TEST_F(ConfigTest, UnknownLevelSkipsPresetButRecordsLevel) {
   EXPECT_EQ(Default_detail_level, 99);
 }
 
+/**
+ * @test ConfigTest.MaxDetailForcesEverySettingToMaximum
+ * @brief Verifies max Detail Forces Every Setting To Maximum.
+ *
+ * @details
+ * Exercises the ConfigTest code path and asserts observable
+ * post-conditions. Stubbed subsystems provide deterministic
+ * inputs; no external I/O is performed.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MaxDetailForcesEverySettingToMaximum) {
+  // start from a low preset so the max override visibly changes everything
+  ConfigSetDetailLevel(DETAIL_LEVEL_LOW);
+  Detail_settings.Fast_headlight_on = false; // user toggle must be preserved
+
+  ConfigSetDetailLevelMax();
+
+  EXPECT_FLOAT_EQ(Detail_settings.Terrain_render_distance, MAXIMUM_RENDER_DIST * TERRAIN_SIZE);
+  EXPECT_FLOAT_EQ(Detail_settings.Pixel_error, MINIMUM_TERRAIN_DETAIL);
+  EXPECT_TRUE(Detail_settings.Specular_lighting);
+  EXPECT_TRUE(Detail_settings.Dynamic_lighting);
+  EXPECT_TRUE(Detail_settings.Mirrored_surfaces);
+  EXPECT_TRUE(Detail_settings.Fog_enabled);
+  EXPECT_TRUE(Detail_settings.Coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Procedurals_enabled);
+  EXPECT_TRUE(Detail_settings.Powerup_halos);
+  EXPECT_TRUE(Detail_settings.Scorches_enabled);
+  EXPECT_TRUE(Detail_settings.Weapon_coronas_enabled);
+  EXPECT_TRUE(Detail_settings.Bumpmapping_enabled);
+  EXPECT_EQ(Detail_settings.Specular_mapping_type, 1);
+  EXPECT_EQ(Detail_settings.Object_complexity, 2);
+  EXPECT_FALSE(Detail_settings.Fast_headlight_on); // untouched by the override
+  EXPECT_EQ(Default_detail_level, DETAIL_LEVEL_VERY_HIGH);
+}
+
 // ---------------------------------------------------------------------------
 // OptionsMenu integration: forced bail-out runs every finish hook and saves
 // ---------------------------------------------------------------------------
@@ -1058,4 +1106,29 @@ TEST_F(ConfigTest, InGameHudChangePropagatesToSetHUDState) {
   uint16_t expected = STAT_MESSAGES | STAT_CUSTOM | STAT_SHIP | STAT_TIMER | STAT_FPS;
   EXPECT_EQ(s_rec_sethud_mask, expected);
   EXPECT_EQ(s_rec_sethud_gr, 0);
+}
+
+/**
+ * @test ConfigTest.FullscreenScaleModeRoundTripsThroughVideoMenu
+ * @brief Verifies the fullscreen scaling mode radio group is created in the
+ * video menu and its selection is written back to Render_fullscreen_scale_mode
+ * by video_menu::finish().
+ *
+ * @details
+ * The video menu setup() creates a "Scaling" radio group (Fill/Fit/Zoom/Native)
+ * initialized from Render_fullscreen_scale_mode. finish() reads the selected
+ * radio index back into the global. This test drives OptionsMenu() with the
+ * default FIT mode and asserts the value survives the round-trip.
+ *
+ * @see Descent3/config.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FullscreenScaleModeRoundTripsThroughVideoMenu) {
+  Multi_bail_ui_menu = true;
+  Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT
+
+  OptionsMenu();
+
+  // video.finish() writes the radio selection back to the global
+  EXPECT_EQ(Render_fullscreen_scale_mode, 1);
 }

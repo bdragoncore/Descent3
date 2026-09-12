@@ -99,13 +99,13 @@ static int Viewer_roomnum;
 void ResetPostrenderList() { Num_postrenders = 0; }
 
 // Compare function for room face sort
-static int Postrender_sort_func(const postrender_struct &a, const postrender_struct &b) {
-  if (a.z < b.z)
-    return -1;
-  else if (a.z > b.z)
-    return 1;
-  else
-    return 0;
+// BUGFIX: Postrender_sort_func returned int (-1/0/1), a C-style comparator.
+// std::sort requires a strict weak ordering returning bool; the int return
+// was converted to bool where both -1 and 1 are true, making the ordering
+// inconsistent. This caused std::sort to write out of bounds, corrupting the
+// adjacent Num_postrenders global and crashing PostRender with SIGSEGV.
+static bool Postrender_sort_func(const postrender_struct &a, const postrender_struct &b) {
+  return a.z < b.z;
 }
 
 // BUGFIX (PiccuEngine #21): Replace hand-rolled quicksort with std::sort.

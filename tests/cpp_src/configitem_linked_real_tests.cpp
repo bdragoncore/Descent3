@@ -111,6 +111,9 @@ void mem_free_sub(void *p){free(p);}
 char *mem_strdup_sub(const char *s,const char*,int){return strdup(s);}
 
 // input stubs
+// Stub for the renderer's global window pointer referenced by ddio/lnxmouse.cpp.
+struct SDL_Window;
+SDL_Window *GSDLWindow = nullptr;
 int ddio_GetAdjKeyState(int){return 0;}
 void ddio_KeyFlush(){}
 int ddio_KeyInKey(){return 0;}
@@ -124,6 +127,12 @@ void ddio_ff_GetInfo(bool *found,bool*){if(found)*found=false;}
 void rend_ClearScreen(ddgr_color){}
 void rend_Flip(){ if(s_defer_force_exit) UI_frame_result=s_defer_escape; }
 void rend_DrawChunkedBitmap(chunked_bitmap*,int,int,uint8_t){}
+// BUGFIX #685: DrawLargeBitmap now scales the art to the window; record the
+// requested size so tests can verify the scaling behavior.
+static int s_scaled_bm_neww = 0, s_scaled_bm_newh = 0;
+void rend_DrawScaledChunkedBitmap(chunked_bitmap*,int,int,int neww,int newh,uint8_t){
+  s_scaled_bm_neww = neww; s_scaled_bm_newh = newh;
+}
 void rend_DrawLine(int,int,int,int){}
 void rend_DrawPolygon2D(int,g3Point**,int){REC("drawpoly2d");}
 void rend_DrawScaledBitmap(int,int,int,int,int,float,float,float,float,int,const float*){}
@@ -165,6 +174,8 @@ void grtext_SetColor(ddgr_color){}
 void grtext_SetAlpha(uint8_t){}
 void grtext_SetFont(int){}
 void grtext_Flush(){}
+void grtext_SetFontScale(float){}
+void grtext_SetFontScaleImmediate(float){}
 int grfont_GetHeight(int){return 12;}
 int grfont_KeyToAscii(int,int){return 'a';}
 }
@@ -493,4 +504,35 @@ TEST_F(ConfigItemLinked, ConfigItemDefaultCtorMultiple) {
     (void)ci;
   }
   EXPECT_TRUE(true);
+}
+
+/**
+ * @test ConfigItemLinked.DrawLargeBitmapScalesToWindow
+ * @brief Verifies DrawLargeBitmap scales the art to the window size.
+ *
+ * @details
+ * BUGFIX #685: the full-screen menu art (640x480) must be stretched to
+ * fill the current window instead of being drawn at native size, which
+ * left it as a small image in the corner on high resolutions.
+ *
+ * @see Descent3/newui.cpp
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigItemLinked, DrawLargeBitmapScalesToWindow) {
+  Max_window_w = 3440;
+  Max_window_h = 1440;
+  s_scaled_bm_neww = 0;
+  s_scaled_bm_newh = 0;
+
+  tLargeBitmap bmp{};
+  bmp.bmps_w = 1;
+  bmp.bmps_h = 1;
+  bmp.pw = 640;
+  bmp.ph = 480;
+  bmp.bm_array = nullptr;
+
+  DrawLargeBitmap(&bmp, 0, 0, 1.0f);
+
+  EXPECT_EQ(s_scaled_bm_neww, 3440);
+  EXPECT_EQ(s_scaled_bm_newh, 1440);
 }

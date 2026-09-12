@@ -185,6 +185,7 @@ void rend_SetFlatColor(ddgr_color col) {
 
 void rend_SetAlphaValue(ubyte val) { (void)val; }
 void rend_SetFiltering(sbyte state) { (void)state; }
+void rend_SetSharpening(float strength) { (void)strength; }
 void rend_SetZBufferState(sbyte state) { 
 #ifdef __linux__
     if (state) glEnable(GL_DEPTH_TEST);

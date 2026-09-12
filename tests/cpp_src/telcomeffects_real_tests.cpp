@@ -34,14 +34,24 @@
 #include "TelComEffects.h"
 #include "mem.h"
 #include "TelCom.h"
+#include "telcomui.h"
 
 int glitch_dx = 0, glitch_dy = 0; // normally in TelcomEffectsRender.cpp
+
+// BUGFIX #685: TelCom art->window scaling (normally in TelCom.cpp); the tests
+// use the 640x480 reference resolution so coordinates pass through unchanged.
+int Max_window_w = FIXED_SCREEN_WIDTH, Max_window_h = FIXED_SCREEN_HEIGHT;
+int TelcomScaleX(int x) { return TelcomScaledX(x, Max_window_w); }
+int TelcomScaleY(int y) { return TelcomScaledY(y, Max_window_h); }
+int TelcomUnscaleX(int x) { return TelcomUnscaledX(x, Max_window_w); }
+int TelcomUnscaleY(int y) { return TelcomUnscaledY(y, Max_window_h); }
 
 // ---- backend stubs ----
 void bm_FreeBitmap(int) {}
 void bm_DestroyChunkedBitmap(chunked_bitmap *) {}
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, int) {}
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, unsigned char) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, unsigned char) {}
 
 // per-type renderers live in TelcomEffectsRender.cpp
 #define STUB_RENDER(name) void name(tceffect *, float, int, int, bool) {}

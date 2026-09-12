@@ -35,6 +35,10 @@ void InitCockpit(int ship_index);
 // Forces freeing of cockpit information
 void FreeCockpit();
 
+// BUGFIX #685: re-initializes and opens the active cockpit for the current
+// player after CreateCockpit() swaps the implementation.
+void RecreateCockpitForCurrentPlayer();
+
 // check if cockpit exists
 bool IsValidCockpit();
 

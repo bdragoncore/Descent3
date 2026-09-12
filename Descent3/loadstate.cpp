@@ -1386,6 +1386,12 @@ int LGSObjects(CFILE *fp, int version) {
         gs_ReadVector(fp, li->pos);
         break;
       }
+      case MT_NONE:
+      case MT_WALKING:
+      case MT_AT_REST: {
+        // No union data in the save file for these types.
+        break;
+      }
       default: {
         // Unknown movement type -- skip and zero out
         Int3();
@@ -1459,6 +1465,17 @@ int LGSObjects(CFILE *fp, int version) {
         soundsource_info_s *ssi = &op->ctype.soundsource_info;
         gs_ReadInt(fp, ssi->sound_index);
         gs_ReadFloat(fp, ssi->volume);
+        break;
+      }
+      case CT_NONE:
+      case CT_FLYING:
+      case CT_SLEW:
+      case CT_FLYTHROUGH:
+      case CT_SOAR:
+      case CT_PARTICLE:
+      case CT_DYING:
+      case CT_DYING_AND_AI: {
+        // No union data in the save file for these types.
         break;
       }
       default: {

@@ -18,50 +18,98 @@
 
 #include <cstring>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "3d.h"
 #include "HardwareInternal.h"
 #include "pserror.h"
 
-struct InstanceContext {
-  matrix m_viewMatrix;     // matrix
-  matrix m_unscaledMatrix; // unscaled matrix
-  vector m_viewPosition;   // position
-  float m_modelView[4][4]; // model/view transform
-};
-
 #define MAX_INSTANCE_DEPTH 30
-static InstanceContext sInstanceStack[MAX_INSTANCE_DEPTH];
+static glm::mat4 sInstanceModelStack[MAX_INSTANCE_DEPTH];
+static matrix sInstanceOrientCache[MAX_INSTANCE_DEPTH];
+static vector sInstancePosCache[MAX_INSTANCE_DEPTH];
 static int sInstanceDepth = 0;
+
+// Returns the composed instance model matrix (identity when no instance is active).
+static const glm::mat4 &GetInstanceModelMatrix() {
+  static const glm::mat4 identity(1.0f);
+  if (sInstanceDepth == 0) {
+    return identity;
+  }
+  return sInstanceModelStack[sInstanceDepth - 1];
+}
+
+// Returns the composed instance transform. The GPU model matrix maps a local
+// point src to src.x*rvec + src.y*uvec + src.z*fvec + pos, which in the
+// Descent3 v*M operator convention is world = src * orient + pos with the
+// returned orient (equivalently src * ~input_orient + pos, the classic g3
+// formula, since the cached orient is the transpose of the input orient).
+// When no instance is active, orient is identity and pos is zero. The
+// decomposed form is cached at push time to avoid decomposing the 4x4 model
+// matrix per-vertex in g3_RotatePoint and g3_CheckNormalFacing.
+void g3_GetInstanceTransform(matrix *orient, vector *pos) {
+  if (sInstanceDepth == 0) {
+    static const matrix identity = [] {
+      matrix m;
+      vm_MakeIdentity(&m);
+      return m;
+    }();
+    *orient = identity;
+    *pos = vector{0, 0, 0};
+    return;
+  }
+  *orient = sInstanceOrientCache[sInstanceDepth - 1];
+  *pos = sInstancePosCache[sInstanceDepth - 1];
+}
+
+// Recomputes gTransformModelView as view * model (the composed instance model
+// matrix, identity when no instance is active). Shared by g3_StartInstanceMatrix,
+// g3_DoneInstance and rend_SetZBias so the model transform is never lost.
+void g3_UpdateModelViewMatrix() {
+  float view[4][4];
+  g3_GetModelViewMatrix(&View_position, &Unscaled_matrix, (float *)view);
+  glm::mat4 mv = glm::make_mat4x4(&view[0][0]) * GetInstanceModelMatrix();
+  memcpy(gTransformModelView, glm::value_ptr(mv), sizeof(gTransformModelView));
+  g3_UpdateFullTransform();
+}
 
 // instance at specified point with specified orientation
 void g3_StartInstanceMatrix(vector *pos, matrix *orient) {
   ASSERT(orient != NULL);
   ASSERT(sInstanceDepth < MAX_INSTANCE_DEPTH);
 
-  sInstanceStack[sInstanceDepth].m_viewMatrix = View_matrix;
-  sInstanceStack[sInstanceDepth].m_viewPosition = View_position;
-  sInstanceStack[sInstanceDepth].m_unscaledMatrix = Unscaled_matrix;
-  memcpy(sInstanceStack[sInstanceDepth].m_modelView, gTransformModelView, sizeof(gTransformModelView));
+  // BUGFIX (g3 replacement, Phase 3): the old code re-based the global
+  // View_position/View_matrix/Unscaled_matrix so the CPU g3 functions would
+  // work on object-space vertices. That trick is removed: the globals now
+  // always hold the true view state, and the composed model matrix is pushed
+  // on a GLM stack. Consumers (g3_RotatePoint, g3_CheckNormalFacing,
+  // g3_GetViewPosition, g3_GetUnscaledMatrix) apply the model transform via
+  // g3_GetInstanceTransform, and g3_UpdateModelViewMatrix keeps the GPU
+  // model-view uniform equal to view * model.
+  glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(pos->x(), pos->y(), pos->z())) *
+                    glm::mat4(glm::vec4(orient->rvec.x(), orient->rvec.y(), orient->rvec.z(), 0.0f),
+                              glm::vec4(orient->uvec.x(), orient->uvec.y(), orient->uvec.z(), 0.0f),
+                              glm::vec4(orient->fvec.x(), orient->fvec.y(), orient->fvec.z(), 0.0f),
+                              glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+  if (sInstanceDepth > 0) {
+    model = sInstanceModelStack[sInstanceDepth - 1] * model;
+  }
+  sInstanceModelStack[sInstanceDepth] = model;
+
+  // Pre-compute and cache the decomposed orient/pos so g3_GetInstanceTransform
+  // can return them without decomposing the 4x4 matrix per-vertex.
+  sInstanceOrientCache[sInstanceDepth].rvec = vector{model[0][0], model[1][0], model[2][0]};
+  sInstanceOrientCache[sInstanceDepth].uvec = vector{model[0][1], model[1][1], model[2][1]};
+  sInstanceOrientCache[sInstanceDepth].fvec = vector{model[0][2], model[1][2], model[2][2]};
+  sInstancePosCache[sInstanceDepth].x() = model[3][0];
+  sInstancePosCache[sInstanceDepth].y() = model[3][1];
+  sInstancePosCache[sInstanceDepth].z() = model[3][2];
+
   ++sInstanceDepth;
 
-  // step 1: subtract object position from view position
-  vector tempv = View_position - *pos;
-
-  // step 2: rotate view vector through object matrix
-  View_position = tempv * *orient;
-
-  // step 3: rotate object matrix through view_matrix (vm = ob * vm)
-  matrix tempm, tempm2 = ~*orient;
-
-  tempm = tempm2 * View_matrix;
-  View_matrix = tempm;
-
-  tempm = tempm2 * Unscaled_matrix;
-  Unscaled_matrix = tempm;
-
-  // transform the model/view matrix
-  g3_GetModelViewMatrix(&View_position, &Unscaled_matrix, (float *)gTransformModelView);
-  g3_UpdateFullTransform();
+  g3_UpdateModelViewMatrix();
 }
 
 // instance at specified point with specified orientation
@@ -84,9 +132,5 @@ void g3_DoneInstance() {
   --sInstanceDepth;
   ASSERT(sInstanceDepth >= 0);
 
-  View_position = sInstanceStack[sInstanceDepth].m_viewPosition;
-  View_matrix = sInstanceStack[sInstanceDepth].m_viewMatrix;
-  Unscaled_matrix = sInstanceStack[sInstanceDepth].m_unscaledMatrix;
-  memcpy(gTransformModelView, sInstanceStack[sInstanceDepth].m_modelView, sizeof(gTransformModelView));
-  g3_UpdateFullTransform();
+  g3_UpdateModelViewMatrix();
 }

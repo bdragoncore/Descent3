@@ -19,9 +19,12 @@
 #include <cstring>
 
 #include "UIlib.h"
+#include "3d.h"
+#include "bitmap.h"
 #include "grtext.h"
 #include "mem.h"
 #include "pserror.h"
+#include "renderer.h"
 #include "uisys.h"
 
 //@@void *UIItem::operator new(size_t mem, UIItem *item, tUIResClass class_type)
@@ -97,6 +100,11 @@ bool UITextItem::draw(int x, int y, tUIDrawClass draw_class) {
   int i;
 
   ui_DrawSetFont(m_Font);
+  // BUGFIX #2: apply the newui font scale so options menu text is readable
+  // on high-resolution displays.  grtext_Flush resets Grtext_scale to 1.0
+  // after each draw, so we must re-apply it before every draw call.
+  extern float Newui_ui_scale;
+  grtext_SetFontScale(Newui_ui_scale);
   ui_SetCharAlpha(m_Alpha);
 
   if (draw_class == uiDrawAlphaSaturate) {
@@ -124,11 +132,17 @@ bool UITextItem::draw(int x, int y, tUIDrawClass draw_class) {
 
 int UITextItem::width() {
   ui_DrawSetFont(m_Font);
+  // BUGFIX #2: use the immediate setter so stale SCALE commands don't
+  // pollute the grtext render buffer.
+  extern float Newui_ui_scale;
+  grtext_SetFontScaleImmediate(Newui_ui_scale);
   return (m_Text ? ui_GetTextWidth(m_Text) : 0);
 }
 
 int UITextItem::height() {
   ui_DrawSetFont(m_Font);
+  extern float Newui_ui_scale;
+  grtext_SetFontScaleImmediate(Newui_ui_scale);
   return (m_Text ? ui_GetTextHeight(m_Text) : 0);
 }
 
@@ -284,6 +298,29 @@ const UISnazzyTextItem &UISnazzyTextItem::operator=(const UISnazzyTextItem &item
 //	Inheritable functions
 bool UIBitmapItem::draw(int x, int y, tUIDrawClass draw_class) {
   ui_DrawBitmap(this, x, y, m_Alpha);
+  return true;
+}
+
+// BUGFIX #2: draw bitmap scaled to the given (w, h) target size.
+// The base class draw(x, y, w, h) ignores w/h; we override it here so that
+// button/checkbox/radio backgrounds scale with the newui font scale.
+bool UIBitmapItem::draw(int x, int y, int w, int h) {
+  if (!m_IsValid)
+    return false;
+
+  if (m_IsChunked) {
+    chunked_bitmap *chunk = m_Bitmap.chunk;
+    rend_DrawScaledChunkedBitmap(chunk, x, y, w, h, m_Alpha);
+  } else {
+    rend_SetOverlayType(OT_NONE);
+    rend_SetLighting(LS_NONE);
+    rend_SetColorModel(CM_MONO);
+    rend_SetZBufferState(0);
+    rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+    rend_SetAlphaValue(m_Alpha);
+    rend_SetWrapType(WT_CLAMP);
+    rend_DrawScaledBitmap(x, y, x + w, y + h, m_Bitmap.handle, 0, 0, 1.0f, 1.0f);
+  }
   return true;
 }
 

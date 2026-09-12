@@ -42,6 +42,9 @@
 constexpr int MMITEM_ALPHA = 192;
 constexpr int MMITEM_SAT = 0;
 constexpr int MMITEM_Y = 175;
+constexpr int MMITEM_SPACING = 20;
+constexpr int FIXED_SCREEN_HEIGHT = 480;
+constexpr int FIXED_SCREEN_WIDTH = 640;
 constexpr int N_MMENU_ITEMS = 10;
 constexpr int N_MM_SOUNDS = 2;
 constexpr int MM_SELECT_SOUND = 0, MM_FOCUS_SOUND = 1;
@@ -307,7 +310,21 @@ static int FlagsForType(int type) {
          : (type == 3) ? (UIF_GROUP_START + UIF_GROUP_END)
                        : 0;
 }
-static int ItemY(int index) { return MMITEM_Y + index * 20; }
+// BUGFIX #1: menu item Y positions scale with the window height so the
+// items stay aligned with the stretched full-screen menu art.
+static int ItemY(int index, int window_h) {
+  return (MMITEM_Y * window_h / FIXED_SCREEN_HEIGHT) +
+         index * (MMITEM_SPACING * window_h / FIXED_SCREEN_HEIGHT);
+}
+
+// BUGFIX #1: menu font scale factor (mmItem.h MMITEM_FONT_SCALE).
+static float FontScale(int window_h) { return (float)window_h / (float)FIXED_SCREEN_HEIGHT; }
+
+// BUGFIX #1: copyright text position scales with the window size
+// (mmItem.cpp CopyrightText).
+static int CopyrightX(int window_w) { return window_w - (164 * window_w / FIXED_SCREEN_WIDTH); }
+static int CopyrightY(int window_h) { return window_h - (29 * window_h / FIXED_SCREEN_HEIGHT); }
+
 
 /**
  * @test MMItem.AddItemTypeFlags
@@ -342,9 +359,59 @@ TEST(MMItem, AddItemTypeFlags) {
  * @ingroup descent3_tests
  */
 TEST(MMItem, AddItemStackingY) {
-  EXPECT_EQ(ItemY(0), 175);
-  EXPECT_EQ(ItemY(1), 195);
-  EXPECT_EQ(ItemY(N_MMENU_ITEMS - 1), 175 + 9 * 20);
+  // 640x480 reference resolution: positions match the original design.
+  EXPECT_EQ(ItemY(0, 480), 175);
+  EXPECT_EQ(ItemY(1, 480), 195);
+  EXPECT_EQ(ItemY(N_MMENU_ITEMS - 1, 480), 175 + 9 * 20);
+  // BUGFIX #1: at 1440p the Y positions scale by 1440/480 = 3x so the
+  // items stay aligned with the stretched menu art.
+  EXPECT_EQ(ItemY(0, 1440), 175 * 3);
+  EXPECT_EQ(ItemY(1, 1440), 175 * 3 + 20 * 3);
+  EXPECT_EQ(ItemY(N_MMENU_ITEMS - 1, 1440), 175 * 3 + 9 * 20 * 3);
+}
+
+/**
+ * @test MMItem.FontScaleScalesWithHeight
+ * @brief Verifies the menu font scale factor grows with window height.
+ *
+ * @details
+ * BUGFIX #1: the menu font is scaled by window_h / FIXED_SCREEN_HEIGHT so
+ * text stays proportionally sized on high-resolution displays. At the
+ * reference 640x480 resolution the scale is 1.0 (no change).
+ *
+ * @see Descent3/mmItem.h
+ * @ingroup descent3_tests
+ */
+TEST(MMItem, FontScaleScalesWithHeight) {
+  EXPECT_FLOAT_EQ(FontScale(480), 1.0f);
+  EXPECT_FLOAT_EQ(FontScale(800), 800.0f / 480.0f);
+  EXPECT_FLOAT_EQ(FontScale(1080), 1080.0f / 480.0f);
+  EXPECT_FLOAT_EQ(FontScale(1440), 3.0f);
+}
+
+/**
+ * @test MMItem.CopyrightPositionScalesWithWindow
+ * @brief Verifies the copyright text position scales with the window size.
+ *
+ * @details
+ * BUGFIX #1: the copyright text used hardcoded pixel offsets from the
+ * bottom-right corner. It now scales proportionally so it stays aligned
+ * with the menu on high-resolution displays.
+ *
+ * @see Descent3/mmItem.cpp
+ * @ingroup descent3_tests
+ */
+TEST(MMItem, CopyrightPositionScalesWithWindow) {
+  // 640x480 reference resolution: matches the original design offsets.
+  EXPECT_EQ(CopyrightX(640), 640 - 164);
+  EXPECT_EQ(CopyrightY(480), 480 - 29);
+  // 1280x800: offsets scale by 2x horizontally and 800/480 vertically.
+  EXPECT_EQ(CopyrightX(1280), 1280 - 328);
+  EXPECT_EQ(CopyrightY(800), 800 - 48);
+  // 1920x1080: offsets scale by 3x horizontally and 2.25x vertically.
+  EXPECT_EQ(CopyrightX(1920), 1920 - 492);
+  EXPECT_EQ(CopyrightY(1080), 1080 - 65);
+
 }
 
 // replicated CopyrightText type string (mmItem.cpp:418-452)

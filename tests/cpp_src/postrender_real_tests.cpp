@@ -48,23 +48,15 @@ postrender_struct Postrender_list[MAX_POSTRENDERS];
 
 // Replicate from postrender.cpp
 void ResetPostrenderList() { Num_postrenders = 0; }
-static int Postrender_sort_func(const postrender_struct *a, const postrender_struct *b) {
-  if (a->z < b->z) return -1;
-  else if (a->z > b->z) return 1;
-  else return 0;
+// BUGFIX: the comparator must return bool (strict weak ordering) for
+// std::sort. The old int (-1/0/1) return was converted to bool where both
+// -1 and 1 are true, making the ordering inconsistent and causing std::sort
+// to write out of bounds (corrupting the adjacent Num_postrenders global).
+static bool Postrender_sort_func(const postrender_struct &a, const postrender_struct &b) {
+  return a.z < b.z;
 }
-#define STATE_PUSH(val) { state_stack[state_stack_counter]=val; state_stack_counter++; }
-#define STATE_POP() { state_stack_counter--; pop_val = state_stack[state_stack_counter]; }
 void SortPostrenders() {
-  postrender_struct v,t; int pop_val; int i,j,l,r; l=0; r=Num_postrenders-1;
-  uint16_t state_stack_counter=0; uint16_t state_stack[MAX_POSTRENDERS];
-  while(1){ while(r>l){ i=l-1; j=r; v=Postrender_list[r];
-    while(1){ while(Postrender_list[++i].z < v.z); while(j>0 && Postrender_list[--j].z > v.z);
-      if(i>=j) break; t=Postrender_list[i]; Postrender_list[i]=Postrender_list[j]; Postrender_list[j]=t;
-    }
-    t=Postrender_list[i]; Postrender_list[i]=Postrender_list[r]; Postrender_list[r]=t;
-    if(i-l > r-i){ STATE_PUSH(l); STATE_PUSH(i-1); l=i+1; } else { STATE_PUSH(i+1); STATE_PUSH(r); r=i-1; }
-  } if(!state_stack_counter) break; STATE_POP(); r=pop_val; STATE_POP(); l=pop_val; }
+  std::sort(Postrender_list, Postrender_list + Num_postrenders, Postrender_sort_func);
 }
 
 /**
@@ -99,9 +91,10 @@ TEST(Postrender, Reset) {
  */
 TEST(Postrender, SortFuncComparator) {
   postrender_struct a{PRT_OBJECT,0,0,1.0f}, b{PRT_OBJECT,0,0,2.0f}, c{PRT_OBJECT,0,0,1.0f};
-  EXPECT_EQ(Postrender_sort_func(&a,&b), -1);
-  EXPECT_EQ(Postrender_sort_func(&b,&a), 1);
-  EXPECT_EQ(Postrender_sort_func(&a,&c), 0);
+  EXPECT_TRUE(Postrender_sort_func(a,b));
+  EXPECT_FALSE(Postrender_sort_func(b,a));
+  EXPECT_FALSE(Postrender_sort_func(a,c));
+  EXPECT_FALSE(Postrender_sort_func(c,a));
 }
 
 /**
@@ -181,4 +174,36 @@ TEST(Postrender, SortReverse) {
   for(int i=0;i<4;i++) Postrender_list[i].z=4-i;
   SortPostrenders();
   for(int i=0;i<4;i++) EXPECT_FLOAT_EQ(Postrender_list[i].z, i+1);
+}
+
+/**
+ * @test Postrender.SortStdSortStaysInBounds
+ * @brief Verifies std::sort with the bool comparator never writes out of
+ * bounds, which the old int (-1/0/1) comparator caused.
+ *
+ * @details
+ * BUGFIX: Postrender_sort_func returned int (-1/0/1), a C-style comparator.
+ * std::sort requires a strict weak ordering returning bool; the int return
+ * was converted to bool where both -1 and 1 are true, making the ordering
+ * inconsistent. This caused std::sort to write out of bounds, corrupting the
+ * adjacent Num_postrenders global and crashing PostRender with SIGSEGV.
+ *
+ * This test fills the list with a large, unsorted set and verifies the sort
+ * produces a correct ascending order while leaving Num_postrenders intact.
+ *
+ * @see Descent3/postrender.cpp
+ * @ingroup descent3_tests
+ */
+TEST(Postrender, SortStdSortStaysInBounds) {
+  Num_postrenders = 1000;
+  for (int i = 0; i < Num_postrenders; i++) {
+    Postrender_list[i].z = (float)((i * 37) % 1000);
+    Postrender_list[i].type = PRT_OBJECT;
+  }
+  int before = Num_postrenders;
+  SortPostrenders();
+  EXPECT_EQ(Num_postrenders, before);
+  for (int i = 1; i < Num_postrenders; i++) {
+    EXPECT_LE(Postrender_list[i - 1].z, Postrender_list[i].z);
+  }
 }

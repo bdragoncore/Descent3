@@ -238,7 +238,7 @@ public:
 
   //	if returns false, then it didn't draw.
   virtual bool draw(int x, int y, tUIDrawClass draw_class = uiDrawNormal);
-  virtual bool draw(int x, int y, int w, int h) { return draw(x, y); };
+  virtual bool draw(int x, int y, int w, int h);
   virtual int width();
   virtual int height();
   virtual tUIResClass class_type() const { return uiBitmapItem; };

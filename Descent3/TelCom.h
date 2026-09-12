@@ -152,6 +152,13 @@ extern hotspotmap_t hotspotmap;
 extern windowmap_t windowmap;
 extern bool TelCom_running; // Used within TelComMain(), when POWER button is pressed become false
 
+// BUGFIX #685: convert TelCom art-space coordinates (640x480 layout) to and
+// from the current window at the draw and input boundaries. See telcomui.h.
+int TelcomScaleX(int x);
+int TelcomScaleY(int y);
+int TelcomUnscaleX(int x);
+int TelcomUnscaleY(int y);
+
 // structure for a bounding box (used when getting a hotspot bounding box)
 struct box {
   int top, bottom, left, right;
