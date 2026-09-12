@@ -195,6 +195,7 @@ DYNAEXTERN(glFramebufferRenderbuffer);
 DYNAEXTERN(glGenFramebuffers);
 DYNAEXTERN(glGenRenderbuffers);
 DYNAEXTERN(glRenderbufferStorage);
+DYNAEXTERN(glRenderbufferStorageMultisample);
 
 DYNAEXTERN(glActiveTexture);
 DYNAEXTERN(glMultiTexCoord4f);

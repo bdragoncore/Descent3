@@ -617,6 +617,7 @@ void ConfigSetDetailLevelMax() {
 #define IDV_GAMMAAPPLY 5
 #define IDV_AUTOGAMMA 6
 #define IDV_CHANGE_RES_WINDOW 10
+#define IDV_MSAA_CYCLE 11
 #define UID_RESOLUTION 110
 
 static void gamma_callback(newuiTiledWindow *wnd, void *data) {
@@ -787,6 +788,34 @@ static void config_gamma() {
 //////////////////////////////////////////////////////////////////
 // VIDEO MENU
 //
+// MSAA sample count -> display label. 0 = off.
+const char *MsaaLabel(uint8_t samples) {
+  switch (samples) {
+  case 2:
+    return "2x";
+  case 4:
+    return "4x";
+  case 8:
+    return "8x";
+  default:
+    return "Off";
+  }
+}
+
+// Next MSAA level in the Off -> 2x -> 4x -> 8x cycle.
+uint8_t MsaaNext(uint8_t samples) {
+  switch (samples) {
+  case 0:
+    return 2;
+  case 2:
+    return 4;
+  case 4:
+    return 8;
+  default:
+    return 0;
+  }
+}
+
 struct video_menu {
   newuiSheet *sheet;
 
@@ -800,6 +829,9 @@ struct video_menu {
   char *resolution_string = nullptr;
   short *fov = nullptr;
   bool resolution_changed = false;
+  // MSAA toggle: cycles Off -> 2x -> 4x -> 8x. Stored as sample count.
+  uint8_t msaa_samples = 0;
+  char *msaa_string = nullptr;
 
   int *bitdepth = nullptr; // bitdepths
 
@@ -864,6 +896,21 @@ struct video_menu {
     sheet->AddRadioButton("Native");
     *scale_mode = Render_fullscreen_scale_mode;
     cy += radio_h * 3;
+
+    // MSAA: toggle button cycling Off -> 2x -> 4x -> 8x. Takes effect on
+    // menu close (FBOs are recreated via SetScreenMode force).
+    msaa_samples = Render_preferred_state.msaa_samples;
+    sheet->NewGroup("MSAA", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      msaa_string = sheet->AddChangeableText(alloc_size);
+      snprintf(msaa_string, alloc_size, "%s", MsaaLabel(msaa_samples));
+    }
+    cy += font_h;
+    sheet->AddLongButton("Change", IDV_MSAA_CYCLE);
+    cy += lbtn_h;
+    cy += group_pad;
 
     // FOV setting 72deg -> 90deg (flows after Cockpit, no NewGroup)
     tSliderSettings settings = {};
@@ -934,9 +981,10 @@ struct video_menu {
 #endif
 
     if (*fullscreen != Game_fullscreen || Render_preferred_state.bit_depth != Render_preferred_bitdepth ||
-        resolution_changed) {
+        resolution_changed || Render_preferred_state.msaa_samples != msaa_samples) {
       resolution_changed = false;
       Game_fullscreen = *fullscreen;
+      Render_preferred_state.msaa_samples = msaa_samples;
       SetScreenMode(GetScreenMode(), true);
       Render_preferred_state.bit_depth = Render_preferred_bitdepth;
       rend_SetPreferredState(&Render_preferred_state, true);
@@ -1023,6 +1071,13 @@ struct video_menu {
 
       menu.Close();
       menu.Destroy();
+      break;
+    }
+    case IDV_MSAA_CYCLE: {
+      // Cycle MSAA Off -> 2x -> 4x -> 8x and refresh the label.
+      // Applied in finish() via SetScreenMode force (FBO recreate).
+      msaa_samples = MsaaNext(msaa_samples);
+      snprintf(msaa_string, 15, "%s", MsaaLabel(msaa_samples));
       break;
     }
     case IDV_AUTOGAMMA:

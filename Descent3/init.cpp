@@ -1172,6 +1172,7 @@ void SaveGameSettings() {
   Database->write("RS_fullscreen", static_cast<int>(Game_fullscreen));
   Database->write("RS_cockpit_mode", GetCockpitMode());
   Database->write("RS_fullscreen_scale_mode", Render_fullscreen_scale_mode);
+  Database->write("RS_msaa", Render_preferred_state.msaa_samples);
 
   Database->write("RS_bitdepth", Render_preferred_bitdepth);
   Database->write("RS_bilear", Render_preferred_state.filtering);
@@ -1236,6 +1237,7 @@ void LoadGameSettings() {
   Detail_settings.Weapon_coronas_enabled = true;
   Render_preferred_state.mipping = true;
   Render_preferred_state.filtering = true;
+  Render_preferred_state.msaa_samples = 0; // MSAA off by default
   Render_preferred_state.bit_depth = 16;
   Render_preferred_bitdepth = 16;
   Default_player_terrain_leveling = 2;
@@ -1335,6 +1337,12 @@ void LoadGameSettings() {
   tempval = FULLSCREEN_SCALE_FIT;
   Database->read_int("RS_fullscreen_scale_mode", &tempval);
   Render_fullscreen_scale_mode = std::clamp(tempval, static_cast<int>(FULLSCREEN_SCALE_FILL), static_cast<int>(FULLSCREEN_SCALE_NATIVE));
+
+  tempval = 0;
+  Database->read_int("RS_msaa", &tempval);
+  // Sanitize to supported levels; anything else means off.
+  Render_preferred_state.msaa_samples =
+      (tempval == 2 || tempval == 4 || tempval == 8) ? static_cast<uint8_t>(tempval) : 0;
 
   Database->read_int("RS_bilear", &Render_preferred_state.filtering);
   Database->read_int("RS_mipping", &Render_preferred_state.mipping);

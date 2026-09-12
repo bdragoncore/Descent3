@@ -1132,3 +1132,34 @@ TEST_F(ConfigTest, FullscreenScaleModeRoundTripsThroughVideoMenu) {
   // video.finish() writes the radio selection back to the global
   EXPECT_EQ(Render_fullscreen_scale_mode, 1);
 }
+
+/**
+ * @test ConfigTest.MsaaLabelMapsSamplesToText
+ * @brief Verifies the MSAA toggle labels for each sample count.
+ *
+ * @see Descent3/config.cpp (video_menu::MsaaLabel)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MsaaLabelMapsSamplesToText) {
+  EXPECT_STREQ(MsaaLabel(0), "Off");
+  EXPECT_STREQ(MsaaLabel(2), "2x");
+  EXPECT_STREQ(MsaaLabel(4), "4x");
+  EXPECT_STREQ(MsaaLabel(8), "8x");
+  EXPECT_STREQ(MsaaLabel(16), "Off"); // unsupported -> Off
+  EXPECT_STREQ(MsaaLabel(1), "Off");
+}
+
+/**
+ * @test ConfigTest.MsaaNextCyclesOff2x4x8x
+ * @brief Verifies the MSAA toggle cycles Off -> 2x -> 4x -> 8x -> Off.
+ *
+ * @see Descent3/config.cpp (video_menu::MsaaNext)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MsaaNextCyclesOff2x4x8x) {
+  EXPECT_EQ(MsaaNext(0), 2);
+  EXPECT_EQ(MsaaNext(2), 4);
+  EXPECT_EQ(MsaaNext(4), 8);
+  EXPECT_EQ(MsaaNext(8), 0);
+  EXPECT_EQ(MsaaNext(16), 0); // invalid wraps to Off
+}
