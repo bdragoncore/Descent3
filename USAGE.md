@@ -289,6 +289,16 @@ The following command-line options are available in Descent 3. You can set comma
 
 ### Performance Options
 
+- `-af <level>`
+
+    **Type:** integer
+
+    **Default:** Off (0)
+
+    **Platform:** all
+
+    **Description:** Enables anisotropic texture filtering at the specified level (2, 4, 8, or 16). Sharpens textures viewed at oblique angles (floors, walls) with minimal performance cost. Requires GL_EXT_texture_filter_anisotropic support; the level is clamped to the driver-reported maximum. Can also be set from the video options menu.
+
 - `-fastdemo`
 
     **Type:** boolean
@@ -338,6 +348,16 @@ The following command-line options are available in Descent 3. You can set comma
     **Platform:** all
 
     **Description:** Disables alpha saturation on the omega cannon effect.
+
+- `-msaa <samples>`
+
+    **Type:** integer
+
+    **Default:** Off (0)
+
+    **Platform:** all
+
+    **Description:** Enables multisample anti-aliasing with the specified sample count (2, 4, or 8). Smooths polygon edges at the cost of GPU memory and fill rate. Can also be set from the video options menu.
 
 - `-nosparkles`
 

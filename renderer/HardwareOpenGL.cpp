@@ -61,6 +61,10 @@
 #include "win/arb_extensions.h"
 #endif
 
+// Forward declaration for the extension query defined later in this file.
+// Needed by opengl_DetectAnisotropy() above.
+bool opengl_CheckExtension(std::string_view extName);
+
 // General renderer states
 extern int gpu_Overlay_map;
 int Bump_map = 0;
@@ -70,6 +74,7 @@ float Z_bias = 0.0f;
 uint8_t Renderer_close_flag = 0;
 extern uint8_t Renderer_initted;
 renderer_type Renderer_type = RENDERER_OPENGL;
+extern renderer_preferred_state Render_preferred_state;
 
 struct Renderer {
   Renderer()
@@ -243,6 +248,52 @@ bool OpenGL_multitexture_state = false;
 int Already_loaded = 0;
 bool opengl_Blending_on = false;
 
+// Anisotropic filtering state (GL_EXT_texture_filter_anisotropic).
+// g_max_anisotropy: driver-reported max (1.0f = extension unsupported).
+// g_anisotropy_level: effective level applied to textures (1 = off).
+static float g_max_anisotropy = 1.0f;
+static int g_anisotropy_level = 1;
+
+// Detects GL_EXT_texture_filter_anisotropic and resolves the effective AF
+// level. UI setting (gpu_preferred_state.anisotropy) wins; the -af CLI flag
+// is the fallback. Must be called after LoadGLFnPtrs() so dglGetFloatv and
+// dglGetStringi are available.
+static void opengl_DetectAnisotropy() {
+  g_max_anisotropy = 1.0f;
+  g_anisotropy_level = 1;
+
+  if (!opengl_CheckExtension("GL_EXT_texture_filter_anisotropic")) {
+    LOG_INFO << "OpenGL: anisotropic filtering not supported by driver";
+    return;
+  }
+
+  GLfloat max_aniso = 1.0f;
+  dglGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
+  g_max_anisotropy = max_aniso;
+
+  int requested = gpu_preferred_state.anisotropy;
+  int af_arg = FindArg("-af");
+  if (requested < 2 && af_arg && af_arg + 1 < MAX_ARGS) {
+    int cli_level = atoi(GameArgs[af_arg + 1]);
+    if (cli_level >= 2)
+      requested = cli_level;
+  }
+
+  g_anisotropy_level = ClampAnisotropyLevel(requested, g_max_anisotropy);
+  if (g_anisotropy_level > 1)
+    LOG_INFO.printf("OpenGL: anisotropic filtering enabled at %dx (max %.1f)", g_anisotropy_level,
+                    g_max_anisotropy);
+}
+
+// Applies the effective AF level to the currently bound texture.
+// No-op when AF is off or unsupported. Called from opengl_MakeFilterTypeCurrent
+// so every texture gets AF when its filter state is (re)configured.
+static void opengl_ApplyAnisotropy() {
+  if (g_anisotropy_level <= 1)
+    return;
+  dglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, static_cast<GLfloat>(g_anisotropy_level));
+}
+
 namespace {
 HardwareOpenGL g_opengl_backend;
 }
@@ -304,7 +355,7 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-  // BUGFIX (PiccuEngine #4): MSAA support via -msaa <samples> command line flag.
+// BUGFIX (PiccuEngine #4): MSAA support via -msaa <samples> command line flag.
   // Enables multisample anti-aliasing for smoother edges. Default is 0 (off).
   // Common values: 2, 4, 8.
   int msaa_arg = FindArg("-msaa");
@@ -385,6 +436,11 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     return false;
   }
 
+  // BUGFIX (PiccuEngine AF): detect anisotropic filtering support now that
+  // GL function pointers are loaded. Sets g_anisotropy_level from the UI
+  // setting (or -af CLI fallback), clamped to the driver-reported maximum.
+  opengl_DetectAnisotropy();
+
   dglClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   dglClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   SDL_GL_SwapWindow(window_);
@@ -400,21 +456,58 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     dglDeleteRenderbuffers(1, &depth_buffer_);
     framebuffer_ = color_buffer_ = depth_buffer_ = framebuffer_width_ = framebuffer_height_ = 0;
   }
+  if (resolve_framebuffer_) {
+    dglBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer_);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+    dglBindRenderbuffer(GL_RENDERBUFFER, 0);
+    dglBindFramebuffer(GL_FRAMEBUFFER, 0);
+    dglDeleteFramebuffers(1, &resolve_framebuffer_);
+    dglDeleteRenderbuffers(1, &resolve_color_buffer_);
+    resolve_framebuffer_ = resolve_color_buffer_ = 0;
+  }
 
   framebuffer_width_ = static_cast<GLuint>(width);
   framebuffer_height_ = static_cast<GLuint>(height);
+
+  // MSAA sample count: UI setting wins, -msaa CLI flag is the fallback.
+  // Clamp to GL_MAX_SAMPLES so exotic values can't fail FBO setup.
+  msaa_samples_ = Render_preferred_state.msaa_samples;
+  if (msaa_samples_ == 0) {
+    int msaa_arg = FindArg("-msaa");
+    if (msaa_arg && msaa_arg + 1 < MAX_ARGS) {
+      int cli_samples = atoi(GameArgs[msaa_arg + 1]);
+      if (cli_samples > 0)
+        msaa_samples_ = static_cast<GLuint>(cli_samples);
+    }
+  }
+  if (msaa_samples_ > 0) {
+    GLint max_samples = 0;
+    dglGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+    if (msaa_samples_ > static_cast<GLuint>(max_samples))
+      msaa_samples_ = static_cast<GLuint>(max_samples);
+    if (msaa_samples_ < 2)
+      msaa_samples_ = 0; // 1 sample == no MSAA; skip the resolve path
+    else
+      LOG_INFO.printf("MSAA enabled with %u samples", msaa_samples_);
+  }
 
   dglGenFramebuffers(1, &framebuffer_);
   dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
 
   dglGenRenderbuffers(1, &color_buffer_);
   dglBindRenderbuffer(GL_RENDERBUFFER, color_buffer_);
-  dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+  if (msaa_samples_ > 0)
+    dglRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples_, GL_RGBA8, width, height);
+  else
+    dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
   dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color_buffer_);
 
   dglGenRenderbuffers(1, &depth_buffer_);
   dglBindRenderbuffer(GL_RENDERBUFFER, depth_buffer_);
-  dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+  if (msaa_samples_ > 0)
+    dglRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples_, GL_DEPTH_COMPONENT16, width, height);
+  else
+    dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
   dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_buffer_);
 
   if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
@@ -436,6 +529,35 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     return false;
   }
 
+  // MSAA resolve target: single-sample FBO receiving the multisample
+  // resolve each frame before the window blit.
+  if (msaa_samples_ > 0) {
+    dglGenFramebuffers(1, &resolve_framebuffer_);
+    dglBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer_);
+    dglGenRenderbuffers(1, &resolve_color_buffer_);
+    dglBindRenderbuffer(GL_RENDERBUFFER, resolve_color_buffer_);
+    dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, resolve_color_buffer_);
+    if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+      LOG_WARNING << "OpenGL: MSAA resolve framebuffer incomplete, disabling MSAA";
+      dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+      dglBindRenderbuffer(GL_RENDERBUFFER, 0);
+      dglBindFramebuffer(GL_FRAMEBUFFER, 0);
+      dglDeleteFramebuffers(1, &resolve_framebuffer_);
+      dglDeleteRenderbuffers(1, &resolve_color_buffer_);
+      resolve_framebuffer_ = resolve_color_buffer_ = 0;
+      msaa_samples_ = 0;
+      // Fall back: recreate the main FBO single-sampled
+      dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+      dglBindRenderbuffer(GL_RENDERBUFFER, color_buffer_);
+      dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+      dglBindRenderbuffer(GL_RENDERBUFFER, depth_buffer_);
+      dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+    } else {
+      dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+    }
+  }
+
   if (parent_application_) {
     reinterpret_cast<oeLnxApplication *>(parent_application_)->set_sizepos(0, 0, width, height);
   }
@@ -450,6 +572,7 @@ void HardwareOpenGL::DestroyContext(bool just_resizing) {
     context_ = nullptr;
     GSDLGLContext = nullptr;
     framebuffer_width_ = framebuffer_height_ = framebuffer_ = color_buffer_ = depth_buffer_ = 0;
+    resolve_framebuffer_ = resolve_color_buffer_ = msaa_samples_ = 0;
   }
 
   if (!just_resizing && window_) {
@@ -463,6 +586,18 @@ void HardwareOpenGL::PresentFrame() const {
   if (framebuffer_ != 0 && window_) {
     int w, h;
     SDL_GetWindowSizeInPixels(window_, &w, &h);
+
+    // MSAA resolve: multisample FBO -> single-sample resolve FBO.
+    // glBlitFramebuffer performs the multisample resolve implicitly;
+    // GL_NEAREST is required (and correct) for multisample resolves.
+    GLuint blit_src = framebuffer_;
+    if (msaa_samples_ > 0 && resolve_framebuffer_ != 0) {
+      dglBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
+      dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_framebuffer_);
+      dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_,
+                         framebuffer_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      blit_src = resolve_framebuffer_;
+    }
 
     int scaledHeight;
     int scaledWidth;
@@ -495,6 +630,7 @@ void HardwareOpenGL::PresentFrame() const {
       break;
     }
 
+    dglBindFramebuffer(GL_READ_FRAMEBUFFER, blit_src);
     dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     dglClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     dglClear(GL_COLOR_BUFFER_BIT);
@@ -520,6 +656,15 @@ std::unique_ptr<NewBitmap> HardwareOpenGL::Screenshot(int width, int height) con
     return nullptr;
   }
 
+  // Read from the resolve target when MSAA is on: glReadPixels on a
+  // multisample buffer is undefined, so resolve first if needed.
+  if (msaa_samples_ > 0 && resolve_framebuffer_ != 0) {
+    dglBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
+    dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_framebuffer_);
+    dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_,
+                       framebuffer_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    dglBindFramebuffer(GL_READ_FRAMEBUFFER, resolve_framebuffer_);
+  }
   dglReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLvoid *>(result->getData()));
   return result;
 }
@@ -597,6 +742,10 @@ int opengl_MakeTextureObject(int tn) {
 
   dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+  // BUGFIX (PiccuEngine AF): apply AF at creation so new textures are
+  // filtered correctly even before their first filter-state change.
+  opengl_ApplyAnisotropy();
 
   // glTexEnvf (GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
 
@@ -681,8 +830,6 @@ void opengl_SetDefaults() {
   dglBlendFunc(GL_DST_COLOR, GL_ZERO);
   dglActiveTexture(GL_TEXTURE0_ARB + 0);
 }
-
-extern renderer_preferred_state Render_preferred_state;
 
 int opengl_Setup(oeApplication *app, const int *width, const int *height) {
   g_opengl_backend.SetParentApplication(app);
@@ -1230,6 +1377,10 @@ void opengl_MakeFilterTypeCurrent(int handle, int map_type, int tn) {
       dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }
+    // BUGFIX (PiccuEngine AF): apply anisotropic filtering to the bound
+    // texture. AF sharpens textures viewed at oblique angles (floors, walls)
+    // with minimal performance cost. No-op when AF is off or unsupported.
+    opengl_ApplyAnisotropy();
   } else {
     if (map_type == MAP_TYPE_BITMAP && bm_mipped(handle)) {
       // dglTexParameteri (GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST_MIPMAP_NEAREST);

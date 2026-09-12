@@ -32,5 +32,11 @@ protected:
   GLuint depth_buffer_ = 0;
   GLuint framebuffer_width_ = 0;
   GLuint framebuffer_height_ = 0;
+  // MSAA resolve target: when msaa_samples_ > 0, framebuffer_ holds
+  // multisampled renderbuffers and each frame is resolved into
+  // resolve_framebuffer_ (single-sample) before the window blit.
+  GLuint resolve_framebuffer_ = 0;
+  GLuint resolve_color_buffer_ = 0;
+  GLuint msaa_samples_ = 0;
   oeApplication *parent_application_ = nullptr;
 };

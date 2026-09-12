@@ -238,6 +238,8 @@ class renderer_preferred_state:
     height: int = 600
     vsync_on: int = 0
     fullscreen: bool = False
+    msaa_samples: int = 0
+    anisotropy: int = 0
 
 
 # ── tRendererStats (lib/renderer.h) ──

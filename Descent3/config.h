@@ -213,6 +213,22 @@ void ConfigSetDetailLevelMax();
 #define DETAIL_LEVEL_VERY_HIGH 3
 #define DETAIL_LEVEL_CUSTOM 4
 
+// MSAA sample count -> display label ("Off", "2x", "4x", "8x").
+// Unsupported counts map to "Off".
+const char *MsaaLabel(uint8_t samples);
+
+// Next MSAA level in the Off -> 2x -> 4x -> 8x -> Off cycle.
+// Invalid inputs wrap to Off (0).
+uint8_t MsaaNext(uint8_t samples);
+
+// AF level -> display label ("Off", "2x", "4x", "8x", "16x").
+// Unsupported levels map to "Off".
+const char *AnisotropyLabel(uint8_t level);
+
+// Next AF level in the Off -> 2x -> 4x -> 8x -> 16x -> Off cycle.
+// Invalid inputs wrap to Off (0).
+uint8_t AnisotropyNext(uint8_t level);
+
 // Detail setting bounds (used by ConfigSetDetailLevelMax and the detail sheet)
 #define MINIMUM_TERRAIN_DETAIL 4
 #define MAXIMUM_TERRAIN_DETAIL 28

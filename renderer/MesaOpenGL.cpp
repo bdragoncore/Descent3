@@ -155,6 +155,41 @@ bool OpenGL_multitexture_state = false;
 int Already_loaded = 0;
 bool opengl_Blending_on = false;
 
+// Anisotropic filtering state (GL_EXT_texture_filter_anisotropic).
+// Mirrors the HardwareOpenGL backend so headless render tests exercise the
+// same AF path. g_max_anisotropy: driver max (1.0f = unsupported);
+// g_anisotropy_level: effective level (1 = off).
+static float g_max_anisotropy = 1.0f;
+static int g_anisotropy_level = 1;
+
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+#ifndef MAX_ANISOTROPY_LEVEL
+#define MAX_ANISOTROPY_LEVEL 16
+#endif
+
+// Clamps a requested AF level to hardware support. Duplicated from
+// HardwareInternal.h (which the Mesa backend does not include) to keep the
+// Mesa translation unit self-contained.
+static int mesa_ClampAnisotropyLevel(int requested, float max_supported) {
+  if (requested < 2 || max_supported < 2.0f)
+    return 1;
+  int max_level = static_cast<int>(max_supported);
+  if (max_level > MAX_ANISOTROPY_LEVEL)
+    max_level = MAX_ANISOTROPY_LEVEL;
+  int level = 1;
+  while (level * 2 <= requested && level * 2 <= max_level)
+    level *= 2;
+  return level;
+}
+
+static void mesa_DetectAnisotropy();
+static void mesa_ApplyAnisotropy();
+
 namespace {
 class MesaOpenGL final : public HardwareOpenGL {
 public:
@@ -233,6 +268,36 @@ void opengl_GetInformation() {
   LOG_INFO.printf("Mesa OpenGL Version: %s", glGetString(GL_VERSION));
 }
 
+// Detects GL_EXT_texture_filter_anisotropic and resolves the effective AF
+// level from the UI setting (gpu_preferred_state.anisotropy). Called from
+// opengl_Init after the EGL context is current.
+static void mesa_DetectAnisotropy() {
+  g_max_anisotropy = 1.0f;
+  g_anisotropy_level = 1;
+
+  if (!opengl_CheckExtension("GL_EXT_texture_filter_anisotropic")) {
+    LOG_INFO << "Mesa: anisotropic filtering not supported by driver";
+    return;
+  }
+
+  GLfloat max_aniso = 1.0f;
+  glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
+  g_max_anisotropy = max_aniso;
+
+  g_anisotropy_level = mesa_ClampAnisotropyLevel(gpu_preferred_state.anisotropy, g_max_anisotropy);
+  if (g_anisotropy_level > 1)
+    LOG_INFO.printf("Mesa: anisotropic filtering enabled at %dx (max %.1f)", g_anisotropy_level,
+                    g_max_anisotropy);
+}
+
+// Applies the effective AF level to the currently bound texture.
+// No-op when AF is off or unsupported.
+static void mesa_ApplyAnisotropy() {
+  if (g_anisotropy_level <= 1)
+    return;
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, static_cast<GLfloat>(g_anisotropy_level));
+}
+
 int opengl_MakeTextureObject(int tn) {
   GLuint num;
   glGenTextures(1, &num);
@@ -245,6 +310,9 @@ int opengl_MakeTextureObject(int tn) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+  // BUGFIX (PiccuEngine AF): apply AF at creation, mirroring HardwareOpenGL.
+  mesa_ApplyAnisotropy();
 
   CHECK_ERROR(2)
   return num;
@@ -361,6 +429,10 @@ int opengl_Init(oeApplication *app, renderer_preferred_state *pref_state) {
   memset(&gpu_state, 0, sizeof(rendering_state));
   gpu_state.screen_width = width;
   gpu_state.screen_height = height;
+
+  // BUGFIX (PiccuEngine AF): detect AF support now that the EGL context is
+  // current, mirroring the HardwareOpenGL backend.
+  mesa_DetectAnisotropy();
 
   OpenGL_packed_pixels = opengl_CheckExtension("GL_EXT_packed_pixels");
 
@@ -781,6 +853,8 @@ void opengl_MakeFilterTypeCurrent(int handle, int map_type, int tn) {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }
+    // BUGFIX (PiccuEngine AF): apply AF when filter state is configured.
+    mesa_ApplyAnisotropy();
   } else {
     if (map_type == MAP_TYPE_BITMAP && bm_mipped(handle)) {
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

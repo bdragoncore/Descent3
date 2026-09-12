@@ -169,6 +169,8 @@ def rend_SetPreferredState(pref_state: renderer_preferred_state, reinit: bool = 
         height=gpu_preferred_state.height,
         vsync_on=gpu_preferred_state.vsync_on,
         fullscreen=gpu_preferred_state.fullscreen,
+        msaa_samples=gpu_preferred_state.msaa_samples,
+        anisotropy=gpu_preferred_state.anisotropy,
     )
 
     gpu_preferred_state = renderer_preferred_state(
@@ -180,6 +182,8 @@ def rend_SetPreferredState(pref_state: renderer_preferred_state, reinit: bool = 
         height=pref_state.height,
         vsync_on=pref_state.vsync_on,
         fullscreen=pref_state.fullscreen,
+        msaa_samples=pref_state.msaa_samples,
+        anisotropy=pref_state.anisotropy,
     )
 
     if gpu_state.initted:

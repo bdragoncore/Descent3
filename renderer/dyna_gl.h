@@ -173,8 +173,10 @@ DYNAEXTERN(glReadPixels);
 DYNAEXTERN(glScissor);
 DYNAEXTERN(glShaderSource);
 DYNAEXTERN(glTexImage2D);
+DYNAEXTERN(glTexParameterf);
 DYNAEXTERN(glTexParameteri);
 DYNAEXTERN(glTexSubImage2D);
+DYNAEXTERN(glGetFloatv);
 DYNAEXTERN(glUniform1f);
 DYNAEXTERN(glUniform1i);
 DYNAEXTERN(glUniform4f);
@@ -195,6 +197,7 @@ DYNAEXTERN(glFramebufferRenderbuffer);
 DYNAEXTERN(glGenFramebuffers);
 DYNAEXTERN(glGenRenderbuffers);
 DYNAEXTERN(glRenderbufferStorage);
+DYNAEXTERN(glRenderbufferStorageMultisample);
 
 DYNAEXTERN(glActiveTexture);
 DYNAEXTERN(glMultiTexCoord4f);
