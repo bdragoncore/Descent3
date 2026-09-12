@@ -17,7 +17,7 @@
 //   up        - face's up vector (world space)
 //   size      - visual size of the impact
 //   age       - normalized age (0 = just created, 1 = fully faded)
-//   outVerts  - output array of 3D vertex positions (8 vertices: center + 6 ring + 1 outer)
+//   outVerts  - output array of 3D vertex positions (center + 24 ring + 1 closing dup)
 //   outUvs    - output array of UV coordinates
 //
 // Returns: number of vertices generated

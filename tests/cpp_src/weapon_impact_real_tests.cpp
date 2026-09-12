@@ -154,16 +154,34 @@ protected:
 };
 
 // Mesh generation returns center + 6 ring vertices
-TEST_F(WeaponImpactTest, MeshGeneratesSevenVertices) {
+TEST_F(WeaponImpactTest, MeshGeneratesCircleVertices) {
   vector center = MakeVec(0, 0, 0);
   vector normal = MakeVec(0, 1, 0);
   vector right = MakeVec(1, 0, 0);
   vector up = MakeVec(0, 0, 1);
-  vector verts[26];
-  g3UVL uvs[26];
+  vector verts[27];
+  g3UVL uvs[27];
 
   int n = GeneratePlasmaImpactMesh(center, normal, right, up, 2.0f, 0.0f, verts, uvs);
-  EXPECT_EQ(n, 25); // center + 24 ring segments = smooth circle
+  EXPECT_EQ(n, 26); // center + 24 ring segments + 1 closing dup
+}
+
+// Closing vertex duplicates ring vertex 0 so the fan covers the full circle
+TEST_F(WeaponImpactTest, MeshClosingVertexDuplicatesFirstRing) {
+  vector center = MakeVec(0, 0, 0);
+  vector normal = MakeVec(0, 1, 0);
+  vector right = MakeVec(1, 0, 0);
+  vector up = MakeVec(0, 0, 1);
+  vector verts[27];
+  g3UVL uvs[27];
+
+  GeneratePlasmaImpactMesh(center, normal, right, up, 2.0f, 0.0f, verts, uvs);
+
+  EXPECT_NEAR(verts[25].x(), verts[1].x(), 0.0001f);
+  EXPECT_NEAR(verts[25].y(), verts[1].y(), 0.0001f);
+  EXPECT_NEAR(verts[25].z(), verts[1].z(), 0.0001f);
+  EXPECT_NEAR(uvs[25].u, uvs[1].u, 0.0001f);
+  EXPECT_NEAR(uvs[25].v, uvs[1].v, 0.0001f);
 }
 
 // Center vertex sits at the impact point (pushed slightly along -normal)
@@ -172,8 +190,8 @@ TEST_F(WeaponImpactTest, CenterVertexAtImpactPoint) {
   vector normal = MakeVec(0, 1, 0);
   vector right = MakeVec(1, 0, 0);
   vector up = MakeVec(0, 0, 1);
-  vector verts[26];
-  g3UVL uvs[26];
+  vector verts[27];
+  g3UVL uvs[27];
 
   GeneratePlasmaImpactMesh(center, normal, right, up, 2.0f, 0.0f, verts, uvs);
 
@@ -192,8 +210,8 @@ TEST_F(WeaponImpactTest, RingVerticesAtMeshRadius) {
   vector normal = MakeVec(0, 1, 0);
   vector right = MakeVec(1, 0, 0);
   vector up = MakeVec(0, 0, 1);
-  vector verts[26];
-  g3UVL uvs[26];
+  vector verts[27];
+  g3UVL uvs[27];
 
   GeneratePlasmaImpactMesh(center, normal, right, up, 2.0f, 0.0f, verts, uvs);
 
@@ -212,8 +230,8 @@ TEST_F(WeaponImpactTest, RingUvsOnUnitCircle) {
   vector normal = MakeVec(0, 1, 0);
   vector right = MakeVec(1, 0, 0);
   vector up = MakeVec(0, 0, 1);
-  vector verts[26];
-  g3UVL uvs[26];
+  vector verts[27];
+  g3UVL uvs[27];
 
   GeneratePlasmaImpactMesh(center, normal, right, up, 2.0f, 0.0f, verts, uvs);
 
@@ -237,7 +255,7 @@ TEST_F(WeaponImpactTest, DrawImpactSetsGlowAndDrawsFan) {
 
   EXPECT_TRUE(used);
   ASSERT_EQ(g_polys.size(), 1u);
-  EXPECT_EQ(g_polys[0].nv, 25); // center + 24 ring fan (smooth circle)
+  EXPECT_EQ(g_polys[0].nv, 26); // center + 24 ring + closing dup (full circle)
   // Glow was enabled then disabled
   EXPECT_EQ(g_rend.plasma_glow_calls, 2);
   EXPECT_NEAR(g_rend.last_glow, 0.0f, 0.001f); // restored to off
@@ -338,9 +356,9 @@ TEST_F(WeaponImpactTest, DrawShockballDrawsBallPlusFan) {
 
   DrawPlasmaShockball3D(pos, normal, 4.0f, 0.2f, green, 0.8f, 4242);
 
-  // 70 sphere polys + 1 wall fan (25-vertex circle fan)
+  // 70 sphere polys + 1 wall fan (26-vertex closed circle fan)
   ASSERT_EQ(g_polys.size(), 71u);
-  EXPECT_EQ(g_polys.back().nv, 25);
+  EXPECT_EQ(g_polys.back().nv, 26);
 }
 
 // Shockball with zero normal draws ball only (open-air explosion)

@@ -10,8 +10,11 @@
 
 // Plasma impact fan: a center vertex plus a ring, drawn as a triangle fan.
 // 24 ring segments make a smooth circle (6 showed visible hexagon edges).
+// One extra closing vertex duplicates ring vertex 0 so the fan's last
+// triangle (center, ring[23], ring[0]) is emitted — without it the wedge
+// between the last and first segment stays unfilled.
 #define PLASMA_RING_VERTS 24
-#define PLASMA_TOTAL_VERTS (PLASMA_RING_VERTS + 1) // 25 total
+#define PLASMA_TOTAL_VERTS (PLASMA_RING_VERTS + 2) // center + 24 ring + 1 closing = 26
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -121,6 +124,12 @@ int GeneratePlasmaImpactMesh(const vector &center, const vector &normal, const v
     outUvs[i + 1].u = 0.5f + 0.5f * cosf(angle);
     outUvs[i + 1].v = 0.5f + 0.5f * sinf(angle);
   }
+
+  // Closing vertex: duplicate of ring vertex 0 so the triangle fan's final
+  // triangle closes the circle (fan emits (0,i,i+1); without this the wedge
+  // between ring[23] and ring[0] is never drawn).
+  outVerts[PLASMA_RING_VERTS + 1] = outVerts[1];
+  outUvs[PLASMA_RING_VERTS + 1] = outUvs[1];
 
   return PLASMA_TOTAL_VERTS;
 }
