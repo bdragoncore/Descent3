@@ -19,7 +19,7 @@
  */
 
 /*
- * VOLUMETRIC FOG PASS (Phase 3)
+ * VOLUMETRIC FOG PASS (Phase 4)
  * =============================
  * Ray-marches a procedural 3D density field per-pixel and composites the
  * accumulated in-scattering over the rendered scene.  Runs as a full-screen
@@ -34,6 +34,11 @@
  * Phase 3 animates the density field: the FBM noise is advected by a wind
  * vector over time (u_wind * u_time), so the fog drifts and rolls instead
  * of being a static field.
+ *
+ * Phase 4 adds per-sector density volumes: each fogged room contributes an
+ * AABB (u_volume_min/u_volume_max) with a density and color.  Where a
+ * ray-march sample is inside a volume, its density is added to the field and
+ * its color overrides the base fog color, so indoor fog varies per sector.
  *
  * Depth convention: the renderer uses a near=0 / far=infinity projection
  * (proj[2][2]=1, proj[2][3]=1, proj[3][2]=-1), so the depth buffer value is
@@ -64,6 +69,10 @@ uniform int u_god_rays;       // 0/1 enable screen-space light shafts
 uniform int u_god_ray_samples;
 uniform float u_time;         // seconds since start (fog animation)
 uniform vec3 u_wind;          // world-space drift direction for the density field
+uniform int u_num_volumes;    // per-sector fog volumes (Phase 4)
+uniform vec4 u_volume_min[16];   // min xyz + density
+uniform vec4 u_volume_max[16];   // max xyz + unused
+uniform vec4 u_volume_color[16]; // rgb + unused
 uniform mat4 u_inv_view;
 uniform int u_fog_enable;
 
@@ -122,6 +131,24 @@ vec3 god_rays(vec2 uv) {
     return accum / max(weight, 1e-4);
 }
 
+// Samples the per-sector fog volumes at a world-space point, returning the
+// added density and the fog color to use (the last volume containing the
+// point wins).
+void sample_volumes(vec3 p, out float density, out vec3 color) {
+    density = 0.0;
+    color = vec3(0.0);
+    for (int i = 0; i < 16; i++) {
+        if (i >= u_num_volumes)
+            break;
+        vec3 mn = u_volume_min[i].xyz;
+        vec3 mx = u_volume_max[i].xyz;
+        if (p.x >= mn.x && p.x <= mx.x && p.y >= mn.y && p.y <= mx.y && p.z >= mn.z && p.z <= mx.z) {
+            density += u_volume_min[i].w;
+            color = u_volume_color[i].rgb;
+        }
+    }
+}
+
 void main() {
     vec3 scene_color = texture(u_scene_color, v_uv).rgb;
 
@@ -160,17 +187,28 @@ void main() {
         vec4 world = u_inv_view * vec4(view_pos, 1.0);
         vec3 world_pos = world.xyz / world.w;
 
+        // Per-sector fog volumes: added density + color override.
+        float vol_density;
+        vec3 vol_color;
+        sample_volumes(world_pos, vol_density, vol_color);
+
         // Procedural density: base density modulated by FBM noise, advected
-        // by the wind over time so the fog drifts and rolls.
+        // by the wind over time so the fog drifts and rolls, plus the
+        // per-sector volume density.
         vec3 sample_pos = world_pos * u_noise_freq + u_wind * u_time;
-        float density = u_fog_density * (1.0 + u_noise_scale * (fbm(sample_pos) - 0.5));
+        float density = u_fog_density * (1.0 + u_noise_scale * (fbm(sample_pos) - 0.5)) + vol_density;
         density = max(density, 0.0);
+
+        // Fog color: the volume color wins where a volume is present.
+        vec3 fog_color = u_fog_color;
+        if (vol_density > 0.0)
+            fog_color = vol_color;
 
         // Sun-driven in-scattering: fog brightens when looking toward the sun.
         float scattering = 0.6 + 0.4 * max(dot(ray_dir, u_sun_dir), 0.0);
 
         float step_transmittance = exp(-density * step_size);
-        scattered += transmittance * (1.0 - step_transmittance) * u_fog_color * scattering;
+        scattered += transmittance * (1.0 - step_transmittance) * fog_color * scattering;
         transmittance *= step_transmittance;
     }
 

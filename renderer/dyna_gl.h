@@ -183,6 +183,7 @@ DYNAEXTERN(glUniform1i);
 DYNAEXTERN(glUniform2f);
 DYNAEXTERN(glUniform3f);
 DYNAEXTERN(glUniform4f);
+DYNAEXTERN(glUniform4fv);
 DYNAEXTERN(glUniformMatrix4fv);
 DYNAEXTERN(glUnmapBuffer);
 DYNAEXTERN(glUseProgram);

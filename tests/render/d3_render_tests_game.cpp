@@ -2270,6 +2270,11 @@ TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
     // Phase 3: animated fog (time-advected density field).
     EXPECT_GE(glGetUniformLocation(prog, "u_time"), 0);
     EXPECT_GE(glGetUniformLocation(prog, "u_wind"), 0);
+    // Phase 4: per-sector density volumes.
+    EXPECT_GE(glGetUniformLocation(prog, "u_num_volumes"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_min"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_max"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_color"), 0);
 
     glDeleteProgram(prog);
     glDeleteShader(vs);
@@ -2318,4 +2323,38 @@ TEST_F(D3GameRenderTest, SunLightStateCapture) {
     EXPECT_FLOAT_EQ(backend.getSunColor()[0], 2.0f);
     EXPECT_FLOAT_EQ(backend.getSunColor()[1], 1.5f);
     EXPECT_FLOAT_EQ(backend.getSunColor()[2], 1.0f);
+}
+
+TEST_F(D3GameRenderTest, FogVolumeStateCapture) {
+    // The volumetric fog pass reads per-sector fog volumes captured from
+    // rend_AddFogVolume.  Verify the HardwareOpenGL clear/add/get round-trip.
+    HardwareOpenGL backend;
+    EXPECT_EQ(backend.getNumFogVolumes(), 0);
+    EXPECT_EQ(backend.getFogVolume(0), nullptr);
+
+    backend.addFogVolume(-10.0f, -20.0f, -30.0f, 10.0f, 20.0f, 30.0f, 0.05f, 0.5f, 0.25f, 0.125f);
+    backend.addFogVolume(0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 5.0f, 0.1f, 1.0f, 0.0f, 0.0f);
+    EXPECT_EQ(backend.getNumFogVolumes(), 2);
+
+    const HardwareOpenGL::FogVolume *v0 = backend.getFogVolume(0);
+    ASSERT_NE(v0, nullptr);
+    EXPECT_FLOAT_EQ(v0->min_x, -10.0f);
+    EXPECT_FLOAT_EQ(v0->min_y, -20.0f);
+    EXPECT_FLOAT_EQ(v0->min_z, -30.0f);
+    EXPECT_FLOAT_EQ(v0->max_x, 10.0f);
+    EXPECT_FLOAT_EQ(v0->max_y, 20.0f);
+    EXPECT_FLOAT_EQ(v0->max_z, 30.0f);
+    EXPECT_FLOAT_EQ(v0->density, 0.05f);
+    EXPECT_FLOAT_EQ(v0->r, 0.5f);
+    EXPECT_FLOAT_EQ(v0->g, 0.25f);
+    EXPECT_FLOAT_EQ(v0->b, 0.125f);
+
+    const HardwareOpenGL::FogVolume *v1 = backend.getFogVolume(1);
+    ASSERT_NE(v1, nullptr);
+    EXPECT_FLOAT_EQ(v1->density, 0.1f);
+    EXPECT_FLOAT_EQ(v1->r, 1.0f);
+
+    backend.clearFogVolumes();
+    EXPECT_EQ(backend.getNumFogVolumes(), 0);
+    EXPECT_EQ(backend.getFogVolume(0), nullptr);
 }

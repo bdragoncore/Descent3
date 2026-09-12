@@ -46,6 +46,43 @@ public:
   const float *getSunDir() const { return sun_dir_; }
   const float *getSunColor() const { return sun_color_; }
 
+  // Per-sector fog volume: an AABB with a density and color.  The fog shader
+  // adds the density and uses the color where a ray-march sample is inside
+  // the box.
+  struct FogVolume {
+    float min_x, min_y, min_z;
+    float max_x, max_y, max_z;
+    float density;
+    float r, g, b;
+  };
+  static constexpr int kMaxFogVolumes = 16;
+
+  // Per-sector fog volumes for the volumetric fog pass (Phase 4).  Each
+  // volume is an AABB with a density and color; the fog shader adds the
+  // density and uses the color where a ray-march sample is inside the box.
+  // Called by free functions rend_ClearFogVolumes/rend_AddFogVolume.
+  void clearFogVolumes() { num_fog_volumes_ = 0; }
+  void addFogVolume(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z, float density,
+                    float r, float g, float b) {
+    if (num_fog_volumes_ >= kMaxFogVolumes)
+      return;
+    FogVolume &v = fog_volumes_[num_fog_volumes_++];
+    v.min_x = min_x;
+    v.min_y = min_y;
+    v.min_z = min_z;
+    v.max_x = max_x;
+    v.max_y = max_y;
+    v.max_z = max_z;
+    v.density = density;
+    v.r = r;
+    v.g = g;
+    v.b = b;
+  }
+  int getNumFogVolumes() const { return num_fog_volumes_; }
+  const FogVolume *getFogVolume(int index) const {
+    return (index >= 0 && index < num_fog_volumes_) ? &fog_volumes_[index] : nullptr;
+  }
+
 protected:
   SDL_Window *window_ = nullptr;
   SDL_GLContext context_ = nullptr;
@@ -94,6 +131,10 @@ protected:
   mutable GLint fog_uniform_god_ray_samples_ = -1;
   mutable GLint fog_uniform_time_ = -1;
   mutable GLint fog_uniform_wind_ = -1;
+  mutable GLint fog_uniform_num_volumes_ = -1;
+  mutable GLint fog_uniform_volume_min_ = -1;
+  mutable GLint fog_uniform_volume_max_ = -1;
+  mutable GLint fog_uniform_volume_color_ = -1;
   mutable GLint fog_uniform_inv_view_ = -1;
   mutable GLint fog_uniform_enable_ = -1;
   mutable GLint fog_attrib_pos_ = -1;
@@ -108,6 +149,9 @@ protected:
   // when the game does not set a sun.
   mutable float sun_dir_[3] = {0.371391f, 0.742782f, 0.557086f};
   mutable float sun_color_[3] = {1.0f, 1.0f, 1.0f};
+  // Per-sector fog volumes captured from rend_AddFogVolume.
+  mutable FogVolume fog_volumes_[kMaxFogVolumes] = {};
+  mutable int num_fog_volumes_ = 0;
   uint8_t vfog_level_ = 0; // 0 = off, 1 = low (16 steps), 2 = high (32 steps)
 
   // Compiles and links the volumetric fog pass shader, caching uniform and

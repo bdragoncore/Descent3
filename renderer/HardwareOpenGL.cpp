@@ -764,6 +764,10 @@ GLuint HardwareOpenGL::CompileFogShader() const {
   fog_uniform_god_ray_samples_ = dglGetUniformLocation(prog, "u_god_ray_samples");
   fog_uniform_time_ = dglGetUniformLocation(prog, "u_time");
   fog_uniform_wind_ = dglGetUniformLocation(prog, "u_wind");
+  fog_uniform_num_volumes_ = dglGetUniformLocation(prog, "u_num_volumes");
+  fog_uniform_volume_min_ = dglGetUniformLocation(prog, "u_volume_min");
+  fog_uniform_volume_max_ = dglGetUniformLocation(prog, "u_volume_max");
+  fog_uniform_volume_color_ = dglGetUniformLocation(prog, "u_volume_color");
   fog_uniform_inv_view_ = dglGetUniformLocation(prog, "u_inv_view");
   fog_uniform_enable_ = dglGetUniformLocation(prog, "u_fog_enable");
   fog_attrib_pos_ = dglGetAttribLocation(prog, "in_pos");
@@ -810,7 +814,7 @@ void HardwareOpenGL::SetupFogFullScreenTriangle() const {
 // ---------------------------------------------------------------------------
 
 void HardwareOpenGL::RenderFogPass() const {
-  if (vfog_level_ == 0 || !scene_fog_active_)
+  if (vfog_level_ == 0 || (!scene_fog_active_ && num_fog_volumes_ == 0))
     return;
 
   // Step 1: copy the resolved scene (color + depth) into the texture FBO.
@@ -839,17 +843,28 @@ void HardwareOpenGL::RenderFogPass() const {
   dglBindTexture(GL_TEXTURE_2D, scene_depth_texture_);
   dglUniform1i(fog_uniform_scene_depth_, 1);
 
-  // Fog parameters.
+  // Fog parameters.  When only per-sector volumes are present (no terrain
+  // fog), the base density is zero and the march covers the whole scene so
+  // the volume densities are the only fog source.
+  float fog_start = scene_fog_start_;
+  float fog_end = scene_fog_end_;
+  float base_density = 0.0f;
+  if (scene_fog_active_) {
+    float fog_range = scene_fog_end_ - scene_fog_start_;
+    if (fog_range < 1.0f)
+      fog_range = 1.0f;
+    base_density = 4.0f / fog_range;
+  } else if (num_fog_volumes_ > 0) {
+    fog_start = 0.0f;
+    fog_end = 10000.0f;
+  }
   dglUniform3f(fog_uniform_fog_color_, scene_fog_color_[0], scene_fog_color_[1], scene_fog_color_[2]);
-  dglUniform1f(fog_uniform_fog_start_, scene_fog_start_);
-  dglUniform1f(fog_uniform_fog_end_, scene_fog_end_);
+  dglUniform1f(fog_uniform_fog_start_, fog_start);
+  dglUniform1f(fog_uniform_fog_end_, fog_end);
 
   // Density tuning: base density gives T ≈ 0.01 at fog_end.  Noise and
   // frequency are hand-tuned for Descent 3 corridor scale (world units ≈ feet).
-  float fog_range = scene_fog_end_ - scene_fog_start_;
-  if (fog_range < 1.0f)
-    fog_range = 1.0f;
-  dglUniform1f(fog_uniform_fog_density_, 4.0f / fog_range);
+  dglUniform1f(fog_uniform_fog_density_, base_density);
   dglUniform1f(fog_uniform_noise_scale_, 0.5f);
   dglUniform1f(fog_uniform_noise_freq_, 0.05f);
   dglUniform1i(fog_uniform_steps_, vfog_level_ == 1 ? 16 : 32);
@@ -890,6 +905,32 @@ void HardwareOpenGL::RenderFogPass() const {
   dglUniform1f(fog_uniform_time_, SDL_GetTicks() / 1000.0f);
   dglUniform3f(fog_uniform_wind_, 0.02f, 0.01f, 0.0f);
 
+  // Per-sector fog volumes (Phase 4): AABB + density + color per fogged room.
+  dglUniform1i(fog_uniform_num_volumes_, num_fog_volumes_);
+  if (num_fog_volumes_ > 0) {
+    float min_data[kMaxFogVolumes * 4];
+    float max_data[kMaxFogVolumes * 4];
+    float color_data[kMaxFogVolumes * 4];
+    for (int i = 0; i < num_fog_volumes_; i++) {
+      const FogVolume &v = fog_volumes_[i];
+      min_data[i * 4 + 0] = v.min_x;
+      min_data[i * 4 + 1] = v.min_y;
+      min_data[i * 4 + 2] = v.min_z;
+      min_data[i * 4 + 3] = v.density;
+      max_data[i * 4 + 0] = v.max_x;
+      max_data[i * 4 + 1] = v.max_y;
+      max_data[i * 4 + 2] = v.max_z;
+      max_data[i * 4 + 3] = 0.0f;
+      color_data[i * 4 + 0] = v.r;
+      color_data[i * 4 + 1] = v.g;
+      color_data[i * 4 + 2] = v.b;
+      color_data[i * 4 + 3] = 0.0f;
+    }
+    dglUniform4fv(fog_uniform_volume_min_, num_fog_volumes_, min_data);
+    dglUniform4fv(fog_uniform_volume_max_, num_fog_volumes_, max_data);
+    dglUniform4fv(fog_uniform_volume_color_, num_fog_volumes_, color_data);
+  }
+
   // View → world inverse matrix for world-space noise.
   dglUniformMatrix4fv(fog_uniform_inv_view_, 1, GL_FALSE, glm::value_ptr(gRenderer->getViewInverse()));
 
@@ -923,7 +964,7 @@ void HardwareOpenGL::PresentFrame() const {
 
     // Volumetric fog pass: ray-march the resolved scene and composite the
     // fog over it.  When active, fog_fbo_ becomes the window blit source.
-    if (vfog_level_ > 0 && scene_fog_active_ && fog_fbo_ != 0) {
+    if (vfog_level_ > 0 && (scene_fog_active_ || num_fog_volumes_ > 0) && fog_fbo_ != 0) {
       RenderFogPass();
       blit_src = fog_fbo_;
     }
@@ -2036,6 +2077,15 @@ void rend_SetFogBorders(float nearz, float farz) {
 // color is the sun's RGB intensity (may exceed 1.0 for HDR light shafts).
 void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b) {
   g_opengl_backend.setSunLight(dir_x, dir_y, dir_z, r, g, b);
+}
+
+// Clears the fog volume list for the volumetric fog pass.
+void rend_ClearFogVolumes() { g_opengl_backend.clearFogVolumes(); }
+
+// Adds a fog volume (AABB + density + color) for the volumetric fog pass.
+void rend_AddFogVolume(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z, float density,
+                       float r, float g, float b) {
+  g_opengl_backend.addFogVolume(min_x, min_y, min_z, max_x, max_y, max_z, density, r, g, b);
 }
 
 // BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).

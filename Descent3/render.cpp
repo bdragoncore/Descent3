@@ -2234,6 +2234,24 @@ void SetupRoomFog(room *rp, vector *eye, matrix *orient, int viewer_room) {
   Room_fog_eye_distance = vm_Dot3Product(*eye, Room_fog_plane) + Room_fog_distance;
 }
 
+// BUGFIX #8: feed the fogged rooms rendered this frame into the volumetric
+// fog pass as per-sector density volumes, so indoor fog varies per sector
+// instead of using a single global density field.  Each fogged room becomes
+// an AABB volume with density = 4/fog_depth (opaque at fog_depth, matching
+// the base fog convention) and the room's fog color.  Called after the main
+// view is rendered and before the frame is presented.
+void RenderFogVolumes() {
+  rend_ClearFogVolumes();
+  for (int i = 0; i < N_render_rooms; i++) {
+    room *rp = &Rooms[Render_list[i]];
+    if (rp->flags & RF_FOG) {
+      float density = 4.0f / std::max(rp->fog_depth, 1.0f);
+      rend_AddFogVolume(rp->min_xyz.x(), rp->min_xyz.y(), rp->min_xyz.z(), rp->max_xyz.x(), rp->max_xyz.y(),
+                        rp->max_xyz.z(), density, rp->fog_r, rp->fog_g, rp->fog_b);
+    }
+  }
+}
+
 // Renders the faces in a room without worrying about sorting.  Used in the game when Z-buffering is active
 void RenderRoomUnsorted(room *rp) {
   int fn;

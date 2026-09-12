@@ -1042,6 +1042,20 @@ void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, f
   (void)g;
   (void)b;
 }
+void rend_ClearFogVolumes() {}
+void rend_AddFogVolume(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z, float density,
+                       float r, float g, float b) {
+  (void)min_x;
+  (void)min_y;
+  (void)min_z;
+  (void)max_x;
+  (void)max_y;
+  (void)max_z;
+  (void)density;
+  (void)r;
+  (void)g;
+  (void)b;
+}
 
 // BUGFIX: Plasma glow stubs for the Mesa backend (no shader support).
 // The 3D trail still renders as flat additive quads; the glow is skipped.

@@ -306,6 +306,10 @@ void SortStates(state_limited_element *state_array, int cellcount);
 // Sets up fog if this room is fogged
 void SetupRoomFog(room *rp, vector *eye, matrix *orient, int viewer_room);
 
+// Pushes the fogged rooms rendered this frame into the volumetric fog pass
+// as per-sector density volumes.  Called after the main view is rendered.
+void RenderFogVolumes();
+
 // Draw the specified face
 // Parameters:	rp - pointer to the room the face is un
 //				facenum - which face in the specified room

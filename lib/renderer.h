@@ -470,6 +470,17 @@ void rend_SetFogBorders(float fog_near, float fog_far);
 // color is the sun's RGB intensity (may exceed 1.0 for HDR light shafts).
 void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b);
 
+// Clears the fog volume list for the volumetric fog pass.  Call at the start
+// of each frame before adding volumes.
+void rend_ClearFogVolumes();
+
+// Adds a fog volume (AABB + density + color) for the volumetric fog pass.
+// The volume adds density to the ray-marched fog field where the sample
+// point is inside the box, and overrides the fog color there.  Used for
+// per-sector (per-room) fog.
+void rend_AddFogVolume(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z,
+                       float density, float r, float g, float b);
+
 // Sets the color for fill based primitives;
 void rend_SetFlatColor(ddgr_color color);
 

@@ -2601,6 +2601,10 @@ void GameRenderFrame(void) {
     // Draw the big 3d view
     GameDrawMainView();
 
+    // BUGFIX #8: feed fogged rooms into the volumetric fog pass as
+    // per-sector density volumes before the small views/HUD are drawn.
+    RenderFogVolumes();
+
     // Do the small views.  These should be before GameDrawHUD() for the small windows
     DrawSmallViews();
 
