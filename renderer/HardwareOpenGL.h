@@ -97,6 +97,7 @@ protected:
   // resolve_framebuffer_ (single-sample) before the window blit.
   GLuint resolve_framebuffer_ = 0;
   GLuint resolve_color_buffer_ = 0;
+  GLuint resolve_depth_buffer_ = 0;
   GLuint msaa_samples_ = 0;
   oeApplication *parent_application_ = nullptr;
 

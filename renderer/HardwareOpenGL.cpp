@@ -466,11 +466,13 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   if (resolve_framebuffer_) {
     dglBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer_);
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
     dglBindRenderbuffer(GL_RENDERBUFFER, 0);
     dglBindFramebuffer(GL_FRAMEBUFFER, 0);
     dglDeleteFramebuffers(1, &resolve_framebuffer_);
     dglDeleteRenderbuffers(1, &resolve_color_buffer_);
-    resolve_framebuffer_ = resolve_color_buffer_ = 0;
+    dglDeleteRenderbuffers(1, &resolve_depth_buffer_);
+    resolve_framebuffer_ = resolve_color_buffer_ = resolve_depth_buffer_ = 0;
   }
 
   framebuffer_width_ = static_cast<GLuint>(width);
@@ -545,14 +547,23 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     dglBindRenderbuffer(GL_RENDERBUFFER, resolve_color_buffer_);
     dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, resolve_color_buffer_);
+    // BUGFIX #8: the resolve target also needs a depth attachment so the
+    // volumetric fog pass can blit depth out of it (glBlitFramebuffer fails
+    // when the read buffer has no depth).  Format matches the main FBO.
+    dglGenRenderbuffers(1, &resolve_depth_buffer_);
+    dglBindRenderbuffer(GL_RENDERBUFFER, resolve_depth_buffer_);
+    dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, resolve_depth_buffer_);
     if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
       LOG_WARNING << "OpenGL: MSAA resolve framebuffer incomplete, disabling MSAA";
       dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+      dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
       dglBindRenderbuffer(GL_RENDERBUFFER, 0);
       dglBindFramebuffer(GL_FRAMEBUFFER, 0);
       dglDeleteFramebuffers(1, &resolve_framebuffer_);
       dglDeleteRenderbuffers(1, &resolve_color_buffer_);
-      resolve_framebuffer_ = resolve_color_buffer_ = 0;
+      dglDeleteRenderbuffers(1, &resolve_depth_buffer_);
+      resolve_framebuffer_ = resolve_color_buffer_ = resolve_depth_buffer_ = 0;
       msaa_samples_ = 0;
       // Fall back: recreate the main FBO single-sampled
       dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
@@ -595,7 +606,11 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
 
     dglGenTextures(1, &scene_depth_texture_);
     dglBindTexture(GL_TEXTURE_2D, scene_depth_texture_);
-    dglTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    // BUGFIX #8: use GL_DEPTH_COMPONENT16 to match the main framebuffer's
+    // depth renderbuffer.  glBlitFramebuffer requires matching depth formats;
+    // blitting 16-bit -> 24-bit raised GL_INVALID_OPERATION, leaving the
+    // scene depth texture black, so the fog pass fogged the whole screen.
+    dglTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
     dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -953,12 +968,13 @@ void HardwareOpenGL::PresentFrame() const {
     // MSAA resolve: multisample FBO -> single-sample resolve FBO.
     // glBlitFramebuffer performs the multisample resolve implicitly;
     // GL_NEAREST is required (and correct) for multisample resolves.
+    // BUGFIX #8: also resolve depth so the fog pass can read it.
     GLuint blit_src = framebuffer_;
     if (msaa_samples_ > 0 && resolve_framebuffer_ != 0) {
       dglBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
       dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_framebuffer_);
       dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_,
-                         framebuffer_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+                         framebuffer_height_, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
       blit_src = resolve_framebuffer_;
     }
 
