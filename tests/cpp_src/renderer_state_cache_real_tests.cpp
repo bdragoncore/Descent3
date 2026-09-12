@@ -183,6 +183,62 @@ TEST(ComputeTextureEnableTest, Toggling) {
 }
 
 // =============================================================================
+// ClampAnisotropyLevel tests
+// =============================================================================
+
+/**
+ * @test ClampAnisotropyLevel.OffStaysOff
+ * @brief Verifies 0/1 requests (off) always resolve to 1 (off).
+ */
+TEST(ClampAnisotropyLevelTest, OffStaysOff) {
+  EXPECT_EQ(ClampAnisotropyLevel(0, 16.0f), 1);
+  EXPECT_EQ(ClampAnisotropyLevel(1, 16.0f), 1);
+  EXPECT_EQ(ClampAnisotropyLevel(0, 1.0f), 1);
+}
+
+/**
+ * @test ClampAnisotropyLevel.UnsupportedExtensionReturnsOff
+ * @brief Verifies a request resolves to off when the driver max is < 2
+ *        (extension missing).
+ */
+TEST(ClampAnisotropyLevelTest, UnsupportedExtensionReturnsOff) {
+  EXPECT_EQ(ClampAnisotropyLevel(16, 1.0f), 1);
+  EXPECT_EQ(ClampAnisotropyLevel(4, 0.0f), 1);
+}
+
+/**
+ * @test ClampAnisotropyLevel.ClampsToDriverMax
+ * @brief Verifies requests above the driver max snap down to the nearest
+ *        supported power-of-two level.
+ */
+TEST(ClampAnisotropyLevelTest, ClampsToDriverMax) {
+  EXPECT_EQ(ClampAnisotropyLevel(16, 16.0f), 16);
+  EXPECT_EQ(ClampAnisotropyLevel(16, 8.0f), 8);
+  EXPECT_EQ(ClampAnisotropyLevel(16, 4.0f), 4);
+  EXPECT_EQ(ClampAnisotropyLevel(8, 4.0f), 4);
+}
+
+/**
+ * @test ClampAnisotropyLevel.SnapsDownToPowerOfTwo
+ * @brief Verifies non-power-of-two requests snap down (never up, which
+ *        could exceed the driver max).
+ */
+TEST(ClampAnisotropyLevelTest, SnapsDownToPowerOfTwo) {
+  EXPECT_EQ(ClampAnisotropyLevel(3, 16.0f), 2);
+  EXPECT_EQ(ClampAnisotropyLevel(6, 16.0f), 4);
+  EXPECT_EQ(ClampAnisotropyLevel(12, 16.0f), 8);
+}
+
+/**
+ * @test ClampAnisotropyLevel.CapsAtSixteen
+ * @brief Verifies levels above 16 are capped even when the driver reports more.
+ */
+TEST(ClampAnisotropyLevelTest, CapsAtSixteen) {
+  EXPECT_EQ(ClampAnisotropyLevel(32, 32.0f), 16);
+  EXPECT_EQ(ClampAnisotropyLevel(16, 32.0f), 16);
+}
+
+// =============================================================================
 // Instance transform cache tests
 // =============================================================================
 

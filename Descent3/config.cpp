@@ -618,6 +618,7 @@ void ConfigSetDetailLevelMax() {
 #define IDV_AUTOGAMMA 6
 #define IDV_CHANGE_RES_WINDOW 10
 #define IDV_MSAA_CYCLE 11
+#define IDV_AF_CYCLE 12
 #define UID_RESOLUTION 110
 
 static void gamma_callback(newuiTiledWindow *wnd, void *data) {
@@ -816,6 +817,39 @@ uint8_t MsaaNext(uint8_t samples) {
   }
 }
 
+// AF level -> display label. 0/1 = off.
+const char *AnisotropyLabel(uint8_t level) {
+  switch (level) {
+  case 2:
+    return "2x";
+  case 4:
+    return "4x";
+  case 8:
+    return "8x";
+  case 16:
+    return "16x";
+  default:
+    return "Off";
+  }
+}
+
+// Next AF level in the Off -> 2x -> 4x -> 8x -> 16x cycle.
+uint8_t AnisotropyNext(uint8_t level) {
+  switch (level) {
+  case 0:
+  case 1:
+    return 2;
+  case 2:
+    return 4;
+  case 4:
+    return 8;
+  case 8:
+    return 16;
+  default:
+    return 0;
+  }
+}
+
 struct video_menu {
   newuiSheet *sheet;
 
@@ -832,6 +866,9 @@ struct video_menu {
   // MSAA toggle: cycles Off -> 2x -> 4x -> 8x. Stored as sample count.
   uint8_t msaa_samples = 0;
   char *msaa_string = nullptr;
+  // AF toggle: cycles Off -> 2x -> 4x -> 8x -> 16x. Stored as AF level.
+  uint8_t anisotropy = 0;
+  char *anisotropy_string = nullptr;
 
   int *bitdepth = nullptr; // bitdepths
 
@@ -909,6 +946,21 @@ struct video_menu {
     }
     cy += font_h;
     sheet->AddLongButton("Change", IDV_MSAA_CYCLE);
+    cy += lbtn_h;
+    cy += group_pad;
+
+    // AF: toggle button cycling Off -> 2x -> 4x -> 8x -> 16x. Takes effect
+    // on menu close (textures are reconfigured via rend_ResetCache).
+    anisotropy = Render_preferred_state.anisotropy;
+    sheet->NewGroup("Anisotropy", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      anisotropy_string = sheet->AddChangeableText(alloc_size);
+      snprintf(anisotropy_string, alloc_size, "%s", AnisotropyLabel(anisotropy));
+    }
+    cy += font_h;
+    sheet->AddLongButton("Change", IDV_AF_CYCLE);
     cy += lbtn_h;
     cy += group_pad;
 
@@ -992,6 +1044,14 @@ struct video_menu {
       int temp_w = Video_res_list[Current_video_resolution_id].width;
       int temp_h = Video_res_list[Current_video_resolution_id].height;
       Current_pilot.set_hud_data(NULL, NULL, NULL, &temp_w, &temp_h);
+    }
+
+    // AF takes effect without a mode change: store the level and reset the
+    // texture cache so filter state (including AF) is reconfigured.
+    if (Render_preferred_state.anisotropy != anisotropy) {
+      Render_preferred_state.anisotropy = anisotropy;
+      rend_SetPreferredState(&Render_preferred_state);
+      rend_ResetCache();
     }
 
     Render_FOV_setting = static_cast<float>(fov[0]) + D3_DEFAULT_FOV;
@@ -1078,6 +1138,13 @@ struct video_menu {
       // Applied in finish() via SetScreenMode force (FBO recreate).
       msaa_samples = MsaaNext(msaa_samples);
       snprintf(msaa_string, 15, "%s", MsaaLabel(msaa_samples));
+      break;
+    }
+    case IDV_AF_CYCLE: {
+      // Cycle AF Off -> 2x -> 4x -> 8x -> 16x and refresh the label.
+      // Applied in finish() via rend_ResetCache (no mode change needed).
+      anisotropy = AnisotropyNext(anisotropy);
+      snprintf(anisotropy_string, 15, "%s", AnisotropyLabel(anisotropy));
       break;
     }
     case IDV_AUTOGAMMA:

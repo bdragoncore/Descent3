@@ -176,6 +176,7 @@ void rend_SetTextureType(texture_type) {}
 void rend_SetWrapType(wrap_type) {}
 void rend_SetZBufferState(int8_t) {}
 int rend_SetPreferredState(renderer_preferred_state *, bool) { REC("setpreferredstate"); return 1; }
+void rend_ResetCache() { REC("resetcache"); }
 
 float Render_FOV = 72.0f;
 int Render_preferred_bitdepth = 32;
@@ -1162,4 +1163,38 @@ TEST_F(ConfigTest, MsaaNextCyclesOff2x4x8x) {
   EXPECT_EQ(MsaaNext(4), 8);
   EXPECT_EQ(MsaaNext(8), 0);
   EXPECT_EQ(MsaaNext(16), 0); // invalid wraps to Off
+}
+
+/**
+ * @test ConfigTest.AnisotropyLabelMapsLevelToText
+ * @brief Verifies the AF toggle labels for each anisotropy level.
+ *
+ * @see Descent3/config.cpp (video_menu::AnisotropyLabel)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, AnisotropyLabelMapsLevelToText) {
+  EXPECT_STREQ(AnisotropyLabel(0), "Off");
+  EXPECT_STREQ(AnisotropyLabel(1), "Off");
+  EXPECT_STREQ(AnisotropyLabel(2), "2x");
+  EXPECT_STREQ(AnisotropyLabel(4), "4x");
+  EXPECT_STREQ(AnisotropyLabel(8), "8x");
+  EXPECT_STREQ(AnisotropyLabel(16), "16x");
+  EXPECT_STREQ(AnisotropyLabel(32), "Off"); // unsupported -> Off
+}
+
+/**
+ * @test ConfigTest.AnisotropyNextCyclesOff2x4x8x16x
+ * @brief Verifies the AF toggle cycles Off -> 2x -> 4x -> 8x -> 16x -> Off.
+ *
+ * @see Descent3/config.cpp (video_menu::AnisotropyNext)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, AnisotropyNextCyclesOff2x4x8x16x) {
+  EXPECT_EQ(AnisotropyNext(0), 2);
+  EXPECT_EQ(AnisotropyNext(1), 2);
+  EXPECT_EQ(AnisotropyNext(2), 4);
+  EXPECT_EQ(AnisotropyNext(4), 8);
+  EXPECT_EQ(AnisotropyNext(8), 16);
+  EXPECT_EQ(AnisotropyNext(16), 0);
+  EXPECT_EQ(AnisotropyNext(32), 0); // invalid wraps to Off
 }

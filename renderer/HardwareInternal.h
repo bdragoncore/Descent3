@@ -131,4 +131,34 @@ inline int ComputeTextureEnable(int current, unsigned int index, bool enabled) {
   return enabled ? (current | bit) : (current & ~bit);
 }
 
+// GL_EXT_texture_filter_anisotropic enums. SDL's glext header defines these,
+// but keep fallbacks so the renderer compiles against minimal GL headers.
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+
+// Maximum AF level the UI offers. Higher values have diminishing returns
+// and cost more texture bandwidth.
+#define MAX_ANISOTROPY_LEVEL 16
+
+// Clamps a requested AF level to what the hardware supports.
+// requested: 0/1 = off, else 2/4/8/16. max_supported: driver-reported max
+// (1.0f when the extension is missing). Returns 1 (off) when unsupported
+// or when the request is below 2. Pure function for unit testing.
+inline int ClampAnisotropyLevel(int requested, float max_supported) {
+  if (requested < 2 || max_supported < 2.0f)
+    return 1;
+  int max_level = static_cast<int>(max_supported);
+  if (max_level > MAX_ANISOTROPY_LEVEL)
+    max_level = MAX_ANISOTROPY_LEVEL;
+  // Snap down to the nearest supported power-of-two level (2/4/8/16).
+  int level = 1;
+  while (level * 2 <= requested && level * 2 <= max_level)
+    level *= 2;
+  return level;
+}
+
 #endif

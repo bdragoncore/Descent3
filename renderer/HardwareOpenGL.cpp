@@ -61,6 +61,10 @@
 #include "win/arb_extensions.h"
 #endif
 
+// Forward declaration for the extension query defined later in this file.
+// Needed by opengl_DetectAnisotropy() above.
+bool opengl_CheckExtension(std::string_view extName);
+
 // General renderer states
 extern int gpu_Overlay_map;
 int Bump_map = 0;
@@ -244,6 +248,52 @@ bool OpenGL_multitexture_state = false;
 int Already_loaded = 0;
 bool opengl_Blending_on = false;
 
+// Anisotropic filtering state (GL_EXT_texture_filter_anisotropic).
+// g_max_anisotropy: driver-reported max (1.0f = extension unsupported).
+// g_anisotropy_level: effective level applied to textures (1 = off).
+static float g_max_anisotropy = 1.0f;
+static int g_anisotropy_level = 1;
+
+// Detects GL_EXT_texture_filter_anisotropic and resolves the effective AF
+// level. UI setting (gpu_preferred_state.anisotropy) wins; the -af CLI flag
+// is the fallback. Must be called after LoadGLFnPtrs() so dglGetFloatv and
+// dglGetStringi are available.
+static void opengl_DetectAnisotropy() {
+  g_max_anisotropy = 1.0f;
+  g_anisotropy_level = 1;
+
+  if (!opengl_CheckExtension("GL_EXT_texture_filter_anisotropic")) {
+    LOG_INFO << "OpenGL: anisotropic filtering not supported by driver";
+    return;
+  }
+
+  GLfloat max_aniso = 1.0f;
+  dglGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
+  g_max_anisotropy = max_aniso;
+
+  int requested = gpu_preferred_state.anisotropy;
+  int af_arg = FindArg("-af");
+  if (requested < 2 && af_arg && af_arg + 1 < MAX_ARGS) {
+    int cli_level = atoi(GameArgs[af_arg + 1]);
+    if (cli_level >= 2)
+      requested = cli_level;
+  }
+
+  g_anisotropy_level = ClampAnisotropyLevel(requested, g_max_anisotropy);
+  if (g_anisotropy_level > 1)
+    LOG_INFO.printf("OpenGL: anisotropic filtering enabled at %dx (max %.1f)", g_anisotropy_level,
+                    g_max_anisotropy);
+}
+
+// Applies the effective AF level to the currently bound texture.
+// No-op when AF is off or unsupported. Called from opengl_MakeFilterTypeCurrent
+// so every texture gets AF when its filter state is (re)configured.
+static void opengl_ApplyAnisotropy() {
+  if (g_anisotropy_level <= 1)
+    return;
+  dglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, static_cast<GLfloat>(g_anisotropy_level));
+}
+
 namespace {
 HardwareOpenGL g_opengl_backend;
 }
@@ -385,6 +435,11 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     opengl_dll_handle_ = nullptr;
     return false;
   }
+
+  // BUGFIX (PiccuEngine AF): detect anisotropic filtering support now that
+  // GL function pointers are loaded. Sets g_anisotropy_level from the UI
+  // setting (or -af CLI fallback), clamped to the driver-reported maximum.
+  opengl_DetectAnisotropy();
 
   dglClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   dglClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -687,6 +742,10 @@ int opengl_MakeTextureObject(int tn) {
 
   dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+  // BUGFIX (PiccuEngine AF): apply AF at creation so new textures are
+  // filtered correctly even before their first filter-state change.
+  opengl_ApplyAnisotropy();
 
   // glTexEnvf (GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
 
@@ -1318,6 +1377,10 @@ void opengl_MakeFilterTypeCurrent(int handle, int map_type, int tn) {
       dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }
+    // BUGFIX (PiccuEngine AF): apply anisotropic filtering to the bound
+    // texture. AF sharpens textures viewed at oblique angles (floors, walls)
+    // with minimal performance cost. No-op when AF is off or unsupported.
+    opengl_ApplyAnisotropy();
   } else {
     if (map_type == MAP_TYPE_BITMAP && bm_mipped(handle)) {
       // dglTexParameteri (GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST_MIPMAP_NEAREST);

@@ -428,6 +428,7 @@ struct renderer_preferred_state {
   uint8_t vsync_on;
   bool fullscreen = false;
   uint8_t msaa_samples = 0; // MSAA sample count: 0 = off, else 2/4/8
+  uint8_t anisotropy = 0;   // Anisotropic filtering level: 0/1 = off, else 2/4/8/16
 };
 
 struct renderer_lfb {
