@@ -211,9 +211,19 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(THEORA REQUIRED IMPORTED_TARGET theoradec)
-pkg_check_modules(OGG REQUIRED IMPORTED_TARGET ogg)
+# Ogg Theora (.ogv cutscene/menu playback) is optional: CI runners and some
+# platforms lack PkgConfig or the theoradec/ogg dev packages. When absent,
+# HAVE_THEORA stays undefined, theora_movie.cpp is excluded, and .ogv
+# playback logs a one-time error instead of failing the configure step.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(THEORA IMPORTED_TARGET theoradec)
+  pkg_check_modules(OGG IMPORTED_TARGET ogg)
+endif()
+if(THEORA_FOUND AND OGG_FOUND)
+  set(HAVE_THEORA ON)
+  add_compile_definitions(HAVE_THEORA)
+endif()
 
 find_package(plog QUIET)
 if (NOT plog_FOUND)

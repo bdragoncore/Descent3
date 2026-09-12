@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdint>
 
+#ifdef HAVE_THEORA
 #include <ogg/ogg.h>
 #include <theora/theoradec.h>
 
@@ -62,5 +63,20 @@ void TheoraToRGB555(const TheoraMovie *tm, uint16_t *pixels, int pitch);
 
 // Closes the decoder and frees all resources.
 void TheoraClose(TheoraMovie *tm);
+
+#else // !HAVE_THEORA
+
+// Stub when libtheora is unavailable (CI runners, minimal platforms).
+// All entry points report failure so callers fall back gracefully.
+struct TheoraMovie {
+  int unused;
+};
+
+static inline TheoraMovie *TheoraOpen(const char *, bool) { return nullptr; }
+static inline int TheoraDecodeFrame(TheoraMovie *) { return 1; }
+static inline void TheoraToRGB555(const TheoraMovie *, uint16_t *, int) {}
+static inline void TheoraClose(TheoraMovie *) {}
+
+#endif // HAVE_THEORA
 
 #endif

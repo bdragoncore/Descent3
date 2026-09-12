@@ -175,7 +175,7 @@ set(CPPS
   D3ForceFeedback.cpp
   d3movie.cpp
   d3music.cpp
-  theora_movie.cpp
+  $<$<BOOL:${HAVE_THEORA}>:theora_movie.cpp>
   damage.cpp
   debuggraph.cpp
   dedicated_server.cpp
@@ -359,8 +359,8 @@ target_link_libraries(Descent3 PRIVATE
   ui
   unzip
   vecmat
-  PkgConfig::THEORA
-  PkgConfig::OGG
+  $<$<BOOL:${HAVE_THEORA}>:PkgConfig::THEORA>
+  $<$<BOOL:${HAVE_THEORA}>:PkgConfig::OGG>
   ${PLATFORM_LIBS})
 target_include_directories(Descent3 PRIVATE ${PROJECT_BINARY_DIR}/lib ${SDL3_INCLUDE_DIRS})
 target_link_options(Descent3 PRIVATE $<$<PLATFORM_ID:Windows>:/DEBUG:FULL>)
@@ -407,8 +407,8 @@ target_link_libraries(descent3 PUBLIC
   ui
   unzip
   vecmat
-  PkgConfig::THEORA
-  PkgConfig::OGG
+  $<$<BOOL:${HAVE_THEORA}>:PkgConfig::THEORA>
+  $<$<BOOL:${HAVE_THEORA}>:PkgConfig::OGG>
   ${PLATFORM_LIBS})
 
 target_include_directories(descent3 PRIVATE 
