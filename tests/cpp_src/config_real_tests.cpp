@@ -1055,11 +1055,13 @@ TEST_F(ConfigTest, ForceQuitRunsAllFinishHooksAndSaves) {
   EXPECT_EQ(Default_player_terrain_leveling, 2);
   EXPECT_EQ(Default_player_room_leveling, 2);
 
-  // details.finish no longer writes the preset radio back to the database:
-  // detail settings are forced to max on modern platforms, so only the Fast
-  // Headlight toggle is read back from the sheet.
+  // details.finish wrote preset radio back to database
+  ASSERT_GE(g_database.writes.size(), 1u);
+  bool found_db_write = false;
   for (auto &[label, val] : g_database.writes)
-    EXPECT_NE(label, std::string("PredefDetailSetting"));
+    if (label == std::string("PredefDetailSetting") && val == DETAIL_LEVEL_MED)
+      found_db_write = true;
+  EXPECT_TRUE(found_db_write);
 
   // sound.finish applied slider-derived volumes
   EXPECT_FLOAT_EQ(s_set_master_vol, 1.0f);

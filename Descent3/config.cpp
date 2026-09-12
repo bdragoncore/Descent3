@@ -1457,21 +1457,14 @@ struct details_menu {
   newuiSheet *sheet;
   newuiMenu *parent_menu;
 
-  // BUGFIX #1: On modern platforms every detail setting is forced to its
-  // maximum value, so the preset selector, the individual toggles and the
-  // sliders are no longer user-configurable.  Only the Fast Headlight toggle
-  // stays adjustable.  The locked controls are commented out below (along
-  // with their gadget pointers) and the effective max values are shown as
-  // read-only text.
-  // int *detail_level;                  // detail level radio
-  // int *objcomp;                       // object complexity radio
-  // bool *specmap, *mirror,             // check boxes
-  //     *dynamic, *fog, *coronas, *procedurals, *powerup_halo, *scorches, *weapon_coronas;
-  // int16_t *pixel_err, // 0-27 (1-28)
-  //     *rend_dist;     // 0-120 (80-200)
-  // int *texture_quality;
+  int *detail_level;                  // detail level radio
+  int *objcomp;                       // object complexity radio
+  bool *specmap, *headlight, *mirror, // check boxes
+      *dynamic, *fog, *coronas, *procedurals, *powerup_halo, *scorches, *weapon_coronas;
+  int16_t *pixel_err, // 0-27 (1-28)
+      *rend_dist;     // 0-120 (80-200)
 
-  bool *headlight; // the only user-adjustable detail toggle
+  int *texture_quality;
   bool *weapon_impact_3d; // 3D procedural weapon impact trail toggle
 
   // sets the menu up.
@@ -1480,77 +1473,75 @@ struct details_menu {
     parent_menu = menu;
 
     // detail level radio
-    // int iTemp;
-    // Database->read_int("PredefDetailSetting", &Default_detail_level);
-    // iTemp = Default_detail_level;
-    // sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
-    // detail_level = sheet->AddFirstRadioButton(TXT_LOW);
-    // sheet->AddRadioButton(TXT_CFG_MEDIUM);
-    // sheet->AddRadioButton(TXT_CFG_HIGH);
-    // sheet->AddRadioButton(TXT_CFG_VERYHIGH);
-    // sheet->AddRadioButton(TXT_CFG_CUSTOM);
-    // *detail_level = iTemp;
+    int iTemp;
+    Database->read_int("PredefDetailSetting", &Default_detail_level);
+    iTemp = Default_detail_level;
+    sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
+    detail_level = sheet->AddFirstRadioButton(TXT_LOW);
+    sheet->AddRadioButton(TXT_CFG_MEDIUM);
+    sheet->AddRadioButton(TXT_CFG_HIGH);
+    sheet->AddRadioButton(TXT_CFG_VERYHIGH);
+    sheet->AddRadioButton(TXT_CFG_CUSTOM);
+    *detail_level = iTemp;
 
     // toggles
     sheet->NewGroup(TXT_TOGGLES, 0, 87);
+    specmap = sheet->AddLongCheckBox(TXT_SPECMAPPING, Detail_settings.Specular_lighting);
     headlight = sheet->AddLongCheckBox(TXT_FASTHEADLIGHT, Detail_settings.Fast_headlight_on);
+    mirror = sheet->AddLongCheckBox(TXT_MIRRORSURF, Detail_settings.Mirrored_surfaces);
+    dynamic = sheet->AddLongCheckBox(TXT_DYNLIGHTING, Detail_settings.Dynamic_lighting);
+    fog = sheet->AddLongCheckBox(TXT_CFG_ENABLEFOG, Detail_settings.Fog_enabled);
+    coronas = sheet->AddLongCheckBox(TXT_CFG_ENABLELIGHTCORONA, Detail_settings.Coronas_enabled);
+    procedurals = sheet->AddLongCheckBox(TXT_CFG_PROCEDURALS, Detail_settings.Procedurals_enabled);
+    powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
+    scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
+    weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
     weapon_impact_3d = sheet->AddLongCheckBox("3D Weapon Impact", Detail_settings.Weapon_impact_3d);
-    // specmap = sheet->AddLongCheckBox(TXT_SPECMAPPING, Detail_settings.Specular_lighting);
-    // mirror = sheet->AddLongCheckBox(TXT_MIRRORSURF, Detail_settings.Mirrored_surfaces);
-    // dynamic = sheet->AddLongCheckBox(TXT_DYNLIGHTING, Detail_settings.Dynamic_lighting);
-    // fog = sheet->AddLongCheckBox(TXT_CFG_ENABLEFOG, Detail_settings.Fog_enabled);
-    // coronas = sheet->AddLongCheckBox(TXT_CFG_ENABLELIGHTCORONA, Detail_settings.Coronas_enabled);
-    // procedurals = sheet->AddLongCheckBox(TXT_CFG_PROCEDURALS, Detail_settings.Procedurals_enabled);
-    // powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
-    // scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
-    // weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
 
     // sliders
-    // tSliderSettings slider_set;
-    // sheet->NewGroup(TXT_GEOMETRY, 90, 0);
-    // iTemp = static_cast<int>(MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL);
-    // if (iTemp < 0)
-    //   iTemp = 0;
-    // slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
-    // slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
-    // slider_set.type = SLIDER_UNITS_INT;
-    // pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
-    // slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
-    // slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
-    // slider_set.type = SLIDER_UNITS_INT;
-    // iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
-    // if (iTemp < 0)
-    //   iTemp = 0;
-    // rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
+    tSliderSettings slider_set;
+    sheet->NewGroup(TXT_GEOMETRY, 90, 0);
+    iTemp = static_cast<int>(MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL);
+    if (iTemp < 0)
+      iTemp = 0;
+    slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
+    slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
+    slider_set.type = SLIDER_UNITS_INT;
+    pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
+    slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
+    slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
+    slider_set.type = SLIDER_UNITS_INT;
+    iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
+    if (iTemp < 0)
+      iTemp = 0;
+    rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
 
     // object complexity radio
-    // sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
-    // objcomp = sheet->AddFirstRadioButton(TXT_LOW);
-    // sheet->AddRadioButton(TXT_CFG_MEDIUM);
-    // sheet->AddRadioButton(TXT_CFG_HIGH);
-    // *objcomp = Detail_settings.Object_complexity;
-
-    // show the effective (max) values as read-only text
-    sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
-    sheet->AddText(TXT_CFG_VERYHIGH);
-
-    sheet->NewGroup(TXT_GEOMETRY, 90, 0);
-    sheet->AddText("%s: %d", TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL);
-    sheet->AddText("%s: %d", TXT_RENDDIST, MAXIMUM_RENDER_DIST);
-
     sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
-    sheet->AddText(TXT_CFG_HIGH);
+    objcomp = sheet->AddFirstRadioButton(TXT_LOW);
+    sheet->AddRadioButton(TXT_CFG_MEDIUM);
+    sheet->AddRadioButton(TXT_CFG_HIGH);
+    *objcomp = Detail_settings.Object_complexity;
 
     return sheet;
   };
 
   // retreive values from property sheet here.
   void finish() {
-    // BUGFIX #1: All detail settings are forced to their maximum values on
-    // modern platforms, so only the Fast Headlight toggle is read back from
-    // the sheet.  The remaining settings keep the max values that
-    // ConfigSetDetailLevelMax() established.
     Detail_settings.Fast_headlight_on = *headlight;
+    Detail_settings.Fog_enabled = *fog;
+    Detail_settings.Mirrored_surfaces = *mirror;
+    Detail_settings.Object_complexity = *objcomp;
+    Detail_settings.Pixel_error = static_cast<float>(MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL));
+    Detail_settings.Powerup_halos = *powerup_halo;
+    Detail_settings.Procedurals_enabled = *procedurals;
+    Detail_settings.Scorches_enabled = *scorches;
+    Detail_settings.Specular_lighting = *specmap;
+    Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
+    Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
+
+    Default_detail_level = *detail_level;
+    Database->write("PredefDetailSetting", Default_detail_level);
     Detail_settings.Weapon_impact_3d = *weapon_impact_3d;
 
     sheet = NULL;
@@ -1558,10 +1549,24 @@ struct details_menu {
 
   // process output and do stuff accordintly
   void process(int res) {
-    // BUGFIX #1: Every detail control except the Fast Headlight toggle is
-    // commented out, so there is nothing to process here; finish() reads the
-    // headlight value directly.
-    (void)res;
+    bool changed;
+
+    // check here if the detail level currently set should be custom
+    changed = sheet->HasChanged(specmap) || sheet->HasChanged(headlight) || sheet->HasChanged(mirror) ||
+              sheet->HasChanged(dynamic) || sheet->HasChanged(fog) || sheet->HasChanged(coronas) ||
+              sheet->HasChanged(procedurals) || sheet->HasChanged(powerup_halo) || sheet->HasChanged(scorches) ||
+              sheet->HasChanged(weapon_coronas) || sheet->HasChanged(weapon_impact_3d) ||
+              sheet->HasChanged(objcomp) || sheet->HasChanged(pixel_err) || sheet->HasChanged(rend_dist);
+
+    if (changed) {
+      // enable custom radio button
+      *detail_level = DETAIL_LEVEL_CUSTOM;
+    } else {
+      // check if any preset detail has been selected.
+      if (sheet->HasChanged(detail_level)) {
+        ConfigSetDetailLevel(*detail_level);
+      }
+    }
   };
 };
 

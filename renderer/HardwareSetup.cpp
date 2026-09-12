@@ -64,6 +64,9 @@ void g3_GetProjectionMatrix(float zoom, float *projMat) {
   float s = ((float)viewportWidth) / ((float)viewportHeight);
   float vertical_fov = zoom * 3.0f / 4.0f;
 
+  // setup the matrix
+  memset(projMat, 0, sizeof(float) * 16);
+
   // BUGFIX (PiccuEngine #2): Use constant near/far planes instead of
   // dividing by zoom. The original code scaled znear and zfar by zoom,
   // which caused depth range issues when FOV was changed.

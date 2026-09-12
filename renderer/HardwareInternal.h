@@ -102,6 +102,7 @@ void gpu_RenderPolygonList(PosColorUVVertex *vData, uint32_t nv);
 void gpu_RenderPolygonList(PosColorUV2Vertex *vData, uint32_t nv);
 void gpu_DrawFlatPolygon3D(g3Point **p, int nv);
 void rend_DrawMultitexturePolygon3D(int handle, g3Point **p, int nv, int map_type);
+void rend_DrawMultitexturePolygonList3D(int handle, g3Point **p, int ntri, int map_type);
 
 // BUGFIX: polygon face batching — when active, gpu_RenderPolygon accumulates
 // triangles into a static buffer instead of issuing a GL draw call per face.

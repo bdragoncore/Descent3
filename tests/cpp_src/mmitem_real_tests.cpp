@@ -324,6 +324,9 @@ static float FontScale(int window_h) { return (float)window_h / (float)FIXED_SCR
 // (mmItem.cpp CopyrightText).
 static int CopyrightX(int window_w) { return window_w - (164 * window_w / FIXED_SCREEN_WIDTH); }
 static int CopyrightY(int window_h) { return window_h - (29 * window_h / FIXED_SCREEN_HEIGHT); }
+=======
+static int ItemY(int index) { return MMITEM_Y + index * 20; }
+>>>>>>> main
 
 /**
  * @test MMItem.AddItemTypeFlags
@@ -410,6 +413,11 @@ TEST(MMItem, CopyrightPositionScalesWithWindow) {
   // 1920x1080: offsets scale by 3x horizontally and 2.25x vertically.
   EXPECT_EQ(CopyrightX(1920), 1920 - 492);
   EXPECT_EQ(CopyrightY(1080), 1080 - 65);
+=======
+  EXPECT_EQ(ItemY(0), 175);
+  EXPECT_EQ(ItemY(1), 195);
+  EXPECT_EQ(ItemY(N_MMENU_ITEMS - 1), 175 + 9 * 20);
+>>>>>>> main
 }
 
 // replicated CopyrightText type string (mmItem.cpp:418-452)

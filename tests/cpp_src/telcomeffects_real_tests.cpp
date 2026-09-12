@@ -46,6 +46,9 @@ int TelcomScaleY(int y) { return TelcomScaledY(y, Max_window_h); }
 int TelcomUnscaleX(int x) { return TelcomUnscaledX(x, Max_window_w); }
 int TelcomUnscaleY(int y) { return TelcomUnscaledY(y, Max_window_h); }
 
+
+int glitch_dx = 0, glitch_dy = 0; // normally in TelcomEffectsRender.cpp
+
 // ---- backend stubs ----
 void bm_FreeBitmap(int) {}
 void bm_DestroyChunkedBitmap(chunked_bitmap *) {}
