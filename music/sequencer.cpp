@@ -144,6 +144,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <unordered_set>
 
 #include "ddio.h"
 #include "inffile.h"
@@ -153,6 +154,12 @@
 #include "musiclib.h"
 #include "pserror.h"
 #include "streamaudio.h"
+
+// BUGFIX: Track filenames that failed to open so we don't spam the log every
+// frame when music data (.osf files) is missing. The music sequencer script
+// loops and retries PLAY/MPLAY for each track, so without this a missing
+// file produces hundreds of identical warnings per second.
+static std::unordered_set<std::string> s_failedOsfFiles;
 
 OutrageMusicSeq::OutrageMusicSeq() {
   m_sequencer_run = false;
@@ -367,6 +374,12 @@ next_ins:
   case OMFCMD_PLAY:
     name = m_tracklist.get(strm->ln_reg);
     if (name) {
+      // BUGFIX: If we already failed to open this file, don't retry every frame.
+      // The music script loops and re-executes PLAY, causing hundreds of
+      // identical "Error opening stream" warnings per second for missing .osf files.
+      if (s_failedOsfFiles.count(name))
+        break;
+
       // close this song's stream.
       bool err = false;
 
@@ -374,27 +387,25 @@ next_ins:
 
       strm->error = false;
 
-      if (strm->immediate_switch) {
-        // we start playing the current stream immediately.
-        stream->Close();
-        m_dominant_strm = DOMINANT_STRM_ADJUST();
-        //	mprintf(0, "MUSIC: Starting stream with %s on channel %d.\n", name, m_dominant_strm);
-        LOG_INFO.printf("Starting stream with %s on channel %d.", name, m_dominant_strm);
-        strm->strm = &m_strm[m_dominant_strm];
-        stream = &strm->strm->m_stream;
-        err = stream->Open(name);
-      } else {
-        m_dominant_strm = DOMINANT_STRM_ADJUST();
-        //	mprintf(0, "MUSIC: Preparing stream with %s on channel %d.\n", name, m_dominant_strm);
-        LOG_INFO.printf("Preparing stream with %s on channel %d.", name, m_dominant_strm);
-        strm->strm = &m_strm[m_dominant_strm];
-        stream = &strm->strm->m_stream;
-        err = stream->Open(name);
-        //	stream->Open(name, STRM_OPNF_GRADUAL);
-      }
+       if (strm->immediate_switch) {
+         // we start playing the current stream immediately.
+         stream->Close();
+         m_dominant_strm = DOMINANT_STRM_ADJUST();
+         //	mprintf(0, "MUSIC: Starting stream with %s on channel %d.\n", name, m_dominant_strm);
+         LOG_INFO.printf("Starting stream with %s on channel %d.", name, m_dominant_strm);
+         strm->strm = &m_strm[m_dominant_strm];
+         stream = &strm->strm->m_stream;
+         err = stream->Open(name);
+       } else {
+         m_dominant_strm = DOMINANT_STRM_ADJUST();
+         strm->strm = &m_strm[m_dominant_strm];
+         stream = &strm->strm->m_stream;
+         err = stream->Open(name);
+       }
 
       // skip instructions until error is cleared.
       if (!err) {
+        s_failedOsfFiles.insert(name);
         LOG_WARNING.printf("Error opening stream %s on channel %d.", name, m_dominant_strm);
         strm->error = true;
       }
@@ -412,6 +423,10 @@ next_ins:
   case OMFCMD_MPLAY:
     if (strm->immediate_switch || strm->error) {
       strm->immediate_switch = false;
+      // If the stream already errored (e.g. file not found), don't spam
+      // "Error playing" every frame — just advance past this instruction.
+      if (strm->error)
+        break;
     } else if (!stream->IsReady()) {
       strm->ip--;
       break;
