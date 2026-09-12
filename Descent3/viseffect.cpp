@@ -461,6 +461,7 @@
 #include "vclip.h"
 #include "viseffect.h"
 #include "weapon.h"
+#include "WeaponImpact.h"
 #include "weather.h"
 
 // DAJ vis_effect VisEffects[max_vis_effects];
@@ -1638,6 +1639,102 @@ void DrawVisBillboardSmoketrail(vis_effect *vis) {
   rend_SetZBufferWriteMask(1);
 }
 
+// Draws a 3D volumetric plasma trail segment (replaces the 2D billboard
+// smoke trail when Detail_settings.Weapon_impact_3d is enabled).
+// Renders a camera-facing volumetric cross with the plasma glow shader,
+// fading with age. Falls back to the 2D billboard path if the trail
+// axis is degenerate.
+void DrawVisPlasmaTrail3D(vis_effect *vis) {
+  float time_live = Gametime - vis->creation_time;
+  float norm_time = time_live / vis->lifetime;
+  if (norm_time < 0.0f)
+    norm_time = 0.0f;
+  if (norm_time > 1.0f)
+    norm_time = 1.0f;
+
+  float alpha_norm = vis->lifeleft / vis->lifetime;
+  if (alpha_norm < 0.0f)
+    alpha_norm = 0.0f;
+  if (alpha_norm > 1.0f)
+    alpha_norm = 1.0f;
+
+  // Width shrinks as the segment ages (matches the 2D billboard behavior
+  // of narrowing over life, plus a grow-in at birth).
+  float width = vis->billboard_info.width * alpha_norm;
+  if (alpha_norm > 0.8f) {
+    float newnorm = 1.0f - ((alpha_norm - 0.8f) / 0.2f);
+    width *= newnorm;
+  }
+
+  alpha_norm *= 0.7f;
+
+  // Resolve the smoke bitmap exactly like DrawVisBillboardSmoketrail so the
+  // 3D trail samples the weapon's own texture (animated frames included).
+  int bm_handle;
+  int texnum = vis->custom_handle;
+  if (GameTextures[texnum].flags & TF_ANIMATED) {
+    vclip *vc = &GameVClips[GameTextures[texnum].bm_handle];
+    int int_frame = vc->num_frames * norm_time;
+    bm_handle = vc->frames[int_frame];
+  } else
+    bm_handle = GetTextureBitmap(texnum, 0);
+
+  DrawPlasmaTrailSegment(vis->pos, vis->end_pos, width, norm_time, vis->lighting_color, alpha_norm,
+                         bm_handle);
+}
+
+// Draws a 3D wall-hit shockball for weapon explosion vis-effects.
+// Handles both custom explosions (bitmap in custom_handle) and stock
+// small/medium/big explosions (vclip frames in Fireballs[].bm_handle).
+// Falls back to the procedural gradient texture when no bitmap resolves.
+void DrawVisPlasmaShockball(vis_effect *vis) {
+  float time_live = Gametime - vis->creation_time;
+  float norm_time = time_live / vis->lifetime;
+  if (norm_time < 0.0f)
+    norm_time = 0.0f;
+  if (norm_time > 1.0f)
+    norm_time = 1.0f;
+  float val;
+  if (norm_time > .5)
+    val = 1.0 - ((norm_time - .5) / .5);
+  else
+    val = 1.0;
+
+  // Prefer the procedural circular gradient explosion texture.
+  int bm_handle = GetPlasmaExplosionTexture();
+  float alpha = val;
+  if (vis->id == CUSTOM_EXPLOSION_INDEX) {
+    alpha *= GameTextures[vis->custom_handle].alpha;
+    if (bm_handle < 0) {
+      // Fall back to the weapon's explosion bitmap (animated aware)
+      if (GameTextures[vis->custom_handle].flags & TF_ANIMATED) {
+        vclip *vc = &GameVClips[GameTextures[vis->custom_handle].bm_handle];
+        int int_frame = vc->num_frames * norm_time;
+        bm_handle = vc->frames[int_frame];
+      } else
+        bm_handle = GetTextureBitmap(vis->custom_handle, 0);
+    }
+  } else {
+    // Stock explosion: resolve the current vclip frame like the generic path
+    fireball *fb = &Fireballs[vis->id];
+    if (bm_handle < 0) {
+      vclip *vc = &GameVClips[fb->bm_handle];
+      int int_frame = vc->num_frames * norm_time;
+      bm_handle = vc->frames[int_frame];
+    }
+    if (fb->type == FT_SMOKE)
+      alpha *= SMOKE_ALPHA;
+    else
+      alpha *= FIREBALL_ALPHA;
+  }
+
+  vector wall_n = {0.0f, 0.0f, 0.0f};
+  if (vis->flags & VF_PLANAR)
+    wall_n = vis->end_pos;
+  DrawPlasmaShockball3D(vis->pos, wall_n, vis->size, norm_time, vis->lighting_color & 0x7FFF, alpha,
+                        bm_handle);
+}
+
 // Draws a long "stick" to represent the mass driver trail
 void DrawVisMassDriverEffect(vis_effect *vis, bool f_boss) {
   int i, t, k;
@@ -1805,7 +1902,17 @@ void DrawVisEffect(vis_effect *vis) {
     DrawVisMassDriverEffect(vis, true);
     return;
   } else if (vis->id == BILLBOARD_SMOKETRAIL_INDEX) {
-    DrawVisBillboardSmoketrail(vis);
+    // BUGFIX: When the 3D weapon impact setting is enabled, render any
+    // billboard smoke trail as a volumetric 3D plasma trail. Deciding here
+    // (at render time) instead of at creation time guarantees the effect is
+    // visible regardless of which weapon flags created the trail.
+    if (Detail_settings.Weapon_impact_3d)
+      DrawVisPlasmaTrail3D(vis);
+    else
+      DrawVisBillboardSmoketrail(vis);
+    return;
+  } else if (vis->id == PLASMA_TRAIL_3D_INDEX) {
+    DrawVisPlasmaTrail3D(vis);
     return;
   } else if (vis->id == THICK_LIGHTNING_INDEX) {
     DrawVisThickLightning(vis);
@@ -1827,6 +1934,43 @@ void DrawVisEffect(vis_effect *vis) {
     return;
   } else if (vis->id == AXIS_BILLBOARD_INDEX) {
     DrawVisAxisBillboard(vis);
+    return;
+  } else if (vis->id == CUSTOM_EXPLOSION_INDEX && Detail_settings.Weapon_impact_3d) {
+    // BUGFIX: Weapon wall-hit explosions (DoWeaponExploded creates these at
+    // the impact point) render as 3D expanding shockballs with a wall-aligned
+    // impact fan instead of flat camera-facing sprites. Planar explosions
+    // carry the wall normal in end_pos; open-air ones get a zero normal
+    // (ball only, no fan). Covers custom explosions plus the small/medium
+    // fallbacks used when a weapon has no explode_image_handle.
+    DrawVisPlasmaShockball(vis);
+    return;
+  } else if ((vis->id == SMALL_EXPLOSION_INDEX || vis->id == SMALL_EXPLOSION_INDEX2 ||
+              vis->id == MED_EXPLOSION_INDEX || vis->id == MED_EXPLOSION_INDEX2 ||
+              vis->id == MED_EXPLOSION_INDEX3 || vis->id == BIG_EXPLOSION_INDEX) &&
+             Detail_settings.Weapon_impact_3d) {
+    // BUGFIX: Stock small/medium/big explosions (GetRandomSmallExplosion
+    // fallback in DoWeaponExploded when explode_image_handle is unset, e.g.
+    // plasma) also render as 3D shockballs.
+    DrawVisPlasmaShockball(vis);
+    return;
+  } else if (vis->id == SMOKE_TRAIL_INDEX && Detail_settings.Weapon_impact_3d) {
+    // BUGFIX: Blobby smoke trails (the non-planar WF_SMOKE path, which the
+    // plasma weapon likely uses) render as 3D octahedron blobs instead of
+    // camera-facing 2D sprites when the 3D weapon impact setting is on.
+    float time_live = Gametime - vis->creation_time;
+    float norm_time = time_live / vis->lifetime;
+    if (norm_time < 0.0f)
+      norm_time = 0.0f;
+    if (norm_time > 1.0f)
+      norm_time = 1.0f;
+    float val;
+    if (norm_time > .5)
+      val = 1.0 - ((norm_time - .5) / .5);
+    else
+      val = 1.0;
+    float alpha = val * GameTextures[vis->custom_handle].alpha;
+    int bm_handle = GetTextureBitmap(vis->custom_handle, 0);
+    DrawPlasmaBlob3D(vis->pos, vis->size, norm_time, vis->lighting_color, alpha, bm_handle);
     return;
   }
 

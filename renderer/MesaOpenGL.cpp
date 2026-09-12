@@ -963,6 +963,16 @@ void rend_SetFogBorders(float nearz, float farz) {}
 void rend_SetSharpening(float strength) {}
 void rend_SetZBias(float z_bias) { Z_bias = z_bias; }
 
+// BUGFIX: Plasma glow stubs for the Mesa backend (no shader support).
+// The 3D trail still renders as flat additive quads; the glow is skipped.
+void rend_SetPlasmaGlow(float glow, float r, float g, float b) {
+  (void)glow;
+  (void)r;
+  (void)g;
+  (void)b;
+}
+void rend_SetEffectAge(float age) { (void)age; }
+
 void rend_SetRendererType(renderer_type state) {
   Renderer_type = state;
   LOG_DEBUG.printf("RendererType is set to %d.", state);

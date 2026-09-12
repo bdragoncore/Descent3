@@ -906,6 +906,7 @@
 #include <cstring>
 
 #include "weapon.h"
+#include "WeaponImpact.h"
 #include "descent.h"
 #include "polymodel.h"
 #include "room.h"
@@ -1651,6 +1652,11 @@ void WeaponDoFrame(object *obj) {
   if ((Weapons[obj->id].flags & WF_SMOKE) && draw_effects) {
     if (Weapons[obj->id].flags & WF_PLANAR_SMOKE) {
       vector newpos = obj->pos - (obj->orient.fvec * (obj->size / 2));
+
+      // NOTE: The 3D plasma trail switch happens at render time in
+      // DrawVisEffect (viseffect.cpp), so creation always uses the standard
+      // billboard index. When Detail_settings.Weapon_impact_3d is enabled,
+      // the billboard is rendered as a volumetric 3D trail instead.
       int visnum = VisEffectCreate(VIS_FIREBALL, BILLBOARD_SMOKETRAIL_INDEX, obj->roomnum, &newpos);
       if (visnum >= 0) {
         vis_effect *vis = &VisEffects[visnum];
@@ -2584,7 +2590,23 @@ void DrawWeaponObject(object *obj) {
 
   // Don't draw if spray
   if (!(Weapons[obj->id].flags & WF_INVISIBLE)) {
-    if (Weapons[obj->id].flags & WF_ELECTRICAL) {
+    // BUGFIX: When the 3D weapon impact setting is enabled, draw the
+    // plasma bolt body as a 3D sphere (ball) instead of its original
+    // rendering (electrical arc, billboard, or polymodel — plasma's flags
+    // are data-driven so hook before the dispatch). Scoped to PLASMA_INDEX
+    // only; all other weapons keep their original rendering.
+    if (Detail_settings.Weapon_impact_3d && obj->id == PLASMA_INDEX) {
+      // Prefer the procedural white-to-green gradient ball texture; fall
+      // back to the weapon's fire bitmap if generation failed.
+      int blob_bm = GetPlasmaBallTexture();
+      if (blob_bm < 0)
+        blob_bm = GetWeaponFireImage(obj->id, 0);
+      uint16_t tint = GR_RGB16(Weapons[obj->id].lighting_info.red_light1 * 255.0f,
+                               Weapons[obj->id].lighting_info.green_light1 * 255.0f,
+                               Weapons[obj->id].lighting_info.blue_light1 * 255.0f);
+      DrawPlasmaBall3D(obj->pos, obj->size, 0.0f, tint, Weapons[obj->id].alpha,
+                       blob_bm >= 0 ? blob_bm : -1);
+    } else if (Weapons[obj->id].flags & WF_ELECTRICAL) {
       DrawElectricalWeapon(obj);
     } else if ((Weapons[obj->id].flags & WF_IMAGE_BITMAP) || (Weapons[obj->id].flags & WF_IMAGE_VCLIP)) {
       int bm_handle;

@@ -105,6 +105,7 @@
 #include "config.h"
 #include "object_external_struct.h" //for ROOMNUM_OUTSIDE macro
 #include "psrand.h"
+#include "WeaponImpact.h"
 
 #include <algorithm>
 
@@ -363,6 +364,12 @@ void DrawScorches(int roomnum, int facenum) {
 
       // Get the bitmap handle
       int bm_handle = GetTextureBitmap(Scorch_texture_handles[sp->handle_index], 0);
+
+      // BUGFIX: When the 3D weapon impact setting is enabled, draw the
+      // scorch as a procedural glow-fan mesh instead of a flat sprite.
+      // Scorch marks are permanent so age is 0 (full intensity).
+      if (Detail_settings.Weapon_impact_3d && DrawPlasmaImpact3D(roomnum, facenum, points, size, 0.0f))
+        goto skip_draw;
 
       // Draw the polygon
       g3_DrawPoly(4, pointlist, bm_handle);
