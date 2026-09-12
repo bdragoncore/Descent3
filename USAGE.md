@@ -367,7 +367,7 @@ The following command-line options are available in Descent 3. You can set comma
 
     **Platform:** all
 
-    **Description:** Enables volumetric fog (Phase 1) at the specified quality level (1 = low, 16 ray-march steps; 2 = high, 32 steps). Replaces flat distance-based fog with a ray-marched procedural 3D density field for a cloudy, volumetric look. Requires OpenGL 3.2 core; falls back to legacy fog when disabled or unsupported. Can also be set from the video options menu.
+    **Description:** Enables volumetric fog at the specified quality level (1 = low, 16 ray-march steps; 2 = high, 32 steps). Replaces flat distance-based fog with a ray-marched procedural 3D density field for a cloudy, volumetric look. In-scattering and god rays (light shafts) are driven by the level's actual sun direction and color (set from the terrain sky). Requires OpenGL 3.2 core; falls back to legacy fog when disabled or unsupported. Can also be set from the video options menu.
 
 - `-nosparkles`
 

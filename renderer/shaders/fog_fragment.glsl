@@ -19,11 +19,17 @@
  */
 
 /*
- * VOLUMETRIC FOG PASS (Phase 1)
+ * VOLUMETRIC FOG PASS (Phase 2)
  * =============================
  * Ray-marches a procedural 3D density field per-pixel and composites the
  * accumulated in-scattering over the rendered scene.  Runs as a full-screen
  * pass after the scene is resolved to a texture.
+ *
+ * Phase 2 adds light interaction: the in-scattering term is driven by the
+ * level's actual sun (direction + color, set via rend_SetSunLight) instead
+ * of a hardcoded direction, and screen-space god rays (light shafts) are
+ * sampled from the bright areas of the resolved scene along the line toward
+ * the sun's screen position.
  *
  * Depth convention: the renderer uses a near=0 / far=infinity projection
  * (proj[2][2]=1, proj[2][3]=1, proj[3][2]=-1), so the depth buffer value is
@@ -47,7 +53,11 @@ uniform float u_noise_freq;
 uniform int u_steps;
 uniform float u_proj00;
 uniform float u_proj11;
-uniform vec3 u_light_dir;
+uniform vec3 u_sun_dir;       // world-space direction toward the sun
+uniform vec3 u_sun_color;     // sun RGB intensity (HDR allowed)
+uniform vec2 u_sun_screen;    // sun position in scene UV coords (god rays)
+uniform int u_god_rays;       // 0/1 enable screen-space light shafts
+uniform int u_god_ray_samples;
 uniform mat4 u_inv_view;
 uniform int u_fog_enable;
 
@@ -82,6 +92,30 @@ float fbm(vec3 p) {
     return value;
 }
 
+// Screen-space god rays (light shafts): sample the resolved scene along the
+// line from the sun's screen position to this pixel, accumulating bright
+// pixels (light sources) as shafts.  Samples are weighted toward the sun so
+// shafts fade with distance from it.
+vec3 god_rays(vec2 uv) {
+    vec2 dir = uv - u_sun_screen;
+    vec2 step = dir / float(u_god_ray_samples);
+    vec3 accum = vec3(0.0);
+    float weight = 0.0;
+    vec2 p = u_sun_screen;
+    for (int i = 0; i < 16; i++) {
+        if (i >= u_god_ray_samples)
+            break;
+        p += step;
+        vec3 c = texture(u_scene_color, p).rgb;
+        float lum = dot(c, vec3(0.299, 0.587, 0.114));
+        float bright = smoothstep(0.6, 1.0, lum);
+        float falloff = 1.0 - float(i) / float(u_god_ray_samples);
+        accum += c * bright * falloff;
+        weight += falloff;
+    }
+    return accum / max(weight, 1e-4);
+}
+
 void main() {
     vec3 scene_color = texture(u_scene_color, v_uv).rgb;
 
@@ -103,6 +137,10 @@ void main() {
     float march_end = max(surface_dist, march_start);
     float step_size = (march_end - march_start) / float(u_steps);
 
+    // God rays: light shafts from the sun, sampled once per pixel and added
+    // to the composite weighted by the total fog along the ray.
+    vec3 god = (u_god_rays == 1) ? god_rays(v_uv) : vec3(0.0);
+
     float transmittance = 1.0;
     vec3 scattered = vec3(0.0);
 
@@ -120,13 +158,15 @@ void main() {
         float density = u_fog_density * (1.0 + u_noise_scale * (fbm(world_pos * u_noise_freq) - 0.5));
         density = max(density, 0.0);
 
-        // Directional in-scattering: fog brightens when looking toward the light.
-        float scattering = 0.6 + 0.4 * max(dot(ray_dir, u_light_dir), 0.0);
+        // Sun-driven in-scattering: fog brightens when looking toward the sun.
+        float scattering = 0.6 + 0.4 * max(dot(ray_dir, u_sun_dir), 0.0);
 
         float step_transmittance = exp(-density * step_size);
         scattered += transmittance * (1.0 - step_transmittance) * u_fog_color * scattering;
         transmittance *= step_transmittance;
     }
 
-    out_color = vec4(scene_color * transmittance + scattered, 1.0);
+    // Composite: scene attenuated by fog, plus in-scattering, plus god rays
+    // (shaft light appears where fog is present along the ray).
+    out_color = vec4(scene_color * transmittance + scattered + god * u_sun_color * (1.0 - transmittance), 1.0);
 }

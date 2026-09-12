@@ -2261,6 +2261,12 @@ TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
     EXPECT_GE(glGetUniformLocation(prog, "u_proj00"), 0);
     EXPECT_GE(glGetUniformLocation(prog, "u_proj11"), 0);
     EXPECT_GE(glGetUniformLocation(prog, "u_inv_view"), 0);
+    // Phase 2: sun light + god rays.
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_dir"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_screen"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_god_rays"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_god_ray_samples"), 0);
 
     glDeleteProgram(prog);
     glDeleteShader(vs);
@@ -2288,4 +2294,25 @@ TEST_F(D3GameRenderTest, FogStateCapture) {
 
     backend.setSceneFogActive(false);
     EXPECT_FALSE(backend.getSceneFogActive());
+}
+
+TEST_F(D3GameRenderTest, SunLightStateCapture) {
+    // The volumetric fog pass reads sun state captured from rend_SetSunLight
+    // for in-scattering and god rays.  Verify the HardwareOpenGL setters/
+    // getters round-trip correctly, including the Phase 1 default direction.
+    HardwareOpenGL backend;
+    EXPECT_FLOAT_EQ(backend.getSunDir()[0], 0.371391f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[1], 0.742782f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[2], 0.557086f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[0], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[1], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[2], 1.0f);
+
+    backend.setSunLight(0.0f, 1.0f, 0.0f, 2.0f, 1.5f, 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[0], 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[1], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[2], 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[0], 2.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[1], 1.5f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[2], 1.0f);
 }

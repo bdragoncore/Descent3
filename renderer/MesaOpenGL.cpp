@@ -1034,6 +1034,14 @@ void rend_SetFlatColor(ddgr_color color) { gpu_state.cur_color = color; }
 
 void rend_SetFogState(int8_t state) {}
 void rend_SetFogBorders(float nearz, float farz) {}
+void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b) {
+  (void)dir_x;
+  (void)dir_y;
+  (void)dir_z;
+  (void)r;
+  (void)g;
+  (void)b;
+}
 
 // BUGFIX: Plasma glow stubs for the Mesa backend (no shader support).
 // The 3D trail still renders as flat additive quads; the glow is skipped.

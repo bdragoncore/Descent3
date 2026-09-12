@@ -33,6 +33,19 @@ public:
   float getSceneFogEnd() const { return scene_fog_end_; }
   const float *getSceneFogColor() const { return scene_fog_color_; }
 
+  // Sun light for the volumetric fog pass (Phase 2).  Used for in-scattering
+  // and god rays.  Called by free function rend_SetSunLight.
+  void setSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b) {
+    sun_dir_[0] = dir_x;
+    sun_dir_[1] = dir_y;
+    sun_dir_[2] = dir_z;
+    sun_color_[0] = r;
+    sun_color_[1] = g;
+    sun_color_[2] = b;
+  }
+  const float *getSunDir() const { return sun_dir_; }
+  const float *getSunColor() const { return sun_color_; }
+
 protected:
   SDL_Window *window_ = nullptr;
   SDL_GLContext context_ = nullptr;
@@ -74,7 +87,11 @@ protected:
   mutable GLint fog_uniform_steps_ = -1;
   mutable GLint fog_uniform_proj00_ = -1;
   mutable GLint fog_uniform_proj11_ = -1;
-  mutable GLint fog_uniform_light_dir_ = -1;
+  mutable GLint fog_uniform_sun_dir_ = -1;
+  mutable GLint fog_uniform_sun_color_ = -1;
+  mutable GLint fog_uniform_sun_screen_ = -1;
+  mutable GLint fog_uniform_god_rays_ = -1;
+  mutable GLint fog_uniform_god_ray_samples_ = -1;
   mutable GLint fog_uniform_inv_view_ = -1;
   mutable GLint fog_uniform_enable_ = -1;
   mutable GLint fog_attrib_pos_ = -1;
@@ -84,6 +101,11 @@ protected:
   mutable float scene_fog_start_ = 0.0f;
   mutable float scene_fog_end_ = 0.0f;
   mutable float scene_fog_color_[3] = {1.0f, 1.0f, 1.0f};
+  // Sun light captured from rend_SetSunLight for in-scattering and god rays.
+  // Defaults match the Phase 1 hardcoded direction so behavior is unchanged
+  // when the game does not set a sun.
+  mutable float sun_dir_[3] = {0.371391f, 0.742782f, 0.557086f};
+  mutable float sun_color_[3] = {1.0f, 1.0f, 1.0f};
   uint8_t vfog_level_ = 0; // 0 = off, 1 = low (16 steps), 2 = high (32 steps)
 
   // Compiles and links the volumetric fog pass shader, caching uniform and

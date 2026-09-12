@@ -465,6 +465,11 @@ void rend_SetFogState(int8_t on);
 // Sets the near and far plane of fog
 void rend_SetFogBorders(float fog_near, float fog_far);
 
+// Sets the sun light used by the volumetric fog pass for in-scattering and
+// god rays.  dir is the normalized world-space direction TOWARD the sun;
+// color is the sun's RGB intensity (may exceed 1.0 for HDR light shafts).
+void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b);
+
 // Sets the color for fill based primitives;
 void rend_SetFlatColor(ddgr_color color);
 

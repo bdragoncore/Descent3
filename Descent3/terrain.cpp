@@ -38,6 +38,7 @@
 #include "mem.h"
 #include "dedicated_server.h"
 #include "psrand.h"
+#include "renderer.h"
 #ifdef EDITOR
 #include "editor\d3edit.h"
 #endif
@@ -954,6 +955,22 @@ void ResetTerrain(int force) {
 void GenerateLightSource() {
   Terrain_sky.lightsource.x() = FixCos(Terrain_sky.lightangle);
   Terrain_sky.lightsource.z() = FixSin(Terrain_sky.lightangle);
+
+  // BUGFIX #6: feed the terrain sun into the volumetric fog pass so
+  // in-scattering and god rays use the actual level lighting instead of the
+  // renderer's hardcoded default direction.  lightsource points FROM the sun
+  // (the direction light travels), so negate it to get the direction TOWARD
+  // the sun used by the fog shader.  Fall back to white when the level has
+  // no satellites.
+  vector sun_dir = -Terrain_sky.lightsource;
+  vm_NormalizeVector(&sun_dir);
+  float sr = 1.0f, sg = 1.0f, sb = 1.0f;
+  if (Terrain_sky.num_satellites > 0) {
+    sr = Terrain_sky.satellite_r[0];
+    sg = Terrain_sky.satellite_g[0];
+    sb = Terrain_sky.satellite_b[0];
+  }
+  rend_SetSunLight(sun_dir.x(), sun_dir.y(), sun_dir.z(), sr, sg, sb);
 }
 
 void InitTerrain(void) {

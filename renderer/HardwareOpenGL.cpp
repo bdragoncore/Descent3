@@ -170,6 +170,7 @@ struct Renderer {
   // Accessors for the volumetric fog pass.
   float getProjection00() const { return projection_[0][0]; }
   float getProjection11() const { return projection_[1][1]; }
+  glm::mat4x4 getViewMatrix() const { return view_; }
   glm::mat4x4 getViewInverse() const { return glm::inverse(view_); }
 
 private:
@@ -756,7 +757,11 @@ GLuint HardwareOpenGL::CompileFogShader() const {
   fog_uniform_steps_ = dglGetUniformLocation(prog, "u_steps");
   fog_uniform_proj00_ = dglGetUniformLocation(prog, "u_proj00");
   fog_uniform_proj11_ = dglGetUniformLocation(prog, "u_proj11");
-  fog_uniform_light_dir_ = dglGetUniformLocation(prog, "u_light_dir");
+  fog_uniform_sun_dir_ = dglGetUniformLocation(prog, "u_sun_dir");
+  fog_uniform_sun_color_ = dglGetUniformLocation(prog, "u_sun_color");
+  fog_uniform_sun_screen_ = dglGetUniformLocation(prog, "u_sun_screen");
+  fog_uniform_god_rays_ = dglGetUniformLocation(prog, "u_god_rays");
+  fog_uniform_god_ray_samples_ = dglGetUniformLocation(prog, "u_god_ray_samples");
   fog_uniform_inv_view_ = dglGetUniformLocation(prog, "u_inv_view");
   fog_uniform_enable_ = dglGetUniformLocation(prog, "u_fog_enable");
   fog_attrib_pos_ = dglGetAttribLocation(prog, "in_pos");
@@ -853,8 +858,29 @@ void HardwareOpenGL::RenderFogPass() const {
   dglUniform1f(fog_uniform_proj00_, gRenderer->getProjection00());
   dglUniform1f(fog_uniform_proj11_, gRenderer->getProjection11());
 
-  // Fixed directional light for in-scattering.
-  dglUniform3f(fog_uniform_light_dir_, 0.371391f, 0.742782f, 0.557086f);
+  // Sun light for in-scattering and god rays (Phase 2).  The direction is
+  // world-space toward the sun; the color may exceed 1.0 for HDR shafts.
+  dglUniform3f(fog_uniform_sun_dir_, sun_dir_[0], sun_dir_[1], sun_dir_[2]);
+  dglUniform3f(fog_uniform_sun_color_, sun_color_[0], sun_color_[1], sun_color_[2]);
+
+  // God rays: project the sun direction into screen space.  The sun is at
+  // infinity, so only its direction matters.  With the near=0/far=infinity
+  // projection, clip.w = -view_dir.z, clip.x = proj00*view_dir.x, and
+  // clip.y = proj11*view_dir.y, so NDC = (-proj00*vx/vz, -proj11*vy/vz).
+  // When the sun is behind the camera (view_dir.z >= 0) god rays are off.
+  glm::vec4 sun_view = gRenderer->getViewMatrix() * glm::vec4(sun_dir_[0], sun_dir_[1], sun_dir_[2], 0.0f);
+  int god_rays = 0;
+  float sun_uv[2] = {0.0f, 0.0f};
+  if (sun_view.z < 0.0f) {
+    float ndc_x = -gRenderer->getProjection00() * sun_view.x / sun_view.z;
+    float ndc_y = -gRenderer->getProjection11() * sun_view.y / sun_view.z;
+    sun_uv[0] = ndc_x * 0.5f + 0.5f;
+    sun_uv[1] = ndc_y * 0.5f + 0.5f;
+    god_rays = 1;
+  }
+  dglUniform2f(fog_uniform_sun_screen_, sun_uv[0], sun_uv[1]);
+  dglUniform1i(fog_uniform_god_rays_, god_rays);
+  dglUniform1i(fog_uniform_god_ray_samples_, vfog_level_ == 1 ? 8 : 16);
 
   // View → world inverse matrix for world-space noise.
   dglUniformMatrix4fv(fog_uniform_inv_view_, 1, GL_FALSE, glm::value_ptr(gRenderer->getViewInverse()));
@@ -1995,6 +2021,13 @@ void rend_SetFogState(int8_t state) {
 void rend_SetFogBorders(float nearz, float farz) {
   gRenderer->setFogBorders(nearz, farz);
   g_opengl_backend.setSceneFogBorders(nearz, farz);
+}
+
+// Sets the sun light used by the volumetric fog pass for in-scattering and
+// god rays.  dir is the normalized world-space direction TOWARD the sun;
+// color is the sun's RGB intensity (may exceed 1.0 for HDR light shafts).
+void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b) {
+  g_opengl_backend.setSunLight(dir_x, dir_y, dir_z, r, g, b);
 }
 
 // BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).
