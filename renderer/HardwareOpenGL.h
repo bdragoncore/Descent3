@@ -92,6 +92,8 @@ protected:
   mutable GLint fog_uniform_sun_screen_ = -1;
   mutable GLint fog_uniform_god_rays_ = -1;
   mutable GLint fog_uniform_god_ray_samples_ = -1;
+  mutable GLint fog_uniform_time_ = -1;
+  mutable GLint fog_uniform_wind_ = -1;
   mutable GLint fog_uniform_inv_view_ = -1;
   mutable GLint fog_uniform_enable_ = -1;
   mutable GLint fog_attrib_pos_ = -1;

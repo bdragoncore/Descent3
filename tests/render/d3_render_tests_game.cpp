@@ -2267,6 +2267,9 @@ TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
     EXPECT_GE(glGetUniformLocation(prog, "u_sun_screen"), 0);
     EXPECT_GE(glGetUniformLocation(prog, "u_god_rays"), 0);
     EXPECT_GE(glGetUniformLocation(prog, "u_god_ray_samples"), 0);
+    // Phase 3: animated fog (time-advected density field).
+    EXPECT_GE(glGetUniformLocation(prog, "u_time"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_wind"), 0);
 
     glDeleteProgram(prog);
     glDeleteShader(vs);

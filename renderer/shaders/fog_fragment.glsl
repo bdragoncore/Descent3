@@ -19,17 +19,21 @@
  */
 
 /*
- * VOLUMETRIC FOG PASS (Phase 2)
+ * VOLUMETRIC FOG PASS (Phase 3)
  * =============================
  * Ray-marches a procedural 3D density field per-pixel and composites the
  * accumulated in-scattering over the rendered scene.  Runs as a full-screen
  * pass after the scene is resolved to a texture.
  *
- * Phase 2 adds light interaction: the in-scattering term is driven by the
+ * Phase 2 added light interaction: the in-scattering term is driven by the
  * level's actual sun (direction + color, set via rend_SetSunLight) instead
  * of a hardcoded direction, and screen-space god rays (light shafts) are
  * sampled from the bright areas of the resolved scene along the line toward
  * the sun's screen position.
+ *
+ * Phase 3 animates the density field: the FBM noise is advected by a wind
+ * vector over time (u_wind * u_time), so the fog drifts and rolls instead
+ * of being a static field.
  *
  * Depth convention: the renderer uses a near=0 / far=infinity projection
  * (proj[2][2]=1, proj[2][3]=1, proj[3][2]=-1), so the depth buffer value is
@@ -58,6 +62,8 @@ uniform vec3 u_sun_color;     // sun RGB intensity (HDR allowed)
 uniform vec2 u_sun_screen;    // sun position in scene UV coords (god rays)
 uniform int u_god_rays;       // 0/1 enable screen-space light shafts
 uniform int u_god_ray_samples;
+uniform float u_time;         // seconds since start (fog animation)
+uniform vec3 u_wind;          // world-space drift direction for the density field
 uniform mat4 u_inv_view;
 uniform int u_fog_enable;
 
@@ -154,8 +160,10 @@ void main() {
         vec4 world = u_inv_view * vec4(view_pos, 1.0);
         vec3 world_pos = world.xyz / world.w;
 
-        // Procedural density: base density modulated by FBM noise.
-        float density = u_fog_density * (1.0 + u_noise_scale * (fbm(world_pos * u_noise_freq) - 0.5));
+        // Procedural density: base density modulated by FBM noise, advected
+        // by the wind over time so the fog drifts and rolls.
+        vec3 sample_pos = world_pos * u_noise_freq + u_wind * u_time;
+        float density = u_fog_density * (1.0 + u_noise_scale * (fbm(sample_pos) - 0.5));
         density = max(density, 0.0);
 
         // Sun-driven in-scattering: fog brightens when looking toward the sun.

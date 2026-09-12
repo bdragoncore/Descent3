@@ -762,6 +762,8 @@ GLuint HardwareOpenGL::CompileFogShader() const {
   fog_uniform_sun_screen_ = dglGetUniformLocation(prog, "u_sun_screen");
   fog_uniform_god_rays_ = dglGetUniformLocation(prog, "u_god_rays");
   fog_uniform_god_ray_samples_ = dglGetUniformLocation(prog, "u_god_ray_samples");
+  fog_uniform_time_ = dglGetUniformLocation(prog, "u_time");
+  fog_uniform_wind_ = dglGetUniformLocation(prog, "u_wind");
   fog_uniform_inv_view_ = dglGetUniformLocation(prog, "u_inv_view");
   fog_uniform_enable_ = dglGetUniformLocation(prog, "u_fog_enable");
   fog_attrib_pos_ = dglGetAttribLocation(prog, "in_pos");
@@ -881,6 +883,12 @@ void HardwareOpenGL::RenderFogPass() const {
   dglUniform2f(fog_uniform_sun_screen_, sun_uv[0], sun_uv[1]);
   dglUniform1i(fog_uniform_god_rays_, god_rays);
   dglUniform1i(fog_uniform_god_ray_samples_, vfog_level_ == 1 ? 8 : 16);
+
+  // Fog animation (Phase 3): advect the density field by a slow wind over
+  // time so the fog drifts and rolls.  The wind is in world units per second
+  // at the noise frequency scale; 0.02 units/s is a gentle drift.
+  dglUniform1f(fog_uniform_time_, SDL_GetTicks() / 1000.0f);
+  dglUniform3f(fog_uniform_wind_, 0.02f, 0.01f, 0.0f);
 
   // View → world inverse matrix for world-space noise.
   dglUniformMatrix4fv(fog_uniform_inv_view_, 1, GL_FALSE, glm::value_ptr(gRenderer->getViewInverse()));
