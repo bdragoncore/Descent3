@@ -2815,6 +2815,25 @@ add_executable(weaponfire_real_tests
 target_link_libraries(weaponfire_real_tests PRIVATE GTest::gtest_main logger)
 gtest_discover_tests(weaponfire_real_tests)
 
+add_executable(weapon_impact_real_tests
+    cpp_src/weapon_impact_real_tests.cpp
+)
+target_link_libraries(weapon_impact_real_tests PRIVATE GTest::gtest_main logger ddebug mem fix vecmat cfile)
+target_include_directories(weapon_impact_real_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Descent3
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/linux
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/manage
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/md
+    ${PROJECT_SOURCE_DIR}/misc
+    ${PROJECT_SOURCE_DIR}/cfile
+)
+target_compile_definitions(weapon_impact_real_tests PRIVATE RELEASE)
+gtest_discover_tests(weapon_impact_real_tests)
+
 add_executable(pilot_real_tests
     cpp_src/pilot_real_tests.cpp
 )

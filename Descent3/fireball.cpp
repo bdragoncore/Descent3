@@ -671,7 +671,8 @@ fireball Fireballs[NUM_FIREBALLS] = {
     {"NOIMAGE", FT_EFFECT, TINY_TEXTURE, 1.0f, 2.0f},                  // MASSDRIVER_EFFECT_INDEX
     {"ExplosionBlkShrk.oaf", FT_EXPLOSION, SMALL_TEXTURE, .9f, 3.0},   // BLUE_EXPLOSION_INDEX
     {"Coolspark.ogf", FT_SPARK, SMALL_TEXTURE, 1.0, 1.0},              // GRAY_SPARK_INDEX
-    {"NOIMAGE", FT_EFFECT, TINY_TEXTURE, 1.0f, 2.0f}};                 // GRAY_LIGHTNING_BOLT_INDEX
+    {"NOIMAGE", FT_EFFECT, TINY_TEXTURE, 1.0f, 2.0f},                  // GRAY_LIGHTNING_BOLT_INDEX
+    {"NOIMAGE", FT_EFFECT, TINY_TEXTURE, 1.0f, 2.0f}};                   // PLASMA_TRAIL_3D_INDEX
 
 // Initializes the explosion system, loading needed bitmaps, etc
 void InitFireballs() {

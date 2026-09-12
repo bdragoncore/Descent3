@@ -558,6 +558,16 @@ void rend_Screenshot(int bm_handle);
 // get drawn without being clipped by the zbuffer
 void rend_SetZBias(float z_bias);
 
+// Sets the plasma impact glow effect. When glow > 0, the fragment shader adds
+// a procedural radial glow (color) over the drawn polygon, fading with age.
+// Used by the 3D plasma trail / weapon impact effects. No-op on backends
+// without shader support.
+void rend_SetPlasmaGlow(float glow, float r, float g, float b);
+
+// Sets the normalized age (0 = born, 1 = dead) for plasma glow fading.
+// No-op on backends without shader support.
+void rend_SetEffectAge(float age);
+
 // Enables/disables writes the depth buffer
 void rend_SetZBufferWriteMask(int state);
 
