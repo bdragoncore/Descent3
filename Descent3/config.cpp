@@ -1585,6 +1585,17 @@ void OptionsMenu() {
 
   int res = -1, state = 0; // state = 0, options menu, 1 = controller config, 2 = quitting.
 
+  // BUGFIX: The video/details menus compute layout from UI art heights at
+  // runtime (newui_GetBitmapHeight). The main menu pages that art in, but it
+  // is released on leaving the main menu — so opening Options in-level finds
+  // heights of 0 and stacks every group at y=0 (overlapping layout). Page
+  // the art in on entry when missing and release on exit to match.
+  bool paged_bitmaps = false;
+  if (!newuiCore_BitmapsPaged()) {
+    newuiCore_PageInBitmaps();
+    paged_bitmaps = true;
+  }
+
   while (state != 2) {
     if (state == 1) {
       // enter controller config menu
@@ -1656,6 +1667,9 @@ void OptionsMenu() {
       menu.Destroy();
     }
   }
+
+  if (paged_bitmaps)
+    newuiCore_ReleaseBitmaps();
 
   SaveGameSettings();
 }
