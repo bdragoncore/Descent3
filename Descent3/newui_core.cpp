@@ -587,6 +587,8 @@ void newuiCore_ReleaseBitmaps() {
   }
 }
 
+bool newuiCore_BitmapsPaged() { return Preloaded_bitmaps[0] != NULL; }
+
 //	does a UI loop
 //
 
