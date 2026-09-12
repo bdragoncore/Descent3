@@ -84,6 +84,8 @@ struct Renderer {
     // these are effectively just constants, for now
     shader_.setUniform1i("u_texture0", 0);
     shader_.setUniform1i("u_texture1", 1);
+    shader_.setUniform1f("u_plasma_glow", 0.0f);
+    shader_.setUniform1f("u_age", 0.0f);
   }
 
   /**
@@ -140,6 +142,13 @@ struct Renderer {
   }
 
   void setGammaCorrection(float gamma) { shader_.setUniform1f("u_gamma", gamma); }
+
+  void setPlasmaGlow(float glow, const glm::vec4& color) {
+    shader_.setUniform1f("u_plasma_glow", glow);
+    shader_.setUniform4fv("u_plasma_color", color.r, color.g, color.b, color.a);
+  }
+
+  void setAge(float age) { shader_.setUniform1f("u_age", age); }
 
   void setFogColor(ddgr_color color) {
     shader_.setUniform4fv("u_fog_color", GR_COLOR_RED(color) / 255.0f, GR_COLOR_GREEN(color) / 255.0f,
@@ -1870,6 +1879,21 @@ void rend_SetCoplanarPolygonOffset(float factor) {
   } else {
     dglEnable(GL_POLYGON_OFFSET_FILL);
     dglPolygonOffset(-1.0f, -1.0f);
+  }
+}
+
+// BUGFIX: Plasma glow / effect age uniforms for the 3D weapon impact trail.
+// Routes the game-level rend_* calls to the shader uniforms (u_plasma_glow,
+// u_plasma_color, u_age). Guarded by gRenderer null check.
+void rend_SetPlasmaGlow(float glow, float r, float g, float b) {
+  if (gRenderer) {
+    gRenderer->setPlasmaGlow(glow, glm::vec4(r, g, b, 1.0f));
+  }
+}
+
+void rend_SetEffectAge(float age) {
+  if (gRenderer) {
+    gRenderer->setAge(age);
   }
 }
 

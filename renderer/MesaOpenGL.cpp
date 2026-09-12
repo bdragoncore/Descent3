@@ -961,6 +961,16 @@ void rend_SetFlatColor(ddgr_color color) { gpu_state.cur_color = color; }
 void rend_SetFogState(int8_t state) {}
 void rend_SetFogBorders(float nearz, float farz) {}
 
+// BUGFIX: Plasma glow stubs for the Mesa backend (no shader support).
+// The 3D trail still renders as flat additive quads; the glow is skipped.
+void rend_SetPlasmaGlow(float glow, float r, float g, float b) {
+  (void)glow;
+  (void)r;
+  (void)g;
+  (void)b;
+}
+void rend_SetEffectAge(float age) { (void)age; }
+
 void rend_SetRendererType(renderer_type state) {
   Renderer_type = state;
   LOG_DEBUG.printf("RendererType is set to %d.", state);

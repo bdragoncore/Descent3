@@ -1159,6 +1159,7 @@ void SaveGameSettings() {
   Database->write("MissileView", Missile_camera_window);
   Database->write("RS_vsync", Render_preferred_state.vsync_on);
   Database->write("DetailScorchMarks", Detail_settings.Scorches_enabled);
+  Database->write("DetailWeaponImpact3D", Detail_settings.Weapon_impact_3d);
   Database->write("DetailWeaponCoronas", Detail_settings.Weapon_coronas_enabled);
   Database->write("DetailFog", Detail_settings.Fog_enabled);
   Database->write("DetailCoronas", Detail_settings.Coronas_enabled);
@@ -1230,6 +1231,7 @@ void LoadGameSettings() {
   Detail_settings.Fast_headlight_on = true;
   Detail_settings.Mirrored_surfaces = true;
   Detail_settings.Scorches_enabled = true;
+  Detail_settings.Weapon_impact_3d = true;
   Detail_settings.Weapon_coronas_enabled = true;
   Render_preferred_state.mipping = true;
   Render_preferred_state.filtering = true;
@@ -1359,6 +1361,7 @@ void LoadGameSettings() {
   Database->read("VoiceAll", &PlayVoices);
 
   Database->read("DetailScorchMarks", &Detail_settings.Scorches_enabled);
+  Database->read("DetailWeaponImpact3D", &Detail_settings.Weapon_impact_3d);
   Database->read("DetailWeaponCoronas", &Detail_settings.Weapon_coronas_enabled);
   Database->read("DetailFog", &Detail_settings.Fog_enabled);
   Database->read("DetailCoronas", &Detail_settings.Coronas_enabled);

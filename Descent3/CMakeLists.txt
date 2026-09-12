@@ -142,6 +142,7 @@ set(HEADERS
   voice.h
   weapon.h
   weapon_external.h
+  WeaponImpact.h
   weather.h
   WidescreenCockpit.h)
 
@@ -277,6 +278,7 @@ set(CPPS
   voice.cpp
   weapon.cpp
   WeaponFire.cpp
+  WeaponImpact.cpp
   weather.cpp
   WidescreenCockpit.cpp
   sdlmain.cpp)

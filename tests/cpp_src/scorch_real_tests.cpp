@@ -113,6 +113,15 @@ int g3_DrawPoly(int nv, g3Point **pointlist, int bm, int, g3Codes *) {
 static int g_fake_bitmap = 4242;
 int GetTextureBitmap(int, int, bool) { return g_fake_bitmap; }
 
+// Stub for the 3D plasma impact path (Descent3/WeaponImpact.cpp). Captures
+// whether the 3D path was taken so DrawScorches dispatch can be asserted.
+// Returning false forces the 2D sprite fallback.
+static bool g_plasma_impact_3d_used = false;
+bool DrawPlasmaImpact3D(int, int, const g3Point *, float, float) {
+  g_plasma_impact_3d_used = true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Fixture: one room with one quad face on the XZ plane (normal +Y)
 // ---------------------------------------------------------------------------

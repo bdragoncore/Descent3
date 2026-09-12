@@ -191,6 +191,7 @@ struct tDetailSettings {
   bool Procedurals_enabled;
   bool Powerup_halos;
   bool Scorches_enabled;
+  bool Weapon_impact_3d; // Use 3D procedural meshes for weapon impacts instead of 2D sprites
   bool Weapon_coronas_enabled;
   bool Bumpmapping_enabled;
   uint8_t Specular_mapping_type;

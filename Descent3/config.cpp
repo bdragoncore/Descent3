@@ -482,6 +482,7 @@ tGameToggles Game_toggles = { // toggles specified in general settings.
 #define DL_LOW_PROCEDURALS false
 #define DL_LOW_POWERUP_HALOS false
 #define DL_LOW_SCORCH_MARKS false
+#define DL_LOW_WEAPON_IMPACT_3D false
 #define DL_LOW_WEAPON_CORONAS false
 #define DL_LOW_SPEC_MAPPING_TYPE 1
 #define DL_LOW_OBJECT_COMPLEXITY 0
@@ -497,6 +498,7 @@ tGameToggles Game_toggles = { // toggles specified in general settings.
 #define DL_MED_PROCEDURALS false
 #define DL_MED_POWERUP_HALOS true
 #define DL_MED_SCORCH_MARKS true
+#define DL_MED_WEAPON_IMPACT_3D false
 #define DL_MED_WEAPON_CORONAS false
 #define DL_MED_SPEC_MAPPING_TYPE 1
 #define DL_MED_OBJECT_COMPLEXITY 1
@@ -512,6 +514,7 @@ tGameToggles Game_toggles = { // toggles specified in general settings.
 #define DL_HIGH_PROCEDURALS true
 #define DL_HIGH_POWERUP_HALOS true
 #define DL_HIGH_SCORCH_MARKS true
+#define DL_HIGH_WEAPON_IMPACT_3D true
 #define DL_HIGH_WEAPON_CORONAS true
 #define DL_HIGH_SPEC_MAPPING_TYPE 1
 #define DL_HIGH_OBJECT_COMPLEXITY 2
@@ -527,6 +530,7 @@ tGameToggles Game_toggles = { // toggles specified in general settings.
 #define DL_VHI_PROCEDURALS true
 #define DL_VHI_POWERUP_HALOS true
 #define DL_VHI_SCORCH_MARKS true
+#define DL_VHI_WEAPON_IMPACT_3D true
 #define DL_VHI_WEAPON_CORONAS true
 #define DL_VHI_SPEC_MAPPING_TYPE 1
 #define DL_VHI_OBJECT_COMPLEXITY 2
@@ -539,23 +543,23 @@ tGameToggles Game_toggles = { // toggles specified in general settings.
 static const tDetailSettings DetailPresetLow = {
     DL_LOW_TERRAIN_DISTANCE,  DL_LOW_PIXEL_ERROR,       DL_LOW_SPECULAR_LIGHT, DL_LOW_DYNAMIC_LIGHTING,
     DL_LOW_FAST_HEADLIGHT,    DL_LOW_MIRRORED_SURFACES, DL_LOW_FOG_ENABLED,    DL_LOW_CORONAS_ENABLES,
-    DL_LOW_PROCEDURALS,       DL_LOW_POWERUP_HALOS,     DL_LOW_SCORCH_MARKS,   DL_LOW_WEAPON_CORONAS,
-    DL_LOW_SPEC_MAPPING_TYPE, DL_LOW_OBJECT_COMPLEXITY};
+    DL_LOW_PROCEDURALS,       DL_LOW_POWERUP_HALOS,     DL_LOW_SCORCH_MARKS,   DL_LOW_WEAPON_IMPACT_3D,
+    DL_LOW_WEAPON_CORONAS,    DL_LOW_SPEC_MAPPING_TYPE, DL_LOW_OBJECT_COMPLEXITY};
 static const tDetailSettings DetailPresetMed = {
     DL_MED_TERRAIN_DISTANCE,  DL_MED_PIXEL_ERROR,       DL_MED_SPECULAR_LIGHT, DL_MED_DYNAMIC_LIGHTING,
     DL_MED_FAST_HEADLIGHT,    DL_MED_MIRRORED_SURFACES, DL_MED_FOG_ENABLED,    DL_MED_CORONAS_ENABLES,
-    DL_MED_PROCEDURALS,       DL_MED_POWERUP_HALOS,     DL_MED_SCORCH_MARKS,   DL_MED_WEAPON_CORONAS,
-    DL_MED_SPEC_MAPPING_TYPE, DL_MED_OBJECT_COMPLEXITY};
+    DL_MED_PROCEDURALS,       DL_MED_POWERUP_HALOS,     DL_MED_SCORCH_MARKS,   DL_MED_WEAPON_IMPACT_3D,
+    DL_MED_WEAPON_CORONAS,    DL_MED_SPEC_MAPPING_TYPE, DL_MED_OBJECT_COMPLEXITY};
 static const tDetailSettings DetailPresetHigh = {
     DL_HIGH_TERRAIN_DISTANCE,  DL_HIGH_PIXEL_ERROR,       DL_HIGH_SPECULAR_LIGHT, DL_HIGH_DYNAMIC_LIGHTING,
     DL_HIGH_FAST_HEADLIGHT,    DL_HIGH_MIRRORED_SURFACES, DL_HIGH_FOG_ENABLED,    DL_HIGH_CORONAS_ENABLES,
-    DL_HIGH_PROCEDURALS,       DL_HIGH_POWERUP_HALOS,     DL_HIGH_SCORCH_MARKS,   DL_HIGH_WEAPON_CORONAS,
-    DL_HIGH_SPEC_MAPPING_TYPE, DL_HIGH_OBJECT_COMPLEXITY};
+    DL_HIGH_PROCEDURALS,       DL_HIGH_POWERUP_HALOS,     DL_HIGH_SCORCH_MARKS,   DL_HIGH_WEAPON_IMPACT_3D,
+    DL_HIGH_WEAPON_CORONAS,    DL_HIGH_SPEC_MAPPING_TYPE, DL_HIGH_OBJECT_COMPLEXITY};
 static const tDetailSettings DetailPresetVHi = {
     DL_VHI_TERRAIN_DISTANCE,  DL_VHI_PIXEL_ERROR,       DL_VHI_SPECULAR_LIGHT, DL_VHI_DYNAMIC_LIGHTING,
     DL_VHI_FAST_HEADLIGHT,    DL_VHI_MIRRORED_SURFACES, DL_VHI_FOG_ENABLED,    DL_VHI_CORONAS_ENABLES,
-    DL_VHI_PROCEDURALS,       DL_VHI_POWERUP_HALOS,     DL_VHI_SCORCH_MARKS,   DL_VHI_WEAPON_CORONAS,
-    DL_VHI_SPEC_MAPPING_TYPE, DL_VHI_OBJECT_COMPLEXITY};
+    DL_VHI_PROCEDURALS,       DL_VHI_POWERUP_HALOS,     DL_VHI_SCORCH_MARKS,   DL_VHI_WEAPON_IMPACT_3D,
+    DL_VHI_WEAPON_CORONAS,    DL_VHI_SPEC_MAPPING_TYPE, DL_VHI_OBJECT_COMPLEXITY};
 
 void ConfigSetDetailLevel(int level) {
   switch (level) {
@@ -1368,6 +1372,7 @@ struct details_menu {
       *rend_dist;     // 0-120 (80-200)
 
   int *texture_quality;
+  bool *weapon_impact_3d; // 3D procedural weapon impact trail toggle
 
   // sets the menu up.
   newuiSheet *setup(newuiMenu *menu) {
@@ -1398,6 +1403,7 @@ struct details_menu {
     powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
     scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
     weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
+    weapon_impact_3d = sheet->AddLongCheckBox("3D Weapon Impact", Detail_settings.Weapon_impact_3d);
 
     // sliders
     tSliderSettings slider_set;
@@ -1446,6 +1452,7 @@ struct details_menu {
 
     Default_detail_level = *detail_level;
     Database->write("PredefDetailSetting", Default_detail_level);
+    Detail_settings.Weapon_impact_3d = *weapon_impact_3d;
 
     sheet = NULL;
   };
