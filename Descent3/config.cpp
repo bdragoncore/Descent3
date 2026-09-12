@@ -448,13 +448,22 @@ int Default_detail_level = DETAIL_LEVEL_MED;
 tGameToggles Game_toggles = { // toggles specified in general settings.
     true, false, true};
 
-#define IDV_VCONFIG 12 // video config
-#define IDV_GCONFIG 13 // general config
-#define IDV_SCONFIG 14 // audio config
-#define IDV_DCONFIG 15 // detail level config
-#define IDV_HCONFIG 16 // hud config
-#define IDV_CCONFIG 17 // controller config
+// IDV_VCONFIG..IDV_CCONFIG and the video-page cycle button IDs
+// (IDV_MSAA_CYCLE/IDV_AF_CYCLE/IDV_VFOG_CYCLE) are defined in config.h.
 #define IDV_QUIT 0xff
+
+// BUGFIX #10: the video-page cycle buttons must never collide with the menu
+// option sheet IDs, or newuiMenu::DoUI() will treat a button press as a page
+// navigation (see IDV_VFOG_CYCLE=13 == IDV_GCONFIG=13 bug).
+static_assert(IDV_MSAA_CYCLE != IDV_VCONFIG && IDV_MSAA_CYCLE != IDV_GCONFIG && IDV_MSAA_CYCLE != IDV_SCONFIG &&
+                  IDV_MSAA_CYCLE != IDV_DCONFIG && IDV_MSAA_CYCLE != IDV_HCONFIG && IDV_MSAA_CYCLE != IDV_CCONFIG,
+              "IDV_MSAA_CYCLE collides with a menu option ID");
+static_assert(IDV_AF_CYCLE != IDV_VCONFIG && IDV_AF_CYCLE != IDV_GCONFIG && IDV_AF_CYCLE != IDV_SCONFIG &&
+                  IDV_AF_CYCLE != IDV_DCONFIG && IDV_AF_CYCLE != IDV_HCONFIG && IDV_AF_CYCLE != IDV_CCONFIG,
+              "IDV_AF_CYCLE collides with a menu option ID");
+static_assert(IDV_VFOG_CYCLE != IDV_VCONFIG && IDV_VFOG_CYCLE != IDV_GCONFIG && IDV_VFOG_CYCLE != IDV_SCONFIG &&
+                  IDV_VFOG_CYCLE != IDV_DCONFIG && IDV_VFOG_CYCLE != IDV_HCONFIG && IDV_VFOG_CYCLE != IDV_CCONFIG,
+              "IDV_VFOG_CYCLE collides with a menu option ID");
 
 #define UID_GAMMASLIDER 0x1000
 
@@ -617,8 +626,11 @@ void ConfigSetDetailLevelMax() {
 #define IDV_GAMMAAPPLY 5
 #define IDV_AUTOGAMMA 6
 #define IDV_CHANGE_RES_WINDOW 10
-#define IDV_MSAA_CYCLE 11
-#define IDV_AF_CYCLE 12
+// IDV_MSAA_CYCLE / IDV_AF_CYCLE / IDV_VFOG_CYCLE are defined in config.h.
+// BUGFIX #10: they must NOT collide with the menu option sheet IDs
+// (IDV_VCONFIG=12 .. IDV_CCONFIG=17), or newuiMenu::DoUI() treats a button
+// press as a page navigation (IDV_VFOG_CYCLE=13 == IDV_GCONFIG=13 jumped to
+// the General config page).
 #define UID_RESOLUTION 110
 
 static void gamma_callback(newuiTiledWindow *wnd, void *data) {
@@ -850,6 +862,30 @@ uint8_t AnisotropyNext(uint8_t level) {
   }
 }
 
+// Volumetric fog quality label: 0 = off, 1 = low (16 steps), 2 = high (32 steps).
+const char *VFogLabel(uint8_t level) {
+  switch (level) {
+  case 1:
+    return "Low";
+  case 2:
+    return "High";
+  default:
+    return "Off";
+  }
+}
+
+// Next volumetric fog level in the Off -> Low -> High cycle.
+uint8_t VFogNext(uint8_t level) {
+  switch (level) {
+  case 0:
+    return 1;
+  case 1:
+    return 2;
+  default:
+    return 0;
+  }
+}
+
 struct video_menu {
   newuiSheet *sheet;
 
@@ -869,6 +905,9 @@ struct video_menu {
   // AF toggle: cycles Off -> 2x -> 4x -> 8x -> 16x. Stored as AF level.
   uint8_t anisotropy = 0;
   char *anisotropy_string = nullptr;
+  // Volumetric fog toggle: cycles Off -> Low -> High. Stored as quality level.
+  uint8_t vfog_level = 0;
+  char *vfog_string = nullptr;
 
   int *bitdepth = nullptr; // bitdepths
 
@@ -964,6 +1003,21 @@ struct video_menu {
     cy += lbtn_h;
     cy += group_pad;
 
+    // Volumetric fog: toggle button cycling Off -> Low -> High. Takes effect
+    // on menu close (FBOs are recreated via SetScreenMode force).
+    vfog_level = Render_preferred_state.vfog_level;
+    sheet->NewGroup("Volumetric Fog", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      vfog_string = sheet->AddChangeableText(alloc_size);
+      snprintf(vfog_string, alloc_size, "%s", VFogLabel(vfog_level));
+    }
+    cy += font_h;
+    sheet->AddLongButton("Change", IDV_VFOG_CYCLE);
+    cy += lbtn_h;
+    cy += group_pad;
+
     // FOV setting 72deg -> 90deg (flows after Cockpit, no NewGroup)
     tSliderSettings settings = {};
     settings.min_val.f = D3_DEFAULT_FOV;
@@ -1033,10 +1087,12 @@ struct video_menu {
 #endif
 
     if (*fullscreen != Game_fullscreen || Render_preferred_state.bit_depth != Render_preferred_bitdepth ||
-        resolution_changed || Render_preferred_state.msaa_samples != msaa_samples) {
+        resolution_changed || Render_preferred_state.msaa_samples != msaa_samples ||
+        Render_preferred_state.vfog_level != vfog_level) {
       resolution_changed = false;
       Game_fullscreen = *fullscreen;
       Render_preferred_state.msaa_samples = msaa_samples;
+      Render_preferred_state.vfog_level = vfog_level;
       SetScreenMode(GetScreenMode(), true);
       Render_preferred_state.bit_depth = Render_preferred_bitdepth;
       rend_SetPreferredState(&Render_preferred_state, true);
@@ -1145,6 +1201,13 @@ struct video_menu {
       // Applied in finish() via rend_ResetCache (no mode change needed).
       anisotropy = AnisotropyNext(anisotropy);
       snprintf(anisotropy_string, 15, "%s", AnisotropyLabel(anisotropy));
+      break;
+    }
+    case IDV_VFOG_CYCLE: {
+      // Cycle volumetric fog Off -> Low -> High and refresh the label.
+      // Applied in finish() via SetScreenMode force (FBO recreate).
+      vfog_level = VFogNext(vfog_level);
+      snprintf(vfog_string, 15, "%s", VFogLabel(vfog_level));
       break;
     }
     case IDV_AUTOGAMMA:

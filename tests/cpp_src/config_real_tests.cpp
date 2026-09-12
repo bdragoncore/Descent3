@@ -1196,3 +1196,58 @@ TEST_F(ConfigTest, AnisotropyNextCyclesOff2x4x8x16x) {
   EXPECT_EQ(AnisotropyNext(16), 0);
   EXPECT_EQ(AnisotropyNext(32), 0); // invalid wraps to Off
 }
+
+/**
+ * @test ConfigTest.VFogLabelMapsLevelToText
+ * @brief Verifies the volumetric fog toggle labels for each quality level.
+ *
+ * @see Descent3/config.cpp (video_menu::VFogLabel)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VFogLabelMapsLevelToText) {
+  EXPECT_STREQ(VFogLabel(0), "Off");
+  EXPECT_STREQ(VFogLabel(1), "Low");
+  EXPECT_STREQ(VFogLabel(2), "High");
+  EXPECT_STREQ(VFogLabel(3), "Off"); // unsupported -> Off
+}
+
+/**
+ * @test ConfigTest.VFogNextCyclesOffLowHigh
+ * @brief Verifies the volumetric fog toggle cycles Off -> Low -> High -> Off.
+ *
+ * @see Descent3/config.cpp (video_menu::VFogNext)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VFogNextCyclesOffLowHigh) {
+  EXPECT_EQ(VFogNext(0), 1);
+  EXPECT_EQ(VFogNext(1), 2);
+  EXPECT_EQ(VFogNext(2), 0);
+  EXPECT_EQ(VFogNext(3), 0); // invalid wraps to Off
+}
+
+/**
+ * @test ConfigTest.VideoCycleButtonIdsDoNotCollideWithMenuOptionIds
+ * @brief Verifies the video-page "Change" button IDs do not collide with the
+ * OptionsMenu sheet IDs.
+ *
+ * newuiMenu::DoUI() treats a button result equal to another sheet's ID as a
+ * page-navigation request.  IDV_VFOG_CYCLE was 13, which equals IDV_GCONFIG
+ * (13), so clicking the volumetric-fog "Change" button jumped to the General
+ * config page.  The IDs must stay disjoint.
+ *
+ * @see Descent3/config.h (IDV_* defines)
+ * @see Descent3/newui_core.cpp (newuiMenu::DoUI)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VideoCycleButtonIdsDoNotCollideWithMenuOptionIds) {
+  const int option_ids[] = {IDV_VCONFIG, IDV_GCONFIG, IDV_SCONFIG, IDV_DCONFIG, IDV_HCONFIG, IDV_CCONFIG};
+  const int cycle_ids[] = {IDV_MSAA_CYCLE, IDV_AF_CYCLE, IDV_VFOG_CYCLE};
+
+  for (int cycle : cycle_ids) {
+    for (int option : option_ids) {
+      EXPECT_NE(cycle, option) << "video cycle button ID " << cycle
+                               << " collides with menu option ID " << option
+                               << "; newuiMenu::DoUI() would navigate pages";
+    }
+  }
+}

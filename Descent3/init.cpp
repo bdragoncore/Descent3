@@ -1174,6 +1174,7 @@ void SaveGameSettings() {
   Database->write("RS_fullscreen_scale_mode", Render_fullscreen_scale_mode);
   Database->write("RS_msaa", Render_preferred_state.msaa_samples);
   Database->write("RS_anisotropy", Render_preferred_state.anisotropy);
+  Database->write("RS_vfog", Render_preferred_state.vfog_level);
 
   Database->write("RS_bitdepth", Render_preferred_bitdepth);
   Database->write("RS_bilear", Render_preferred_state.filtering);
@@ -1240,6 +1241,7 @@ void LoadGameSettings() {
   Render_preferred_state.filtering = true;
   Render_preferred_state.msaa_samples = 0; // MSAA off by default
   Render_preferred_state.anisotropy = 0;    // AF off by default
+  Render_preferred_state.vfog_level = 0;    // Volumetric fog off by default
   Render_preferred_state.bit_depth = 16;
   Render_preferred_bitdepth = 16;
   Default_player_terrain_leveling = 2;
@@ -1351,6 +1353,12 @@ void LoadGameSettings() {
   // Sanitize to supported levels; anything else means off.
   Render_preferred_state.anisotropy =
       (tempval == 2 || tempval == 4 || tempval == 8 || tempval == 16) ? static_cast<uint8_t>(tempval) : 0;
+
+  tempval = 0;
+  Database->read_int("RS_vfog", &tempval);
+  // Sanitize to supported levels; anything else means off.
+  Render_preferred_state.vfog_level =
+      (tempval == 1 || tempval == 2) ? static_cast<uint8_t>(tempval) : 0;
 
   Database->read_int("RS_bilear", &Render_preferred_state.filtering);
   Database->read_int("RS_mipping", &Render_preferred_state.mipping);

@@ -6,6 +6,8 @@
  * so all geometry tests share the same 3D frame setup (camera at 0,0,-500, identity view).
  */
 
+#define GL_GLEXT_PROTOTYPES
+
 #include "render_test_base.h"
 #include "test_utils.h"
 #include "test_bitmap_utils.h"
@@ -14,6 +16,7 @@
 #include "grdefs.h"
 #include "3d.h"
 #include "MesaOpenGL.h"
+#include "HardwareOpenGL.h"
 #include <cmath>
 #include <cstdlib>
 #include <vector>
@@ -2201,4 +2204,363 @@ TEST_F(D3GameRenderTest, StencilClipRect) {
     SavePNG("StencilClipRect");
 
     SUCCEED() << "StencilClipRect test completed without crash";
+}
+
+// ---------------------------------------------------------------------------
+// Volumetric fog tests — verify fog shader compiles and fog state capture works
+// ---------------------------------------------------------------------------
+
+#include "shaders.h"
+#include <GL/glext.h>
+
+TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
+    // Compile the fog vertex shader.
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    {
+        char const *src = shaders::fog_vertex.data();
+        GLint len = static_cast<GLint>(shaders::fog_vertex.size());
+        glShaderSource(vs, 1, &src, &len);
+        glCompileShader(vs);
+        GLint ok = 0;
+        glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "Fog vertex shader failed to compile";
+    }
+
+    // Compile the fog fragment shader.
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    {
+        char const *src = shaders::fog_fragment.data();
+        GLint len = static_cast<GLint>(shaders::fog_fragment.size());
+        glShaderSource(fs, 1, &src, &len);
+        glCompileShader(fs);
+        GLint ok = 0;
+        glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "Fog fragment shader failed to compile";
+    }
+
+    // Link into a program.
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glBindAttribLocation(prog, 0, "in_pos");
+    glBindAttribLocation(prog, 1, "in_uv");
+    glLinkProgram(prog);
+    GLint link_ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+    EXPECT_EQ(link_ok, GL_TRUE) << "Fog shader program failed to link";
+
+    // Verify key uniforms are present.
+    EXPECT_GE(glGetUniformLocation(prog, "u_scene_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_scene_depth"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_start"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_end"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_density"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_enable"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_steps"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_proj00"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_proj11"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_inv_view"), 0);
+    // Phase 2: sun light + god rays.
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_dir"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_sun_screen"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_god_rays"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_god_ray_samples"), 0);
+    // Phase 3: animated fog (time-advected density field).
+    EXPECT_GE(glGetUniformLocation(prog, "u_time"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_wind"), 0);
+    // Phase 4: per-sector density volumes.
+    EXPECT_GE(glGetUniformLocation(prog, "u_num_volumes"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_min"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_max"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_volume_color"), 0);
+
+    glDeleteProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+}
+
+TEST_F(D3GameRenderTest, FogStateCapture) {
+    // The volumetric fog pass reads fog state captured from rend_SetFog*.
+    // Verify the HardwareOpenGL setters/getters round-trip correctly.
+    HardwareOpenGL backend;
+    EXPECT_FALSE(backend.getSceneFogActive());
+    EXPECT_FLOAT_EQ(backend.getSceneFogStart(), 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogEnd(), 0.0f);
+
+    backend.setSceneFogActive(true);
+    backend.setSceneFogBorders(10.0f, 200.0f);
+    backend.setSceneFogColor(0.5f, 0.25f, 0.125f);
+
+    EXPECT_TRUE(backend.getSceneFogActive());
+    EXPECT_FLOAT_EQ(backend.getSceneFogStart(), 10.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogEnd(), 200.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[0], 0.5f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[1], 0.25f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[2], 0.125f);
+
+    backend.setSceneFogActive(false);
+    EXPECT_FALSE(backend.getSceneFogActive());
+}
+
+TEST_F(D3GameRenderTest, SunLightStateCapture) {
+    // The volumetric fog pass reads sun state captured from rend_SetSunLight
+    // for in-scattering and god rays.  Verify the HardwareOpenGL setters/
+    // getters round-trip correctly, including the Phase 1 default direction.
+    HardwareOpenGL backend;
+    EXPECT_FLOAT_EQ(backend.getSunDir()[0], 0.371391f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[1], 0.742782f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[2], 0.557086f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[0], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[1], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[2], 1.0f);
+
+    backend.setSunLight(0.0f, 1.0f, 0.0f, 2.0f, 1.5f, 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[0], 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[1], 1.0f);
+    EXPECT_FLOAT_EQ(backend.getSunDir()[2], 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[0], 2.0f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[1], 1.5f);
+    EXPECT_FLOAT_EQ(backend.getSunColor()[2], 1.0f);
+}
+
+TEST_F(D3GameRenderTest, FogVolumeStateCapture) {
+    // The volumetric fog pass reads per-sector fog volumes captured from
+    // rend_AddFogVolume.  Verify the HardwareOpenGL clear/add/get round-trip.
+    HardwareOpenGL backend;
+    EXPECT_EQ(backend.getNumFogVolumes(), 0);
+    EXPECT_EQ(backend.getFogVolume(0), nullptr);
+
+    backend.addFogVolume(-10.0f, -20.0f, -30.0f, 10.0f, 20.0f, 30.0f, 0.05f, 0.5f, 0.25f, 0.125f);
+    backend.addFogVolume(0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 5.0f, 0.1f, 1.0f, 0.0f, 0.0f);
+    EXPECT_EQ(backend.getNumFogVolumes(), 2);
+
+    const HardwareOpenGL::FogVolume *v0 = backend.getFogVolume(0);
+    ASSERT_NE(v0, nullptr);
+    EXPECT_FLOAT_EQ(v0->min_x, -10.0f);
+    EXPECT_FLOAT_EQ(v0->min_y, -20.0f);
+    EXPECT_FLOAT_EQ(v0->min_z, -30.0f);
+    EXPECT_FLOAT_EQ(v0->max_x, 10.0f);
+    EXPECT_FLOAT_EQ(v0->max_y, 20.0f);
+    EXPECT_FLOAT_EQ(v0->max_z, 30.0f);
+    EXPECT_FLOAT_EQ(v0->density, 0.05f);
+    EXPECT_FLOAT_EQ(v0->r, 0.5f);
+    EXPECT_FLOAT_EQ(v0->g, 0.25f);
+    EXPECT_FLOAT_EQ(v0->b, 0.125f);
+
+    const HardwareOpenGL::FogVolume *v1 = backend.getFogVolume(1);
+    ASSERT_NE(v1, nullptr);
+    EXPECT_FLOAT_EQ(v1->density, 0.1f);
+    EXPECT_FLOAT_EQ(v1->r, 1.0f);
+
+    backend.clearFogVolumes();
+    EXPECT_EQ(backend.getNumFogVolumes(), 0);
+    EXPECT_EQ(backend.getFogVolume(0), nullptr);
+}
+
+TEST_F(D3GameRenderTest, FogVolumePassProducesVisibleFog) {
+    // Reproduces the volume-only fog path (Phase 4): a fog volume containing
+    // the camera should fog the scene with the volume color, NOT black.
+    // Regression test for "screen flips all black in fogged rooms".
+    BeginFrame();
+
+    rend_SetZBufferState(1);
+    rend_SetLighting(LS_NONE);
+    rend_SetColorModel(CM_RGB);
+    rend_SetAlphaType(AT_ALWAYS);
+    rend_SetAlphaValue(255);
+    rend_ClearScreen(GR_RGB(64, 64, 64));
+    rend_ClearZBuffer();
+
+    // White quad at z=-300, camera at (0,0,-500) looking +Z.
+    float h = 80.0f;
+    vector corners[4] = {
+        {-h, -h, -300.0f},
+        {+h, -h, -300.0f},
+        {+h, +h, -300.0f},
+        {-h, +h, -300.0f},
+    };
+    g3Point pts[4];
+    for (int i = 0; i < 4; i++) {
+        g3_RotatePoint(&pts[i], &corners[i]);
+        pts[i].p3_flags |= PF_UV | PF_RGBA;
+        pts[i].p3_u = (i == 0 || i == 3) ? 0.0f : 1.0f;
+        pts[i].p3_v = (i < 2) ? 0.0f : 1.0f;
+        pts[i].p3_r = 1.0f; pts[i].p3_g = 1.0f; pts[i].p3_b = 1.0f; pts[i].p3_a = 1.0f;
+    }
+    g3Point *ptrs[4] = {&pts[0], &pts[1], &pts[2], &pts[3]};
+    rend_SetTextureType(TT_FLAT);
+    g3_DrawPoly(4, ptrs, 0, MAP_TYPE_BITMAP);
+
+    EndFrame();
+
+    const int w = width_;
+    const int hgt = height_;
+
+    // Scene texture FBO (color + depth), mirroring HardwareOpenGL setup.
+    GLuint scene_fbo = 0, scene_color = 0, scene_depth = 0;
+    glGenFramebuffers(1, &scene_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+    glGenTextures(1, &scene_color);
+    glBindTexture(GL_TEXTURE_2D, scene_color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, hgt, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scene_color, 0);
+    glGenTextures(1, &scene_depth);
+    glBindTexture(GL_TEXTURE_2D, scene_depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, w, hgt, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, scene_depth, 0);
+    ASSERT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER), GL_FRAMEBUFFER_COMPLETE);
+
+    // Copy the default framebuffer (rendered scene) into the scene texture FBO.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_fbo);
+    glBlitFramebuffer(0, 0, w, hgt, 0, 0, w, hgt, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    // BUGFIX #8 regression: the depth blit must succeed.  It previously
+    // failed with GL_INVALID_OPERATION (16-bit -> 24-bit depth format
+    // mismatch), leaving the scene depth texture black and fogging the
+    // whole screen.
+    EXPECT_EQ(glGetError(), GL_NO_ERROR) << "Scene depth blit must not fail";
+
+    // Fog output FBO.
+    GLuint fog_fbo = 0, fog_color = 0;
+    glGenFramebuffers(1, &fog_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fog_fbo);
+    glGenTextures(1, &fog_color);
+    glBindTexture(GL_TEXTURE_2D, fog_color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, hgt, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fog_color, 0);
+    ASSERT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER), GL_FRAMEBUFFER_COMPLETE);
+
+    // Compile the fog shader.
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    {
+        char const *src = shaders::fog_vertex.data();
+        GLint len = static_cast<GLint>(shaders::fog_vertex.size());
+        glShaderSource(vs, 1, &src, &len);
+        glCompileShader(vs);
+    }
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    {
+        char const *src = shaders::fog_fragment.data();
+        GLint len = static_cast<GLint>(shaders::fog_fragment.size());
+        glShaderSource(fs, 1, &src, &len);
+        glCompileShader(fs);
+    }
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glBindAttribLocation(prog, 0, "in_pos");
+    glBindAttribLocation(prog, 1, "in_uv");
+    glLinkProgram(prog);
+    GLint link_ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+    ASSERT_EQ(link_ok, GL_TRUE) << "Fog shader failed to link";
+
+    // Full-screen triangle.
+    struct FSVert {
+        float pos[2];
+        float uv[2];
+    };
+    static const FSVert kTri[] = {
+        {{-1.0f, -1.0f}, {0.0f, 0.0f}},
+        {{3.0f, -1.0f}, {2.0f, 0.0f}},
+        {{-1.0f, 3.0f}, {0.0f, 2.0f}},
+    };
+    GLuint vao = 0, vbo = 0;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kTri), kTri, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert), reinterpret_cast<void *>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert), reinterpret_cast<void *>(offsetof(FSVert, uv)));
+
+    // Run the fog pass with a volume containing the camera.
+    glBindFramebuffer(GL_FRAMEBUFFER, fog_fbo);
+    glViewport(0, 0, w, hgt);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glUseProgram(prog);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, scene_color);
+    glUniform1i(glGetUniformLocation(prog, "u_scene_color"), 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, scene_depth);
+    glUniform1i(glGetUniformLocation(prog, "u_scene_depth"), 1);
+
+    glUniform3f(glGetUniformLocation(prog, "u_fog_color"), 1.0f, 1.0f, 1.0f);
+    glUniform1f(glGetUniformLocation(prog, "u_fog_start"), 0.0f);
+    glUniform1f(glGetUniformLocation(prog, "u_fog_end"), 10000.0f);
+    glUniform1f(glGetUniformLocation(prog, "u_fog_density"), 0.0f);
+    glUniform1f(glGetUniformLocation(prog, "u_noise_scale"), 0.5f);
+    glUniform1f(glGetUniformLocation(prog, "u_noise_freq"), 0.05f);
+    glUniform1i(glGetUniformLocation(prog, "u_steps"), 32);
+
+    // Projection scale factors from the current projection matrix.
+    GLfloat proj[16];
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+    glUniform1f(glGetUniformLocation(prog, "u_proj00"), proj[0]);
+    glUniform1f(glGetUniformLocation(prog, "u_proj11"), proj[5]);
+
+    glUniform3f(glGetUniformLocation(prog, "u_sun_dir"), 0.371391f, 0.742782f, 0.557086f);
+    glUniform3f(glGetUniformLocation(prog, "u_sun_color"), 1.0f, 1.0f, 1.0f);
+    glUniform2f(glGetUniformLocation(prog, "u_sun_screen"), 0.0f, 0.0f);
+    glUniform1i(glGetUniformLocation(prog, "u_god_rays"), 0);
+    glUniform1i(glGetUniformLocation(prog, "u_god_ray_samples"), 16);
+    glUniform1f(glGetUniformLocation(prog, "u_time"), 0.0f);
+    glUniform3f(glGetUniformLocation(prog, "u_wind"), 0.0f, 0.0f, 0.0f);
+
+    // One volume containing the camera (0,0,-500): red, density 0.1.
+    glUniform1i(glGetUniformLocation(prog, "u_num_volumes"), 1);
+    float vmin[4] = {-100.0f, -100.0f, -600.0f, 0.1f};
+    float vmax[4] = {100.0f, 100.0f, -400.0f, 0.0f};
+    float vcol[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    glUniform4fv(glGetUniformLocation(prog, "u_volume_min"), 1, vmin);
+    glUniform4fv(glGetUniformLocation(prog, "u_volume_max"), 1, vmax);
+    glUniform4fv(glGetUniformLocation(prog, "u_volume_color"), 1, vcol);
+
+    // inv_view: camera at (0,0,-500), identity orientation -> world = view + (0,0,-500).
+    GLfloat inv_view[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -500.0f, 1};
+    glUniformMatrix4fv(glGetUniformLocation(prog, "u_inv_view"), 1, GL_FALSE, inv_view);
+    glUniform1i(glGetUniformLocation(prog, "u_fog_enable"), 1);
+
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 3);
+    glBindVertexArray(0);
+
+    // Read back the fog FBO.
+    std::vector<uint8_t> pixels(w * hgt * 4);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fog_fbo);
+    glReadPixels(0, 0, w, hgt, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+    // The fog pass must not produce a black screen (the reported bug).
+    int black = 0;
+    for (int i = 0; i < w * hgt * 4; i += 4) {
+        if (pixels[i] < 10 && pixels[i + 1] < 10 && pixels[i + 2] < 10)
+            black++;
+    }
+    EXPECT_LT(black, w * hgt / 2) << "Fog volume pass must not produce a black screen";
+
+    glDeleteProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    glDeleteVertexArrays(1, &vao);
+    glDeleteBuffers(1, &vbo);
+    glDeleteFramebuffers(1, &scene_fbo);
+    glDeleteFramebuffers(1, &fog_fbo);
+    glDeleteTextures(1, &scene_color);
+    glDeleteTextures(1, &scene_depth);
+    glDeleteTextures(1, &fog_color);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

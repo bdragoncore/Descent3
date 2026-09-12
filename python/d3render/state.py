@@ -171,6 +171,7 @@ def rend_SetPreferredState(pref_state: renderer_preferred_state, reinit: bool = 
         fullscreen=gpu_preferred_state.fullscreen,
         msaa_samples=gpu_preferred_state.msaa_samples,
         anisotropy=gpu_preferred_state.anisotropy,
+        vfog_level=gpu_preferred_state.vfog_level,
     )
 
     gpu_preferred_state = renderer_preferred_state(
@@ -184,6 +185,7 @@ def rend_SetPreferredState(pref_state: renderer_preferred_state, reinit: bool = 
         fullscreen=pref_state.fullscreen,
         msaa_samples=pref_state.msaa_samples,
         anisotropy=pref_state.anisotropy,
+        vfog_level=pref_state.vfog_level,
     )
 
     if gpu_state.initted:

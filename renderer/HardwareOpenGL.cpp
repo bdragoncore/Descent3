@@ -56,6 +56,7 @@
 #include "shaders.h"
 #include "ShaderProgram.h"
 #include "d3_version.h"
+#include <glm/gtc/matrix_transform.hpp>
 
 #if defined(WIN32)
 #include "win/arb_extensions.h"
@@ -165,6 +166,12 @@ struct Renderer {
     shader_.setUniform4fv("u_fog_color", GR_COLOR_RED(color) / 255.0f, GR_COLOR_GREEN(color) / 255.0f,
                           GR_COLOR_BLUE(color) / 255.0f, 1);
   }
+
+  // Accessors for the volumetric fog pass.
+  float getProjection00() const { return projection_[0][0]; }
+  float getProjection11() const { return projection_[1][1]; }
+  glm::mat4x4 getViewMatrix() const { return view_; }
+  glm::mat4x4 getViewInverse() const { return glm::inverse(view_); }
 
 private:
   glm::mat4x4 model_;
@@ -459,11 +466,13 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
   if (resolve_framebuffer_) {
     dglBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer_);
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
     dglBindRenderbuffer(GL_RENDERBUFFER, 0);
     dglBindFramebuffer(GL_FRAMEBUFFER, 0);
     dglDeleteFramebuffers(1, &resolve_framebuffer_);
     dglDeleteRenderbuffers(1, &resolve_color_buffer_);
-    resolve_framebuffer_ = resolve_color_buffer_ = 0;
+    dglDeleteRenderbuffers(1, &resolve_depth_buffer_);
+    resolve_framebuffer_ = resolve_color_buffer_ = resolve_depth_buffer_ = 0;
   }
 
   framebuffer_width_ = static_cast<GLuint>(width);
@@ -510,6 +519,20 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
   dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_buffer_);
 
+  // BUGFIX #10: query the depth size the driver actually allocated.  Some
+  // drivers promote GL_DEPTH_COMPONENT16 to 24/32-bit, and glBlitFramebuffer
+  // requires the source and destination depth formats to match exactly (Mesa
+  // enforces this), so the fog pass depth texture must use the same format.
+  GLint depth_bits = 0;
+  dglGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_DEPTH_SIZE, &depth_bits);
+  if (depth_bits > 24)
+    depth_format_ = GL_DEPTH_COMPONENT32F;
+  else if (depth_bits > 16)
+    depth_format_ = GL_DEPTH_COMPONENT24;
+  else
+    depth_format_ = GL_DEPTH_COMPONENT16;
+  LOG_INFO.printf("OpenGL: main framebuffer depth is %d bits (format 0x%04X)", depth_bits, depth_format_);
+
   if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
     LOG_WARNING << "OpenGL: our framebuffer object is incomplete, giving up";
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
@@ -538,14 +561,23 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     dglBindRenderbuffer(GL_RENDERBUFFER, resolve_color_buffer_);
     dglRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
     dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, resolve_color_buffer_);
+    // BUGFIX #8: the resolve target also needs a depth attachment so the
+    // volumetric fog pass can blit depth out of it (glBlitFramebuffer fails
+    // when the read buffer has no depth).  Format matches the main FBO.
+    dglGenRenderbuffers(1, &resolve_depth_buffer_);
+    dglBindRenderbuffer(GL_RENDERBUFFER, resolve_depth_buffer_);
+    dglRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+    dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, resolve_depth_buffer_);
     if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
       LOG_WARNING << "OpenGL: MSAA resolve framebuffer incomplete, disabling MSAA";
       dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+      dglFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
       dglBindRenderbuffer(GL_RENDERBUFFER, 0);
       dglBindFramebuffer(GL_FRAMEBUFFER, 0);
       dglDeleteFramebuffers(1, &resolve_framebuffer_);
       dglDeleteRenderbuffers(1, &resolve_color_buffer_);
-      resolve_framebuffer_ = resolve_color_buffer_ = 0;
+      dglDeleteRenderbuffers(1, &resolve_depth_buffer_);
+      resolve_framebuffer_ = resolve_color_buffer_ = resolve_depth_buffer_ = 0;
       msaa_samples_ = 0;
       // Fall back: recreate the main FBO single-sampled
       dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
@@ -556,6 +588,92 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     } else {
       dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
     }
+  }
+
+  // Volumetric fog pass (Phase 1): when enabled, the resolved scene is
+  // copied into scene_texture_fbo_ (color + depth textures), ray-marched by
+  // the fog shader into fog_fbo_, then blitted to the window.
+  vfog_level_ = Render_preferred_state.vfog_level;
+  if (vfog_level_ == 0) {
+    int vfog_arg = FindArg("-vfog");
+    if (vfog_arg && vfog_arg + 1 < MAX_ARGS) {
+      int cli_level = atoi(GameArgs[vfog_arg + 1]);
+      if (cli_level > 0)
+        vfog_level_ = static_cast<uint8_t>(cli_level);
+    }
+  }
+  if (vfog_level_ > 2)
+    vfog_level_ = 2;
+  if (vfog_level_ > 0) {
+    // Scene texture FBO: single-sample color + depth textures.
+    dglGenFramebuffers(1, &scene_texture_fbo_);
+    dglBindFramebuffer(GL_FRAMEBUFFER, scene_texture_fbo_);
+
+    dglGenTextures(1, &scene_color_texture_);
+    dglBindTexture(GL_TEXTURE_2D, scene_color_texture_);
+    dglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    dglFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scene_color_texture_, 0);
+
+    dglGenTextures(1, &scene_depth_texture_);
+    dglBindTexture(GL_TEXTURE_2D, scene_depth_texture_);
+    // BUGFIX #10: use the depth format the driver actually allocated for the
+    // main framebuffer (depth_format_, queried in SetupContext).  glBlitFramebuffer
+    // requires the source and destination depth formats to match exactly, and
+    // Mesa enforces this; a mismatch (e.g. 16-bit renderbuffer vs a texture the
+    // driver promoted to 24/32-bit) raises GL_INVALID_OPERATION and leaves the
+    // scene depth texture black, so the fog pass fogged the whole screen.
+    dglTexImage2D(GL_TEXTURE_2D, 0, depth_format_, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    dglFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, scene_depth_texture_, 0);
+
+    if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+      LOG_WARNING << "OpenGL: volumetric fog scene framebuffer incomplete, disabling vfog";
+      dglDeleteFramebuffers(1, &scene_texture_fbo_);
+      dglDeleteTextures(1, &scene_color_texture_);
+      dglDeleteTextures(1, &scene_depth_texture_);
+      scene_texture_fbo_ = scene_color_texture_ = scene_depth_texture_ = 0;
+      vfog_level_ = 0;
+    } else {
+      // Fog output FBO: full-res color texture holding the composited result.
+      dglGenFramebuffers(1, &fog_fbo_);
+      dglBindFramebuffer(GL_FRAMEBUFFER, fog_fbo_);
+      dglGenTextures(1, &fog_color_texture_);
+      dglBindTexture(GL_TEXTURE_2D, fog_color_texture_);
+      dglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+      dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      dglFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fog_color_texture_, 0);
+      if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        LOG_WARNING << "OpenGL: volumetric fog output framebuffer incomplete, disabling vfog";
+        dglDeleteFramebuffers(1, &fog_fbo_);
+        dglDeleteTextures(1, &fog_color_texture_);
+        fog_fbo_ = fog_color_texture_ = 0;
+        vfog_level_ = 0;
+      } else {
+        // Compile the fog pass shader and set up the full-screen triangle.
+        fog_shader_program_ = CompileFogShader();
+        if (fog_shader_program_ == 0) {
+          LOG_WARNING << "OpenGL: volumetric fog shader compile failed, disabling vfog";
+          dglDeleteFramebuffers(1, &fog_fbo_);
+          dglDeleteTextures(1, &fog_color_texture_);
+          fog_fbo_ = fog_color_texture_ = 0;
+          vfog_level_ = 0;
+        } else {
+          SetupFogFullScreenTriangle();
+          LOG_INFO.printf("Volumetric fog enabled (level %u)", vfog_level_);
+        }
+      }
+    }
+    dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
   }
 
   if (parent_application_) {
@@ -573,6 +691,27 @@ void HardwareOpenGL::DestroyContext(bool just_resizing) {
     GSDLGLContext = nullptr;
     framebuffer_width_ = framebuffer_height_ = framebuffer_ = color_buffer_ = depth_buffer_ = 0;
     resolve_framebuffer_ = resolve_color_buffer_ = msaa_samples_ = 0;
+    // Volumetric fog resources.
+    if (fog_shader_program_)
+      dglDeleteProgram(fog_shader_program_);
+    if (fog_vao_)
+      dglDeleteVertexArrays(1, &fog_vao_);
+    if (fog_vbo_)
+      dglDeleteBuffers(1, &fog_vbo_);
+    if (scene_texture_fbo_)
+      dglDeleteFramebuffers(1, &scene_texture_fbo_);
+    if (scene_color_texture_)
+      dglDeleteTextures(1, &scene_color_texture_);
+    if (scene_depth_texture_)
+      dglDeleteTextures(1, &scene_depth_texture_);
+    if (fog_fbo_)
+      dglDeleteFramebuffers(1, &fog_fbo_);
+    if (fog_color_texture_)
+      dglDeleteTextures(1, &fog_color_texture_);
+    scene_texture_fbo_ = scene_color_texture_ = scene_depth_texture_ = 0;
+    fog_fbo_ = fog_color_texture_ = 0;
+    fog_shader_program_ = fog_vao_ = fog_vbo_ = 0;
+    vfog_level_ = 0;
   }
 
   if (!just_resizing && window_) {
@@ -580,6 +719,345 @@ void HardwareOpenGL::DestroyContext(bool just_resizing) {
     window_ = nullptr;
     GSDLWindow = nullptr;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Volumetric fog pass — CompileFogShader / SetupFogFullScreenTriangle
+// ---------------------------------------------------------------------------
+
+GLuint HardwareOpenGL::CompileFogShader() const {
+  auto compile_stage = [](GLenum type, std::string_view src) -> GLuint {
+    GLuint id = dglCreateShader(type);
+    if (id == 0)
+      return 0;
+    char const *ptr = src.data();
+    GLint len = static_cast<GLint>(src.size());
+    dglShaderSource(id, 1, &ptr, &len);
+    dglCompileShader(id);
+    GLint ok = 0;
+    dglGetShaderiv(id, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+      GLchar msg[1024];
+      GLsizei log_len = 0;
+      dglGetShaderInfoLog(id, sizeof(msg), &log_len, msg);
+      LOG_ERROR.printf("Volumetric fog %s shader compile failed: %s",
+                       type == GL_VERTEX_SHADER ? "vertex" : "fragment", msg);
+      dglDeleteShader(id);
+      return 0;
+    }
+    return id;
+  };
+
+  GLuint vs = compile_stage(GL_VERTEX_SHADER, shaders::fog_vertex);
+  if (vs == 0)
+    return 0;
+  GLuint fs = compile_stage(GL_FRAGMENT_SHADER, shaders::fog_fragment);
+  if (fs == 0) {
+    dglDeleteShader(vs);
+    return 0;
+  }
+
+  GLuint prog = dglCreateProgram();
+  dglAttachShader(prog, vs);
+  dglAttachShader(prog, fs);
+  dglBindAttribLocation(prog, 0, "in_pos");
+  dglBindAttribLocation(prog, 1, "in_uv");
+  dglLinkProgram(prog);
+  dglDeleteShader(vs);
+  dglDeleteShader(fs);
+
+  GLint link_ok = 0;
+  dglGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+  if (!link_ok) {
+    GLchar msg[1024];
+    GLsizei log_len = 0;
+    dglGetProgramInfoLog(prog, sizeof(msg), &log_len, msg);
+    LOG_ERROR.printf("Volumetric fog shader link failed: %s", msg);
+    dglDeleteProgram(prog);
+    return 0;
+  }
+
+  fog_uniform_scene_color_ = dglGetUniformLocation(prog, "u_scene_color");
+  fog_uniform_scene_depth_ = dglGetUniformLocation(prog, "u_scene_depth");
+  fog_uniform_fog_color_ = dglGetUniformLocation(prog, "u_fog_color");
+  fog_uniform_fog_start_ = dglGetUniformLocation(prog, "u_fog_start");
+  fog_uniform_fog_end_ = dglGetUniformLocation(prog, "u_fog_end");
+  fog_uniform_fog_density_ = dglGetUniformLocation(prog, "u_fog_density");
+  fog_uniform_noise_scale_ = dglGetUniformLocation(prog, "u_noise_scale");
+  fog_uniform_noise_freq_ = dglGetUniformLocation(prog, "u_noise_freq");
+  fog_uniform_steps_ = dglGetUniformLocation(prog, "u_steps");
+  fog_uniform_proj00_ = dglGetUniformLocation(prog, "u_proj00");
+  fog_uniform_proj11_ = dglGetUniformLocation(prog, "u_proj11");
+  fog_uniform_sun_dir_ = dglGetUniformLocation(prog, "u_sun_dir");
+  fog_uniform_sun_color_ = dglGetUniformLocation(prog, "u_sun_color");
+  fog_uniform_sun_screen_ = dglGetUniformLocation(prog, "u_sun_screen");
+  fog_uniform_god_rays_ = dglGetUniformLocation(prog, "u_god_rays");
+  fog_uniform_god_ray_samples_ = dglGetUniformLocation(prog, "u_god_ray_samples");
+  fog_uniform_time_ = dglGetUniformLocation(prog, "u_time");
+  fog_uniform_wind_ = dglGetUniformLocation(prog, "u_wind");
+  fog_uniform_num_volumes_ = dglGetUniformLocation(prog, "u_num_volumes");
+  fog_uniform_volume_min_ = dglGetUniformLocation(prog, "u_volume_min");
+  fog_uniform_volume_max_ = dglGetUniformLocation(prog, "u_volume_max");
+  fog_uniform_volume_color_ = dglGetUniformLocation(prog, "u_volume_color");
+  fog_uniform_inv_view_ = dglGetUniformLocation(prog, "u_inv_view");
+  fog_uniform_enable_ = dglGetUniformLocation(prog, "u_fog_enable");
+  fog_attrib_pos_ = dglGetAttribLocation(prog, "in_pos");
+  fog_attrib_uv_ = dglGetAttribLocation(prog, "in_uv");
+
+  return prog;
+}
+
+void HardwareOpenGL::SetupFogFullScreenTriangle() const {
+  // Oversized single triangle that covers the entire viewport.  The
+  // rasterizer clips it to the viewport, giving us a full-screen pass
+  // without any index buffer or quad topology.
+  struct FSVert {
+    float pos[2];
+    float uv[2];
+  };
+  static constexpr FSVert kTri[] = {
+      {{-1.0f, -1.0f}, {0.0f, 0.0f}},
+      {{3.0f, -1.0f}, {2.0f, 0.0f}},
+      {{-1.0f, 3.0f}, {0.0f, 2.0f}},
+  };
+
+  dglGenVertexArrays(1, &fog_vao_);
+  dglGenBuffers(1, &fog_vbo_);
+  dglBindVertexArray(fog_vao_);
+  dglBindBuffer(GL_ARRAY_BUFFER, fog_vbo_);
+  dglBufferData(GL_ARRAY_BUFFER, sizeof(kTri), kTri, GL_STATIC_DRAW);
+
+  if (fog_attrib_pos_ >= 0) {
+    dglEnableVertexAttribArray(fog_attrib_pos_);
+    dglVertexAttribPointer(fog_attrib_pos_, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert),
+                           reinterpret_cast<void *>(offsetof(FSVert, pos)));
+  }
+  if (fog_attrib_uv_ >= 0) {
+    dglEnableVertexAttribArray(fog_attrib_uv_);
+    dglVertexAttribPointer(fog_attrib_uv_, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert),
+                           reinterpret_cast<void *>(offsetof(FSVert, uv)));
+  }
+  dglBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// Volumetric fog pass — PresentFrame hook
+// ---------------------------------------------------------------------------
+
+bool HardwareOpenGL::RenderFogPass() const {
+  if (vfog_level_ == 0 || (!scene_fog_active_ && num_fog_volumes_ == 0))
+    return true;
+
+  // BUGFIX #10: the pass needs the 3D projection/modelview captured during
+  // scene rendering.  If none was captured (e.g. the fog pass runs before any
+  // 3D geometry this frame), fall back to the current matrices rather than
+  // producing a black screen.
+  if (!fog_matrices_captured_) {
+    LOG_WARNING << "OpenGL: volumetric fog pass has no captured 3D matrices; skipping fog pass";
+    return false;
+  }
+
+  // BUGFIX #10: save the blend/depth-test state before the pass.  The pass
+  // disables both, and unconditionally re-enabling them desynced the renderer's
+  // tracked state (opengl_Blending_on / gpu_state.cur_zbuffer_state): the next
+  // rend_SetAlphaType/rend_SetZBufferState call with the same value would early
+  // out, leaving GL_BLEND/GL_DEPTH_TEST in the wrong state and breaking
+  // subsequent 2D/HUD rendering (black screen / missing transparency).
+  GLboolean blend_was_enabled = dglIsEnabled(GL_BLEND);
+  GLboolean depth_test_was_enabled = dglIsEnabled(GL_DEPTH_TEST);
+
+  // Step 1: copy the resolved scene (color + depth) into the texture FBO.
+  GLuint blit_src = framebuffer_;
+  if (msaa_samples_ > 0 && resolve_framebuffer_ != 0)
+    blit_src = resolve_framebuffer_;
+  dglBindFramebuffer(GL_READ_FRAMEBUFFER, blit_src);
+  dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_texture_fbo_);
+  // BUGFIX #10: drain any error left by earlier frame GL calls so the blit
+  // error check below reports the blit's own error, not a stale one.
+  while (dglGetError() != GL_NO_ERROR) {
+  }
+  dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_, framebuffer_height_,
+                     GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+  // BUGFIX #10: if the scene depth blit fails (GL_INVALID_OPERATION), the
+  // scene depth texture stays black and the fog pass would fog the whole
+  // screen.  Log the error and bail out so the caller presents the unfogged
+  // scene instead of a black screen.
+  GLenum blit_error = dglGetError();
+  if (blit_error != GL_NO_ERROR) {
+    LOG_WARNING.printf("OpenGL: fog pass scene blit error 0x%04X; skipping fog pass", blit_error);
+    return false;
+  }
+
+  // Step 2: fog ray-march — bind fog_fbo_, draw full-screen triangle.
+  dglBindFramebuffer(GL_FRAMEBUFFER, fog_fbo_);
+  dglViewport(0, 0, framebuffer_width_, framebuffer_height_);
+  dglClear(GL_COLOR_BUFFER_BIT);
+  dglDisable(GL_DEPTH_TEST);
+  dglDisable(GL_BLEND);
+
+  // BUGFIX #487: save the current program so the pass can restore it when
+  // done.  The renderer's shader is bound once at init and never rebound, so
+  // leaving the program at 0 here desynced the renderer: every subsequent
+  // glUniform* and glDrawArrays generated GL_INVALID_OPERATION (0x0502) each
+  // frame until the error was drained.
+  GLint prev_program = 0;
+  dglGetIntegerv(GL_CURRENT_PROGRAM, &prev_program);
+
+  dglUseProgram(fog_shader_program_);
+
+  // Scene textures.
+  dglActiveTexture(GL_TEXTURE0);
+  dglBindTexture(GL_TEXTURE_2D, scene_color_texture_);
+  dglUniform1i(fog_uniform_scene_color_, 0);
+  dglActiveTexture(GL_TEXTURE1);
+  dglBindTexture(GL_TEXTURE_2D, scene_depth_texture_);
+  dglUniform1i(fog_uniform_scene_depth_, 1);
+
+  // Fog parameters.  When only per-sector volumes are present (no terrain
+  // fog), the base density is zero and the march covers the whole scene so
+  // the volume densities are the only fog source.
+  float fog_start = scene_fog_start_;
+  float fog_end = scene_fog_end_;
+  float base_density = 0.0f;
+  if (scene_fog_active_) {
+    float fog_range = scene_fog_end_ - scene_fog_start_;
+    if (fog_range < 1.0f)
+      fog_range = 1.0f;
+    base_density = 4.0f / fog_range;
+  } else if (num_fog_volumes_ > 0) {
+    fog_start = 0.0f;
+    fog_end = 10000.0f;
+  }
+  dglUniform3f(fog_uniform_fog_color_, scene_fog_color_[0], scene_fog_color_[1], scene_fog_color_[2]);
+  dglUniform1f(fog_uniform_fog_start_, fog_start);
+  dglUniform1f(fog_uniform_fog_end_, fog_end);
+
+  // Density tuning: base density gives T ≈ 0.01 at fog_end.  Noise and
+  // frequency are hand-tuned for Descent 3 corridor scale (world units ≈ feet).
+  dglUniform1f(fog_uniform_fog_density_, base_density);
+  dglUniform1f(fog_uniform_noise_scale_, 0.5f);
+  dglUniform1f(fog_uniform_noise_freq_, 0.05f);
+  dglUniform1i(fog_uniform_steps_, vfog_level_ == 1 ? 16 : 32);
+
+  // Projection scale factors (for depth → view-space distance reconstruction).
+  // BUGFIX #10: use the 3D projection captured during scene rendering.  The
+  // renderer's current projection is the 2D ortho passthru at rend_Flip time
+  // (the HUD/UI rendering overwrote it), which would make the reconstructed
+  // view rays nearly horizontal and the fog pass sample the wrong world
+  // positions (black screen).
+  glm::mat4x4 fog_proj = glm::make_mat4x4(fog_projection_);
+  glm::mat4x4 fog_mv = glm::make_mat4x4(fog_modelview_);
+  dglUniform1f(fog_uniform_proj00_, fog_proj[0][0]);
+  dglUniform1f(fog_uniform_proj11_, fog_proj[1][1]);
+
+  // Sun light for in-scattering and god rays (Phase 2).  The direction is
+  // world-space toward the sun; the color may exceed 1.0 for HDR shafts.
+  dglUniform3f(fog_uniform_sun_dir_, sun_dir_[0], sun_dir_[1], sun_dir_[2]);
+  dglUniform3f(fog_uniform_sun_color_, sun_color_[0], sun_color_[1], sun_color_[2]);
+
+  // God rays: project the sun direction into screen space.  The sun is at
+  // infinity, so only its direction matters.  With the near=0/far=infinity
+  // projection, clip.w = -view_dir.z, clip.x = proj00*view_dir.x, and
+  // clip.y = proj11*view_dir.y, so NDC = (-proj00*vx/vz, -proj11*vy/vz).
+  // When the sun is behind the camera (view_dir.z >= 0) god rays are off.
+  // BUGFIX #10: transform the sun by the captured 3D camera modelview (the
+  // renderer's current view matrix is the 2D identity passthru).
+  glm::vec4 sun_view = fog_mv * glm::vec4(sun_dir_[0], sun_dir_[1], sun_dir_[2], 0.0f);
+  int god_rays = 0;
+  float sun_uv[2] = {0.0f, 0.0f};
+  if (sun_view.z < 0.0f) {
+    float ndc_x = -fog_proj[0][0] * sun_view.x / sun_view.z;
+    float ndc_y = -fog_proj[1][1] * sun_view.y / sun_view.z;
+    sun_uv[0] = ndc_x * 0.5f + 0.5f;
+    sun_uv[1] = ndc_y * 0.5f + 0.5f;
+    god_rays = 1;
+  }
+  dglUniform2f(fog_uniform_sun_screen_, sun_uv[0], sun_uv[1]);
+  dglUniform1i(fog_uniform_god_rays_, god_rays);
+  dglUniform1i(fog_uniform_god_ray_samples_, vfog_level_ == 1 ? 8 : 16);
+
+  // Fog animation (Phase 3): advect the density field by a slow wind over
+  // time so the fog drifts and rolls.  The wind is in world units per second
+  // at the noise frequency scale; 0.02 units/s is a gentle drift.
+  dglUniform1f(fog_uniform_time_, SDL_GetTicks() / 1000.0f);
+  dglUniform3f(fog_uniform_wind_, 0.02f, 0.01f, 0.0f);
+
+  // Per-sector fog volumes (Phase 4): AABB + density + color per fogged room.
+  dglUniform1i(fog_uniform_num_volumes_, num_fog_volumes_);
+  if (num_fog_volumes_ > 0) {
+    float min_data[kMaxFogVolumes * 4];
+    float max_data[kMaxFogVolumes * 4];
+    float color_data[kMaxFogVolumes * 4];
+    for (int i = 0; i < num_fog_volumes_; i++) {
+      const FogVolume &v = fog_volumes_[i];
+      min_data[i * 4 + 0] = v.min_x;
+      min_data[i * 4 + 1] = v.min_y;
+      min_data[i * 4 + 2] = v.min_z;
+      min_data[i * 4 + 3] = v.density;
+      max_data[i * 4 + 0] = v.max_x;
+      max_data[i * 4 + 1] = v.max_y;
+      max_data[i * 4 + 2] = v.max_z;
+      max_data[i * 4 + 3] = 0.0f;
+      color_data[i * 4 + 0] = v.r;
+      color_data[i * 4 + 1] = v.g;
+      color_data[i * 4 + 2] = v.b;
+      color_data[i * 4 + 3] = 0.0f;
+    }
+    dglUniform4fv(fog_uniform_volume_min_, num_fog_volumes_, min_data);
+    dglUniform4fv(fog_uniform_volume_max_, num_fog_volumes_, max_data);
+    dglUniform4fv(fog_uniform_volume_color_, num_fog_volumes_, color_data);
+  }
+
+  // View → world inverse matrix for world-space noise.
+  // BUGFIX #10: invert the captured 3D camera modelview (the renderer's view
+  // matrix is always identity, so getViewInverse() was identity and the fog
+  // pass never added the camera position to the ray-march samples).
+  dglUniformMatrix4fv(fog_uniform_inv_view_, 1, GL_FALSE, glm::value_ptr(glm::inverse(fog_mv)));
+
+  dglUniform1i(fog_uniform_enable_, 1);
+
+  // Draw the full-screen triangle.
+  // BUGFIX #487: save the current VAO so the pass can restore it after the
+  // draw.  The renderer's VAO is bound once at init and never rebound, so
+  // leaving the default VAO (0) bound here made every subsequent scene-render
+  // dglDrawArrays use VAO 0, which is invalid in a core profile and generated
+  // GL_INVALID_OPERATION (0x0502) each frame.
+  GLint prev_vao = 0;
+  dglGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prev_vao);
+  dglBindVertexArray(fog_vao_);
+  dglDrawArrays(GL_TRIANGLE_FAN, 0, 3);
+  dglBindVertexArray(prev_vao);
+
+  // BUGFIX #487: restore the program that was current before the pass (the
+  // renderer's shader) instead of unbinding to 0, so the renderer's subsequent
+  // glUniform*/glDrawArrays calls keep working.
+  dglUseProgram(prev_program);
+
+  // BUGFIX #10: restore the blend/depth-test state captured at the top of the
+  // pass so the renderer's tracked GL state stays in sync with the driver.
+  if (depth_test_was_enabled)
+    dglEnable(GL_DEPTH_TEST);
+  else
+    dglDisable(GL_DEPTH_TEST);
+  if (blend_was_enabled)
+    dglEnable(GL_BLEND);
+  else
+    dglDisable(GL_BLEND);
+
+  // BUGFIX #10: the pass bound scene_color_texture_/scene_depth_texture_ to
+  // texture units 0/1 without updating OpenGL_last_bound[].  The renderer's
+  // texture cache would then skip rebinding its own textures next frame
+  // (OpenGL_last_bound[tn] == texnum) and draw with the fog textures instead,
+  // breaking all subsequent rendering.  Unbind the fog textures and reset the
+  // cache so the next bind is forced.
+  dglActiveTexture(GL_TEXTURE1);
+  dglBindTexture(GL_TEXTURE_2D, 0);
+  dglActiveTexture(GL_TEXTURE0);
+  dglBindTexture(GL_TEXTURE_2D, 0);
+  OpenGL_last_bound[0] = 9999999;
+  OpenGL_last_bound[1] = 9999999;
+
+  return true;
 }
 
 void HardwareOpenGL::PresentFrame() const {
@@ -590,13 +1068,25 @@ void HardwareOpenGL::PresentFrame() const {
     // MSAA resolve: multisample FBO -> single-sample resolve FBO.
     // glBlitFramebuffer performs the multisample resolve implicitly;
     // GL_NEAREST is required (and correct) for multisample resolves.
+    // BUGFIX #8: also resolve depth so the fog pass can read it.
     GLuint blit_src = framebuffer_;
     if (msaa_samples_ > 0 && resolve_framebuffer_ != 0) {
       dglBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
       dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_framebuffer_);
       dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_,
-                         framebuffer_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+                         framebuffer_height_, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
       blit_src = resolve_framebuffer_;
+    }
+
+    // Volumetric fog pass: ray-march the resolved scene and composite the
+    // fog over it.  When active, fog_fbo_ becomes the window blit source.
+    if (vfog_level_ > 0 && (scene_fog_active_ || num_fog_volumes_ > 0) && fog_fbo_ != 0) {
+      // BUGFIX #10: only present the fogged frame if the fog pass succeeded;
+      // on a scene-blit failure it returns false and we present the unfogged
+      // scene instead of a black screen.
+      if (RenderFogPass()) {
+        blit_src = fog_fbo_;
+      }
     }
 
     int scaledHeight;
@@ -664,6 +1154,10 @@ std::unique_ptr<NewBitmap> HardwareOpenGL::Screenshot(int width, int height) con
     dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_,
                        framebuffer_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     dglBindFramebuffer(GL_READ_FRAMEBUFFER, resolve_framebuffer_);
+  }
+  // When volumetric fog is active, the composited result lives in fog_fbo_.
+  if (vfog_level_ > 0 && scene_fog_active_ && fog_fbo_ != 0) {
+    dglBindFramebuffer(GL_READ_FRAMEBUFFER, fog_fbo_);
   }
   dglReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLvoid *>(result->getData()));
   return result;
@@ -1684,11 +2178,35 @@ void gpu_RenderPolygonList(PosColorUV2Vertex *vData, uint32_t nv) {
 
 void rend_SetFlatColor(ddgr_color color) { gpu_state.cur_color = color; }
 
-// Sets the fog state to TRUE or FALSE
-void rend_SetFogState(int8_t state) { gRenderer->setFogEnabled(state); }
+// Sets the fog state to TRUE or FALSE.
+// Also captures fog enable state for the volumetric fog post-process pass.
+void rend_SetFogState(int8_t state) {
+  gRenderer->setFogEnabled(state);
+  g_opengl_backend.setSceneFogActive(state != 0);
+}
 
-// Sets the near and far plane of fog
-void rend_SetFogBorders(float nearz, float farz) { gRenderer->setFogBorders(nearz, farz); }
+// Sets the near and far plane of fog.
+// Also captures fog range for the volumetric fog post-process pass.
+void rend_SetFogBorders(float nearz, float farz) {
+  gRenderer->setFogBorders(nearz, farz);
+  g_opengl_backend.setSceneFogBorders(nearz, farz);
+}
+
+// Sets the sun light used by the volumetric fog pass for in-scattering and
+// god rays.  dir is the normalized world-space direction TOWARD the sun;
+// color is the sun's RGB intensity (may exceed 1.0 for HDR light shafts).
+void rend_SetSunLight(float dir_x, float dir_y, float dir_z, float r, float g, float b) {
+  g_opengl_backend.setSunLight(dir_x, dir_y, dir_z, r, g, b);
+}
+
+// Clears the fog volume list for the volumetric fog pass.
+void rend_ClearFogVolumes() { g_opengl_backend.clearFogVolumes(); }
+
+// Adds a fog volume (AABB + density + color) for the volumetric fog pass.
+void rend_AddFogVolume(float min_x, float min_y, float min_z, float max_x, float max_y, float max_z, float density,
+                       float r, float g, float b) {
+  g_opengl_backend.addFogVolume(min_x, min_y, min_z, max_x, max_y, max_z, density, r, g, b);
+}
 
 // BUGFIX: Sets the unsharp-mask strength applied to texture0 samples (0 = off).
 // Used by grtext to keep magnified glyphs crisp on high-res displays.
@@ -1931,8 +2449,13 @@ void rend_DrawLine(int x1, int y1, int x2, int y2) {
   rend_SetTextureType(ttype);
 }
 
-// Sets the color of fog
-void rend_SetFogColor(ddgr_color color) { gRenderer->setFogColor(color); }
+// Sets the color of fog.
+// Also captures fog color for the volumetric fog post-process pass.
+void rend_SetFogColor(ddgr_color color) {
+  gRenderer->setFogColor(color);
+  g_opengl_backend.setSceneFogColor(GR_COLOR_RED(color) / 255.0f, GR_COLOR_GREEN(color) / 255.0f,
+                                    GR_COLOR_BLUE(color) / 255.0f);
+}
 
 void rend_SetAlphaType(int8_t atype) {
   if (atype == gpu_state.cur_alpha_type)
@@ -2162,8 +2685,17 @@ void rend_TransformSetViewport(int lx, int ty, int width, int height) {
 
 void rend_TransformSetProjection(float trans[4][4]) {
   gRenderer->setTransform(std::nullopt, std::nullopt, glm::make_mat4x4(&trans[0][0]));
+  // BUGFIX #10: capture the 3D perspective projection for the volumetric fog
+  // pass.  This function is only called by the 3D path (g3_RefreshTransforms
+  // with usePassthru=false), so the captured matrix is the 3D projection, not
+  // the 2D ortho set by rend_TransformSetToPassthru.
+  g_opengl_backend.setFogProjection(&trans[0][0]);
 }
 
 void rend_TransformSetModelView(float trans[4][4]) {
   gRenderer->setTransform(glm::make_mat4x4(&trans[0][0]), glm::mat4x4{1}, std::nullopt);
+  // BUGFIX #10: capture the 3D camera modelview for the volumetric fog pass.
+  // The renderer's view matrix is always identity (the modelview holds the
+  // camera transform), so the fog pass inverts this to get world positions.
+  g_opengl_backend.setFogModelView(&trans[0][0]);
 }

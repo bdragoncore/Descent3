@@ -240,6 +240,7 @@ class renderer_preferred_state:
     fullscreen: bool = False
     msaa_samples: int = 0
     anisotropy: int = 0
+    vfog_level: int = 0
 
 
 # ── tRendererStats (lib/renderer.h) ──

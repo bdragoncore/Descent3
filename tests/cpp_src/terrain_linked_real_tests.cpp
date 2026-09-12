@@ -85,6 +85,10 @@ void ResetWeather() {}
 int ps_rand() { static uint32_t s= 1; s = s * 1103515245 + 12345; return (int)((s>>16)&0x7FFF); }
 uint8_t Float_to_ubyte(float f) { if(f<0) return 0; if(f>1) return 255; return (uint8_t)(f*255); }
 
+// Stub for renderer sun light (terrain.cpp calls rend_SetSunLight; this test
+// target does not link a renderer backend).
+void rend_SetSunLight(float, float, float, float, float, float) {}
+
 // Need cfile stubs? we link cfile, so real cf* available
 // Need object/room stubs? terrain doesn't need?
 
