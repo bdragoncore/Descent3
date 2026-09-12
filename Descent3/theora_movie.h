@@ -68,8 +68,10 @@ void TheoraClose(TheoraMovie *tm);
 
 // Stub when libtheora is unavailable (CI runners, minimal platforms).
 // All entry points report failure so callers fall back gracefully.
+// width/height are present because d3movie reads them for blit sizing.
 struct TheoraMovie {
-  int unused;
+  int width;
+  int height;
 };
 
 static inline TheoraMovie *TheoraOpen(const char *, bool) { return nullptr; }
