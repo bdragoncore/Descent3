@@ -141,6 +141,10 @@ int GetSmallViewer(int) { return -1; }
 const char *GetStringFromTable(int) { return ""; }
 int GetTextureBitmap(int, int, bool) { return -1; }
 int GetWeaponFireImage(int, int) { return -1; }
+// WeaponImpact 3D stubs: plasma rendering covered by
+// weapon_impact_real_tests; force safe fallbacks here.
+int GetPlasmaBallTexture() { return -1; }
+void DrawPlasmaBall3D(const vector &, float, float, uint16_t, float, int) {}
 void InitObjectScripts(object *, bool) {}
 void MakeShockwave(object *, int) {}
 void MultiSendMissileRelease(int, bool) {}

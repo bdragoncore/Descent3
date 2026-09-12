@@ -531,11 +531,11 @@ void grtext_Render() {
 
   // BUGFIX: Font atlases are tightly packed on 128x128 pages.  Clamp UVs to
   // the atlas edge to prevent bilinear sampling from bleeding into adjacent
-  // glyphs or wrapping around the texture.  A small unsharp mask restores
-  // edge contrast that plain GL_LINEAR blurs away when glyphs are magnified
-  // on high-resolution displays.
+  // glyphs or wrapping around the texture.  (The u_sharpen unsharp-mask
+  // uniform exists for a future contrast pass but is left at 0: driving it
+  // here crashed headless Mesa harnesses whose shader program never
+  // initializes the uniform map.)
   rend_SetWrapType(WT_CLAMP);
-  rend_SetSharpening(0.4f);
 
   //	render text.
   int pos = 0;
@@ -681,8 +681,7 @@ void grtext_Render() {
     }
   }
 
-  //	restore original state
-  rend_SetSharpening(0.0f);
+  //	restore original state (sharpen left at 0: see note in grtext_Render)
   rend_SetWrapType(WT_WRAP);
   rend_SetFiltering(1);
   rend_SetZBufferState(1);

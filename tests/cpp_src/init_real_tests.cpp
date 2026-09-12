@@ -174,6 +174,7 @@ renderer_preferred_state Render_preferred_state;
 int Render_preferred_bitdepth = 16;
 float Render_FOV_setting = D3_DEFAULT_FOV;
 float Render_FOV = D3_DEFAULT_FOV;
+int Render_fullscreen_scale_mode = 1; // FULLSCREEN_SCALE_FIT default
 // Stubs for cockpit factory (init.cpp calls these; real impl pulls in
 // LegacyCockpit/WidescreenCockpit which need the full renderer chain).
 class ICockpit;

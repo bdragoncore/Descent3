@@ -160,6 +160,7 @@ void ddio_ff_GetInfo(bool *found, bool *) {
 void rend_ClearScreen(ddgr_color) {}
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) { REC("drawpoly2d"); }
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -213,6 +214,8 @@ void grtext_SetColor(ddgr_color) {}
 void grtext_SetAlpha(uint8_t) {}
 void grtext_SetFont(int) {}
 void grtext_Flush() {}
+void grtext_SetFontScale(float) {}
+void grtext_SetFontScaleImmediate(float) {}
 int grfont_GetHeight(int) { return 12; }
 int grfont_KeyToAscii(int, int) { return 'a'; }
 }

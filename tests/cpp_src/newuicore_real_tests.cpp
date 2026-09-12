@@ -154,6 +154,7 @@ void ddio_MouseSetVCoords(int, int) {}
 void rend_ClearScreen(ddgr_color) { REC("clearscreen"); }
 void rend_Flip() { REC("flip"); }
 void rend_DrawChunkedBitmap(chunked_bitmap *, int, int, uint8_t) {}
+void rend_DrawScaledChunkedBitmap(chunked_bitmap *, int, int, int, int, uint8_t) {}
 void rend_DrawLine(int, int, int, int) {}
 void rend_DrawPolygon2D(int, g3Point **, int) {}
 void rend_DrawScaledBitmap(int, int, int, int, int, float, float, float, float, int, const float *) {}
@@ -168,6 +169,8 @@ void rend_SetOverlayType(uint8_t) {}
 void rend_SetTextureType(texture_type) {}
 void rend_SetWrapType(wrap_type) {}
 void rend_SetZBufferState(int8_t) {}
+void rend_SetFiltering(int8_t) {}
+void rend_SetSharpening(float) {}
 
 void StartFrame(bool) { REC("startframe"); }
 void StartFrame(int, int, int, int, bool, bool) { REC("startframe"); }

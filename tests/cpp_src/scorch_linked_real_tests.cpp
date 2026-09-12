@@ -55,6 +55,9 @@ void rend_SetColorModel(color_model) {}
 void rend_SetOverlayType(unsigned char) {}
 void rend_SetTextureType(texture_type) {}
 void rend_SetZBufferWriteMask(int) {}
+// WeaponImpact 3D path stub: force 2D sprite fallback (plasma rendering
+// covered by weapon_impact_real_tests).
+bool DrawPlasmaImpact3D(int, int, const g3Point *, float, float) { return false; }
 int GetTextureBitmap(int handle, int frame, bool) { (void)handle; (void)frame; return 0; }
 
 float g3_CalcPointDepth(vector *p) { (void)p; return 0.0f; }
