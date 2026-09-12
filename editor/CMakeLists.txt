@@ -420,6 +420,7 @@ set(SOURCE
     ../descent3/voice.cpp
     ../descent3/weapon.cpp
     ../descent3/WeaponFire.cpp
+    ../descent3/WeaponImpact.cpp
     ../descent3/weather.cpp
     ../descent3/WidescreenCockpit.cpp
     AddScriptDialog.cpp
