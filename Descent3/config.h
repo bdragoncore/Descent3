@@ -229,6 +229,14 @@ const char *AnisotropyLabel(uint8_t level);
 // Invalid inputs wrap to Off (0).
 uint8_t AnisotropyNext(uint8_t level);
 
+// Volumetric fog quality -> display label ("Off", "Low", "High").
+// Unsupported levels map to "Off".
+const char *VFogLabel(uint8_t level);
+
+// Next volumetric fog level in the Off -> Low -> High -> Off cycle.
+// Invalid inputs wrap to Off (0).
+uint8_t VFogNext(uint8_t level);
+
 // Detail setting bounds (used by ConfigSetDetailLevelMax and the detail sheet)
 #define MINIMUM_TERRAIN_DETAIL 4
 #define MAXIMUM_TERRAIN_DETAIL 28

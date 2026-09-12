@@ -1,6 +1,8 @@
 cmake_path(SET GENERATED_HEADERS NORMALIZE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 cmake_path(SET SHADERS_H NORMALIZE ${GENERATED_HEADERS}/shaders.h)
 set(SHADERS
+  shaders/fog_fragment.glsl
+  shaders/fog_vertex.glsl
   shaders/fragment.glsl
   shaders/vertex.glsl
 )

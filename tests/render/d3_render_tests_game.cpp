@@ -6,6 +6,8 @@
  * so all geometry tests share the same 3D frame setup (camera at 0,0,-500, identity view).
  */
 
+#define GL_GLEXT_PROTOTYPES
+
 #include "render_test_base.h"
 #include "test_utils.h"
 #include "test_bitmap_utils.h"
@@ -14,6 +16,7 @@
 #include "grdefs.h"
 #include "3d.h"
 #include "MesaOpenGL.h"
+#include "HardwareOpenGL.h"
 #include <cmath>
 #include <cstdlib>
 #include <vector>
@@ -2201,4 +2204,88 @@ TEST_F(D3GameRenderTest, StencilClipRect) {
     SavePNG("StencilClipRect");
 
     SUCCEED() << "StencilClipRect test completed without crash";
+}
+
+// ---------------------------------------------------------------------------
+// Volumetric fog tests — verify fog shader compiles and fog state capture works
+// ---------------------------------------------------------------------------
+
+#include "shaders.h"
+#include <GL/glext.h>
+
+TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
+    // Compile the fog vertex shader.
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    {
+        char const *src = shaders::fog_vertex.data();
+        GLint len = static_cast<GLint>(shaders::fog_vertex.size());
+        glShaderSource(vs, 1, &src, &len);
+        glCompileShader(vs);
+        GLint ok = 0;
+        glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "Fog vertex shader failed to compile";
+    }
+
+    // Compile the fog fragment shader.
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    {
+        char const *src = shaders::fog_fragment.data();
+        GLint len = static_cast<GLint>(shaders::fog_fragment.size());
+        glShaderSource(fs, 1, &src, &len);
+        glCompileShader(fs);
+        GLint ok = 0;
+        glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "Fog fragment shader failed to compile";
+    }
+
+    // Link into a program.
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glBindAttribLocation(prog, 0, "in_pos");
+    glBindAttribLocation(prog, 1, "in_uv");
+    glLinkProgram(prog);
+    GLint link_ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+    EXPECT_EQ(link_ok, GL_TRUE) << "Fog shader program failed to link";
+
+    // Verify key uniforms are present.
+    EXPECT_GE(glGetUniformLocation(prog, "u_scene_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_scene_depth"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_color"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_start"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_end"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_density"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_fog_enable"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_steps"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_proj00"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_proj11"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_inv_view"), 0);
+
+    glDeleteProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+}
+
+TEST_F(D3GameRenderTest, FogStateCapture) {
+    // The volumetric fog pass reads fog state captured from rend_SetFog*.
+    // Verify the HardwareOpenGL setters/getters round-trip correctly.
+    HardwareOpenGL backend;
+    EXPECT_FALSE(backend.getSceneFogActive());
+    EXPECT_FLOAT_EQ(backend.getSceneFogStart(), 0.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogEnd(), 0.0f);
+
+    backend.setSceneFogActive(true);
+    backend.setSceneFogBorders(10.0f, 200.0f);
+    backend.setSceneFogColor(0.5f, 0.25f, 0.125f);
+
+    EXPECT_TRUE(backend.getSceneFogActive());
+    EXPECT_FLOAT_EQ(backend.getSceneFogStart(), 10.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogEnd(), 200.0f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[0], 0.5f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[1], 0.25f);
+    EXPECT_FLOAT_EQ(backend.getSceneFogColor()[2], 0.125f);
+
+    backend.setSceneFogActive(false);
+    EXPECT_FALSE(backend.getSceneFogActive());
 }

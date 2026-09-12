@@ -1198,3 +1198,31 @@ TEST_F(ConfigTest, AnisotropyNextCyclesOff2x4x8x16x) {
   EXPECT_EQ(AnisotropyNext(16), 0);
   EXPECT_EQ(AnisotropyNext(32), 0); // invalid wraps to Off
 }
+
+/**
+ * @test ConfigTest.VFogLabelMapsLevelToText
+ * @brief Verifies the volumetric fog toggle labels for each quality level.
+ *
+ * @see Descent3/config.cpp (video_menu::VFogLabel)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VFogLabelMapsLevelToText) {
+  EXPECT_STREQ(VFogLabel(0), "Off");
+  EXPECT_STREQ(VFogLabel(1), "Low");
+  EXPECT_STREQ(VFogLabel(2), "High");
+  EXPECT_STREQ(VFogLabel(3), "Off"); // unsupported -> Off
+}
+
+/**
+ * @test ConfigTest.VFogNextCyclesOffLowHigh
+ * @brief Verifies the volumetric fog toggle cycles Off -> Low -> High -> Off.
+ *
+ * @see Descent3/config.cpp (video_menu::VFogNext)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VFogNextCyclesOffLowHigh) {
+  EXPECT_EQ(VFogNext(0), 1);
+  EXPECT_EQ(VFogNext(1), 2);
+  EXPECT_EQ(VFogNext(2), 0);
+  EXPECT_EQ(VFogNext(3), 0); // invalid wraps to Off
+}

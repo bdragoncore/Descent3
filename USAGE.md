@@ -359,6 +359,16 @@ The following command-line options are available in Descent 3. You can set comma
 
     **Description:** Enables multisample anti-aliasing with the specified sample count (2, 4, or 8). Smooths polygon edges at the cost of GPU memory and fill rate. Can also be set from the video options menu.
 
+- `-vfog <level>`
+
+    **Type:** integer
+
+    **Default:** Off (0)
+
+    **Platform:** all
+
+    **Description:** Enables volumetric fog (Phase 1) at the specified quality level (1 = low, 16 ray-march steps; 2 = high, 32 steps). Replaces flat distance-based fog with a ray-marched procedural 3D density field for a cloudy, volumetric look. Requires OpenGL 3.2 core; falls back to legacy fog when disabled or unsupported. Can also be set from the video options menu.
+
 - `-nosparkles`
 
     **Type:** boolean

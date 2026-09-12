@@ -116,6 +116,7 @@ function(add_d3_render_test_executable suite_name)
         ${PROJECT_SOURCE_DIR}/cfile
         ${PROJECT_SOURCE_DIR}/mem
         ${PROJECT_SOURCE_DIR}/bitmap
+        ${CMAKE_BINARY_DIR}/renderer/generated
     )
 
     target_compile_definitions(${target_name} PRIVATE 
