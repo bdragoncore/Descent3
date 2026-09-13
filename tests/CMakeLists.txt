@@ -1075,6 +1075,31 @@ target_include_directories(cinematics_real_tests PRIVATE
 target_compile_definitions(cinematics_real_tests PRIVATE RELEASE)
 gtest_discover_tests(cinematics_real_tests)
 
+# BUGFIX #487: Tests for MVE audio device/volume configuration (sharing the
+# game's audio device instead of opening a second, independent one).
+add_executable(mve_audio_config_tests
+    cpp_src/mve_audio_config_tests.cpp
+    cpp_src/fake_hlsystem.cpp
+    ${PROJECT_SOURCE_DIR}/sndlib/ssl_lib.cpp
+)
+target_link_libraries(mve_audio_config_tests PRIVATE GTest::gtest_main logger mem fix)
+target_include_directories(mve_audio_config_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/Descent3
+    ${PROJECT_SOURCE_DIR}/lib
+    ${PROJECT_SOURCE_DIR}/ddebug
+    ${PROJECT_SOURCE_DIR}/fix
+    ${PROJECT_SOURCE_DIR}/cfile
+    ${PROJECT_SOURCE_DIR}/linux
+    ${PROJECT_SOURCE_DIR}/ddio
+    ${PROJECT_SOURCE_DIR}/grtext
+    ${PROJECT_SOURCE_DIR}/sndlib
+    ${PROJECT_SOURCE_DIR}/libmve
+    ${PROJECT_SOURCE_DIR}/vecmat
+    ${PROJECT_SOURCE_DIR}/md
+)
+target_compile_definitions(mve_audio_config_tests PRIVATE RELEASE)
+gtest_discover_tests(mve_audio_config_tests)
+
 add_executable(megacell_real_tests
     cpp_src/megacell_real_tests.cpp
     ${PROJECT_SOURCE_DIR}/Descent3/megacell.cpp

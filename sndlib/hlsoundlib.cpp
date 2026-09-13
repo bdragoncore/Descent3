@@ -1412,6 +1412,15 @@ void hlsSystem::SetMasterVolume(float volume) {
 
 // Gets the master volume
 float hlsSystem::GetMasterVolume(void) { return m_master_volume; }
+
+// BUGFIX #487: Delegate to the low-level sound system so the MVE movie system
+// can share the game's audio device instead of opening a second one.
+uint32_t hlsSystem::GetAudioDeviceID() const {
+  if (m_ll_sound_ptr != nullptr) {
+    return m_ll_sound_ptr->GetAudioDeviceID();
+  }
+  return 0;
+}
 inline int hlsSystem::MakeUniqueId(int sound_obj_index) { return ((((int)m_sounds_played) << 12) + sound_obj_index); }
 inline int hlsSystem::ValidateUniqueId(int hl_sound_uid) {
   ASSERT(MAX_SOUND_OBJECTS <= 0x0FFF);

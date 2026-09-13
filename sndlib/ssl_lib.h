@@ -542,6 +542,11 @@ public:
     return code;
   };
 
+  // Returns the SDL audio device ID used by this sound system, or 0 if none.
+  // BUGFIX #487: Used by the MVE movie system to share the game's audio device
+  // instead of opening a separate one, so cutscenes respect game sound settings.
+  virtual uint32_t GetAudioDeviceID() const { return 0; }
+
   // environmental sound interface
   // volume modifier (0-1), damping(0-1), 1 = complete, 0 = none
   //	decay 0.1 to 100 seconds, how long it takes for a sound to die.

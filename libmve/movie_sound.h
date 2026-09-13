@@ -38,8 +38,11 @@ public:
    * @param sample_size sample size (8, 16)
    * @param channels count of channels (1 for mono, 2 for stereo)
    * @param is_compressed mark stream as compressed (on streaming will be used decompression functions)
+   * @param device_id SDL audio device to use (0 = SDL default playback device)
+   * @param volume volume multiplier (0.0-1.0) applied to the audio stream
    */
-  MovieSoundDevice(int sample_rate, uint16_t sample_size, uint8_t channels, bool is_compressed);
+  MovieSoundDevice(int sample_rate, uint16_t sample_size, uint8_t channels, bool is_compressed,
+                   uint32_t device_id = 0, float volume = 1.0f);
   ~MovieSoundDevice() override;
 
   /**
