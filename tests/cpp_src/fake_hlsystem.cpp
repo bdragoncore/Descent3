@@ -50,6 +50,17 @@ hlsSystem::hlsSystem() {
 
 void hlsSystem::KillSoundLib(bool) {}
 
+// BUGFIX #487: Stub for the audio device ID getter used by MVE tests.
+uint32_t hlsSystem::GetAudioDeviceID() const {
+  if (m_ll_sound_ptr != nullptr)
+    return m_ll_sound_ptr->GetAudioDeviceID();
+  return 0;
+}
+
+void hlsSystem::SetMasterVolume(float volume) { m_master_volume = volume; }
+
+float hlsSystem::GetMasterVolume() { return m_master_volume; }
+
 int hlsSystem::Play2dSound(int sound_index, float volume, float, uint16_t) {
   g_fake_plays.push_back({sound_index, volume});
   return 0;

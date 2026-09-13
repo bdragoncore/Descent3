@@ -130,6 +130,10 @@ bool lnxsound::GetDeviceSettings(SDL_AudioDeviceID *device, uint32_t *freq, uint
   return true;
 }
 
+// BUGFIX #487: Return the game's SDL audio device so the MVE movie system can
+// share it instead of opening a second, independent device.
+uint32_t lnxsound::GetAudioDeviceID() const { return sound_device; }
+
 // Cleans up after the Sound Library
 void lnxsound::DestroySoundLib() {
   if (sound_device) {

@@ -18,6 +18,7 @@
 #ifndef INCLUDED_MVELIB_H
 #define INCLUDED_MVELIB_H
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -77,6 +78,13 @@ void MVE_getVideoSpec(MVE_videoSpec *vSpec);
 
 // Initialize MVE sound. Set `enable` to false if sound should not be enabled.
 void MVE_sndInit(bool enable);
+
+// BUGFIX #487: Configure the audio device and volume used for MVE playback.
+// The game passes its own SDL audio device ID so cutscenes share the game's
+// audio device (respecting volume and -nosound) instead of opening a separate
+// one. `device` of 0 means the SDL default playback device.
+void MVE_sndSetDevice(uint32_t device);
+void MVE_sndSetVolume(float volume);
 
 void MVE_ioCallbacks(mve_cb_Read io_read);
 void MVE_memCallbacks(mve_cb_Alloc mem_alloc, mve_cb_Free mem_free);

@@ -18,6 +18,7 @@
 #define AUDIO
 
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -139,6 +140,8 @@ static void timer_start() {
 #ifdef AUDIO
 static std::unique_ptr<D3::MovieSoundDevice> snd_ds;
 static int mve_audio_enabled = 1;
+static uint32_t mve_target_device = 0; // BUGFIX #487: 0 = SDL default
+static float mve_volume = 1.0f;        // BUGFIX #487: master volume for MVE audio
 #else
 static int mve_audio_enabled = 0;
 #endif
@@ -184,7 +187,7 @@ static int create_audiobuf_handler(unsigned char major, unsigned char minor, uns
     is_compressed = true;
   }
 
-  snd_ds = std::make_unique<D3::MovieSoundDevice>(sample_rate, sample_size, channels, is_compressed);
+  snd_ds = std::make_unique<D3::MovieSoundDevice>(sample_rate, sample_size, channels, is_compressed, mve_target_device, mve_volume);
 #endif
 
   return 1;
@@ -477,5 +480,22 @@ void MVE_sndInit(bool enable) {
   } else {
     mve_audio_enabled = 0;
   }
+#endif
+}
+
+// BUGFIX #487: Set the SDL audio device that MVE playback should use. The game
+// passes its own device so cutscenes share the game's audio device instead of
+// opening a separate one. A value of 0 selects the SDL default playback device.
+void MVE_sndSetDevice(uint32_t device) {
+#ifdef AUDIO
+  mve_target_device = device;
+#endif
+}
+
+// BUGFIX #487: Set the volume (0.0-1.0) applied to MVE audio. The game passes
+// its master volume so cutscene audio respects the game's sound settings.
+void MVE_sndSetVolume(float volume) {
+#ifdef AUDIO
+  mve_volume = volume;
 #endif
 }

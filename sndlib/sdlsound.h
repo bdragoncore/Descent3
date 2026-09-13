@@ -119,6 +119,9 @@ public:
   bool GetDeviceSettings(SDL_AudioDeviceID *sound_device, uint32_t *freq, uint32_t *bit_depth,
                                  uint32_t *channels) const;
 
+  // BUGFIX #487: Expose the audio device ID so the MVE movie system can share it.
+  uint32_t GetAudioDeviceID() const override;
+
   friend void lnxsound_SetError(int code);
   friend void lnxsound_ErrorText(const char *fmt, ...);
 

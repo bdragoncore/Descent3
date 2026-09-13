@@ -20,20 +20,32 @@
 
 namespace D3 {
 
-MovieSoundDevice::MovieSoundDevice(int sample_rate, uint16_t sample_size, uint8_t channels, bool is_compressed) {
+MovieSoundDevice::MovieSoundDevice(int sample_rate, uint16_t sample_size, uint8_t channels, bool is_compressed,
+                                   uint32_t device_id, float volume) {
   SDL_AudioSpec spec{};
   spec.freq = sample_rate;
   spec.format = (sample_size == 2) ? SDL_AUDIO_S16LE : SDL_AUDIO_U8;
   spec.channels = channels;
 
-  this->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+  // BUGFIX #487: Use the game's audio device (passed in) instead of always
+  // opening the SDL default. This unifies MVE cutscene audio with the game's
+  // sound device so cutscenes respect the game's volume and -nosound settings.
+  SDL_AudioDeviceID dev = (device_id != 0) ? device_id : SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+  this->stream = SDL_OpenAudioDeviceStream(dev, &spec, nullptr, nullptr);
   this->m_is_compressed = is_compressed;
   this->m_sample_size = sample_size;
+
+  // BUGFIX #487: Apply the game's master volume to the MVE audio stream.
+  if (this->stream != nullptr && volume != 1.0f) {
+    SDL_SetAudioStreamGain(this->stream, volume);
+  }
 };
 
 MovieSoundDevice::~MovieSoundDevice() {
   if (this->stream != nullptr) {
-    SDL_CloseAudioDevice(SDL_GetAudioStreamDevice(this->stream));
+    // BUGFIX #487: Destroy the stream (unbinding it from the device) rather
+    // than closing the device, so a shared game audio device stays open.
+    SDL_DestroyAudioStream(this->stream);
   }
 }
 

@@ -27,6 +27,7 @@
 #include "game.h"
 #include "gamefont.h"
 #include "grtext.h"
+#include "hlsoundlib.h"
 #include "log.h"
 #include "mem.h"
 #include "mvelib.h"
@@ -543,6 +544,13 @@ intptr_t mve_SequenceStart(const char *mvename, void *fhandle, oeApplication *ap
   Movie_bm_handle = -1;
   Movie_looping = looping;
 
+  // BUGFIX #487: Share the game's audio device and volume with MVE playback
+  // so cutscenes respect the game's sound settings instead of opening a
+  // second, independent SDL audio device.
+  MVE_sndInit(FindArg("-nosound") == 0);
+  MVE_sndSetDevice(Sound_system.GetAudioDeviceID());
+  MVE_sndSetVolume(Sound_system.GetMasterVolume());
+
   // let the render know we will be copying bitmaps to framebuffer (or something)
   rend_SetFrameBufferCopyState(true);
 
@@ -638,6 +646,11 @@ bool mve_SequenceClose(intptr_t hMovie, void *hFile) {
     MVE_rmEndMovie(seq->mve);
   }
 
+  // BUGFIX #487: Reset MVE audio to defaults after playback so a later movie
+  // that runs without the game sound system falls back to the SDL default.
+  MVE_sndSetDevice(0);
+  MVE_sndSetVolume(1.0f);
+
   // free our bitmap
   if (Movie_bm_handle != -1) {
     bm_FreeBitmap(Movie_bm_handle);
@@ -673,11 +686,20 @@ void mve_ClearRect(int16_t x1, int16_t y1, int16_t x2, int16_t y2) {
 bool mve_InitSound() {
   MVE_sndInit(FindArg("-nosound") == 0);
 
+  // BUGFIX #487: Share the game's audio device and volume with MVE playback
+  // so cutscenes respect the game's sound settings (volume, -nosound, etc.)
+  // instead of opening a second, independent SDL audio device.
+  MVE_sndSetDevice(Sound_system.GetAudioDeviceID());
+  MVE_sndSetVolume(Sound_system.GetMasterVolume());
+
   return true;
 }
 
 void mve_CloseSound() {
-  // TODO: close the driver out
+  // BUGFIX #487: Reset MVE audio to defaults after playback so a later movie
+  // that runs without the game sound system falls back to the SDL default.
+  MVE_sndSetDevice(0);
+  MVE_sndSetVolume(1.0f);
 }
 
 #endif

@@ -341,6 +341,10 @@ public:
   void SetMasterVolume(float volume);
   float GetMasterVolume();
 
+  // BUGFIX #487: Expose the audio device ID through the high-level interface
+  // so the MVE movie system can share the game's audio device.
+  uint32_t GetAudioDeviceID() const;
+
   // Queued sound functions
   void Add2dSoundQueued(int q_num, int sound_index, float volume, float pan, uint16_t frequency);
   void KillQueue(int q_num = 0);
