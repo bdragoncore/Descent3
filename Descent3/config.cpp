@@ -448,25 +448,25 @@ int Default_detail_level = DETAIL_LEVEL_MED;
 tGameToggles Game_toggles = { // toggles specified in general settings.
     true, false, true};
 
-// IDV_VCONFIG..IDV_CCONFIG and the video-page cycle button IDs
-// (IDV_MSAA_CYCLE/IDV_AF_CYCLE/IDV_VFOG_CYCLE) are defined in config.h.
+// IDV_VCONFIG..IDV_CCONFIG and the video-page slider IDs
+// (IDV_MSAA_SLIDER/IDV_AF_SLIDER/IDV_VFOG_SLIDER) are defined in config.h.
 #define IDV_QUIT 0xff
 
-// BUGFIX #10: the video-page cycle buttons must never collide with the menu
+// BUGFIX #10: the video-page sliders must never collide with the menu
 // option sheet IDs, or newuiMenu::DoUI() will treat a button press as a page
 // navigation (see IDV_VFOG_CYCLE=13 == IDV_GCONFIG=13 bug).
-static_assert(IDV_MSAA_CYCLE != IDV_VCONFIG && IDV_MSAA_CYCLE != IDV_GCONFIG && IDV_MSAA_CYCLE != IDV_SCONFIG &&
-                  IDV_MSAA_CYCLE != IDV_DCONFIG && IDV_MSAA_CYCLE != IDV_HCONFIG && IDV_MSAA_CYCLE != IDV_CCONFIG,
-              "IDV_MSAA_CYCLE collides with a menu option ID");
-static_assert(IDV_AF_CYCLE != IDV_VCONFIG && IDV_AF_CYCLE != IDV_GCONFIG && IDV_AF_CYCLE != IDV_SCONFIG &&
-                  IDV_AF_CYCLE != IDV_DCONFIG && IDV_AF_CYCLE != IDV_HCONFIG && IDV_AF_CYCLE != IDV_CCONFIG,
-              "IDV_AF_CYCLE collides with a menu option ID");
-static_assert(IDV_VFOG_CYCLE != IDV_VCONFIG && IDV_VFOG_CYCLE != IDV_GCONFIG && IDV_VFOG_CYCLE != IDV_SCONFIG &&
-                  IDV_VFOG_CYCLE != IDV_DCONFIG && IDV_VFOG_CYCLE != IDV_HCONFIG && IDV_VFOG_CYCLE != IDV_CCONFIG,
-              "IDV_VFOG_CYCLE collides with a menu option ID");
-static_assert(IDV_FXAA_CYCLE != IDV_VCONFIG && IDV_FXAA_CYCLE != IDV_GCONFIG && IDV_FXAA_CYCLE != IDV_SCONFIG &&
-                  IDV_FXAA_CYCLE != IDV_DCONFIG && IDV_FXAA_CYCLE != IDV_HCONFIG && IDV_FXAA_CYCLE != IDV_CCONFIG,
-              "IDV_FXAA_CYCLE collides with a menu option ID");
+static_assert(IDV_MSAA_SLIDER != IDV_VCONFIG && IDV_MSAA_SLIDER != IDV_GCONFIG && IDV_MSAA_SLIDER != IDV_SCONFIG &&
+                  IDV_MSAA_SLIDER != IDV_DCONFIG && IDV_MSAA_SLIDER != IDV_HCONFIG && IDV_MSAA_SLIDER != IDV_CCONFIG,
+              "IDV_MSAA_SLIDER collides with a menu option ID");
+static_assert(IDV_AF_SLIDER != IDV_VCONFIG && IDV_AF_SLIDER != IDV_GCONFIG && IDV_AF_SLIDER != IDV_SCONFIG &&
+                  IDV_AF_SLIDER != IDV_DCONFIG && IDV_AF_SLIDER != IDV_HCONFIG && IDV_AF_SLIDER != IDV_CCONFIG,
+              "IDV_AF_SLIDER collides with a menu option ID");
+static_assert(IDV_VFOG_SLIDER != IDV_VCONFIG && IDV_VFOG_SLIDER != IDV_GCONFIG && IDV_VFOG_SLIDER != IDV_SCONFIG &&
+                  IDV_VFOG_SLIDER != IDV_DCONFIG && IDV_VFOG_SLIDER != IDV_HCONFIG && IDV_VFOG_SLIDER != IDV_CCONFIG,
+              "IDV_VFOG_SLIDER collides with a menu option ID");
+static_assert(IDV_FXAA_SLIDER != IDV_VCONFIG && IDV_FXAA_SLIDER != IDV_GCONFIG && IDV_FXAA_SLIDER != IDV_SCONFIG &&
+                  IDV_FXAA_SLIDER != IDV_DCONFIG && IDV_FXAA_SLIDER != IDV_HCONFIG && IDV_FXAA_SLIDER != IDV_CCONFIG,
+              "IDV_FXAA_SLIDER collides with a menu option ID");
 
 #define UID_GAMMASLIDER 0x1000
 
@@ -832,6 +832,34 @@ uint8_t MsaaNext(uint8_t samples) {
   }
 }
 
+// MSAA sample count -> slider position (0 = Off, 1 = 2x, 2 = 4x, 3 = 8x).
+int16_t MsaaToPos(uint8_t samples) {
+  switch (samples) {
+  case 2:
+    return 1;
+  case 4:
+    return 2;
+  case 8:
+    return 3;
+  default:
+    return 0;
+  }
+}
+
+// Slider position (0-3) -> MSAA sample count (0/2/4/8). Out-of-range maps to Off.
+uint8_t MsaaFromPos(int16_t pos) {
+  switch (pos) {
+  case 1:
+    return 2;
+  case 2:
+    return 4;
+  case 3:
+    return 8;
+  default:
+    return 0;
+  }
+}
+
 // AF level -> display label. 0/1 = off.
 const char *AnisotropyLabel(uint8_t level) {
   switch (level) {
@@ -865,6 +893,38 @@ uint8_t AnisotropyNext(uint8_t level) {
   }
 }
 
+// AF level -> slider position (0 = Off, 1 = 2x, 2 = 4x, 3 = 8x, 4 = 16x).
+int16_t AnisotropyToPos(uint8_t level) {
+  switch (level) {
+  case 2:
+    return 1;
+  case 4:
+    return 2;
+  case 8:
+    return 3;
+  case 16:
+    return 4;
+  default:
+    return 0;
+  }
+}
+
+// Slider position (0-4) -> AF level (0/2/4/8/16). Out-of-range maps to Off.
+uint8_t AnisotropyFromPos(int16_t pos) {
+  switch (pos) {
+  case 1:
+    return 2;
+  case 2:
+    return 4;
+  case 3:
+    return 8;
+  case 4:
+    return 16;
+  default:
+    return 0;
+  }
+}
+
 // Volumetric fog quality label: 0 = off, 1 = low (16 steps), 2 = high (32 steps).
 const char *VFogLabel(uint8_t level) {
   switch (level) {
@@ -889,6 +949,30 @@ uint8_t VFogNext(uint8_t level) {
   }
 }
 
+// Volumetric fog level -> slider position (0 = Off, 1 = Low, 2 = High).
+int16_t VFogToPos(uint8_t level) {
+  switch (level) {
+  case 1:
+    return 1;
+  case 2:
+    return 2;
+  default:
+    return 0;
+  }
+}
+
+// Slider position (0-2) -> volumetric fog level (0/1/2). Out-of-range maps to Off.
+uint8_t VFogFromPos(int16_t pos) {
+  switch (pos) {
+  case 1:
+    return 1;
+  case 2:
+    return 2;
+  default:
+    return 0;
+  }
+}
+
 // FXAA post-process anti-aliasing label.
 const char *FxaaLabel(bool enabled) {
   return enabled ? "On" : "Off";
@@ -898,6 +982,12 @@ const char *FxaaLabel(bool enabled) {
 bool FxaaNext(bool enabled) {
   return !enabled;
 }
+
+// FXAA state -> slider position (0 = Off, 1 = On).
+int16_t FxaaToPos(bool enabled) { return enabled ? 1 : 0; }
+
+// Slider position (0-1) -> FXAA state. Out-of-range maps to Off.
+bool FxaaFromPos(int16_t pos) { return pos == 1; }
 
 struct video_menu {
   newuiSheet *sheet;
@@ -912,18 +1002,26 @@ struct video_menu {
   char *resolution_string = nullptr;
   short *fov = nullptr;
   bool resolution_changed = false;
-  // MSAA toggle: cycles Off -> 2x -> 4x -> 8x. Stored as sample count.
+  // MSAA slider: Off -> 2x -> 4x -> 8x. Stored as sample count.
   uint8_t msaa_samples = 0;
   char *msaa_string = nullptr;
-  // AF toggle: cycles Off -> 2x -> 4x -> 8x -> 16x. Stored as AF level.
+  int16_t *msaa_slider = nullptr;
+  int16_t msaa_setup_pos = 0;
+  // AF slider: Off -> 2x -> 4x -> 8x -> 16x. Stored as AF level.
   uint8_t anisotropy = 0;
   char *anisotropy_string = nullptr;
-  // Volumetric fog toggle: cycles Off -> Low -> High. Stored as quality level.
+  int16_t *anisotropy_slider = nullptr;
+  int16_t anisotropy_setup_pos = 0;
+  // Volumetric fog slider: Off -> Low -> High. Stored as quality level.
   uint8_t vfog_level = 0;
   char *vfog_string = nullptr;
-  // FXAA toggle: cycles Off -> On. Stored as a boolean.
+  int16_t *vfog_slider = nullptr;
+  int16_t vfog_setup_pos = 0;
+  // FXAA slider: Off -> On. Stored as a boolean.
   bool fxaa_enabled = false;
   char *fxaa_string = nullptr;
+  int16_t *fxaa_slider = nullptr;
+  int16_t fxaa_setup_pos = 0;
 
   int *bitdepth = nullptr; // bitdepths
 
@@ -989,8 +1087,8 @@ struct video_menu {
     *scale_mode = Render_fullscreen_scale_mode;
     cy += radio_h * 3;
 
-    // MSAA: toggle button cycling Off -> 2x -> 4x -> 8x. Takes effect on
-    // menu close (FBOs are recreated via SetScreenMode force).
+    // MSAA slider: Off -> 2x -> 4x -> 8x. Takes effect on menu close
+    // (FBOs are recreated via SetScreenMode force).
     msaa_samples = Render_preferred_state.msaa_samples;
     sheet->NewGroup("MSAA", 0, cy);
     cy += font_h;
@@ -1000,12 +1098,13 @@ struct video_menu {
       snprintf(msaa_string, alloc_size, "%s", MsaaLabel(msaa_samples));
     }
     cy += font_h;
-    sheet->AddLongButton("Change", IDV_MSAA_CYCLE);
-    cy += lbtn_h;
+    msaa_setup_pos = MsaaToPos(msaa_samples);
+    msaa_slider = sheet->AddSlider(NULL, 3, msaa_setup_pos, NULL, IDV_MSAA_SLIDER);
+    cy += slider_bar_h + 2;
     cy += group_pad;
 
-    // AF: toggle button cycling Off -> 2x -> 4x -> 8x -> 16x. Takes effect
-    // on menu close (textures are reconfigured via rend_ResetCache).
+    // AF slider: Off -> 2x -> 4x -> 8x -> 16x. Takes effect on menu close
+    // (textures are reconfigured via rend_ResetCache).
     anisotropy = Render_preferred_state.anisotropy;
     sheet->NewGroup("Anisotropy", 0, cy);
     cy += font_h;
@@ -1015,12 +1114,13 @@ struct video_menu {
       snprintf(anisotropy_string, alloc_size, "%s", AnisotropyLabel(anisotropy));
     }
     cy += font_h;
-    sheet->AddLongButton("Change", IDV_AF_CYCLE);
-    cy += lbtn_h;
+    anisotropy_setup_pos = AnisotropyToPos(anisotropy);
+    anisotropy_slider = sheet->AddSlider(NULL, 4, anisotropy_setup_pos, NULL, IDV_AF_SLIDER);
+    cy += slider_bar_h + 2;
     cy += group_pad;
 
-    // Volumetric fog: toggle button cycling Off -> Low -> High. Takes effect
-    // on menu close (FBOs are recreated via SetScreenMode force).
+    // Volumetric fog slider: Off -> Low -> High. Takes effect on menu close
+    // (FBOs are recreated via SetScreenMode force).
     vfog_level = Render_preferred_state.vfog_level;
     sheet->NewGroup("Volumetric Fog", 0, cy);
     cy += font_h;
@@ -1030,12 +1130,13 @@ struct video_menu {
       snprintf(vfog_string, alloc_size, "%s", VFogLabel(vfog_level));
     }
     cy += font_h;
-    sheet->AddLongButton("Change", IDV_VFOG_CYCLE);
-    cy += lbtn_h;
+    vfog_setup_pos = VFogToPos(vfog_level);
+    vfog_slider = sheet->AddSlider(NULL, 2, vfog_setup_pos, NULL, IDV_VFOG_SLIDER);
+    cy += slider_bar_h + 2;
     cy += group_pad;
 
-    // FXAA: toggle button cycling Off -> On. Takes effect on menu close
-    // (FBOs are recreated via SetScreenMode force).
+    // FXAA slider: Off -> On. Takes effect on menu close (FBOs are recreated
+    // via SetScreenMode force).
     fxaa_enabled = Render_preferred_state.fxaa_enabled;
     sheet->NewGroup("FXAA", 0, cy);
     cy += font_h;
@@ -1045,8 +1146,9 @@ struct video_menu {
       snprintf(fxaa_string, alloc_size, "%s", FxaaLabel(fxaa_enabled));
     }
     cy += font_h;
-    sheet->AddLongButton("Change", IDV_FXAA_CYCLE);
-    cy += lbtn_h;
+    fxaa_setup_pos = FxaaToPos(fxaa_enabled);
+    fxaa_slider = sheet->AddSlider(NULL, 1, fxaa_setup_pos, NULL, IDV_FXAA_SLIDER);
+    cy += slider_bar_h + 2;
     cy += group_pad;
 
     // FOV setting 72deg -> 90deg (flows after Cockpit, no NewGroup)
@@ -1106,6 +1208,21 @@ struct video_menu {
 
   // retreive values from property sheet here.
   void finish() {
+    // Read the discrete-option sliders directly so the values are correct even
+    // if the user drags a slider and closes the menu without a process() pass.
+    msaa_samples = MsaaFromPos(*msaa_slider);
+    anisotropy = AnisotropyFromPos(*anisotropy_slider);
+    vfog_level = VFogFromPos(*vfog_slider);
+    fxaa_enabled = FxaaFromPos(*fxaa_slider);
+
+    // Only apply a rendering option if the user actually moved its slider on
+    // this page.  The Details page edits the same Render_preferred_state
+    // values, so applying a stale slider position here would revert it.
+    const bool msaa_moved = *msaa_slider != msaa_setup_pos;
+    const bool vfog_moved = *vfog_slider != vfog_setup_pos;
+    const bool fxaa_moved = *fxaa_slider != fxaa_setup_pos;
+    const bool af_moved = *anisotropy_slider != anisotropy_setup_pos;
+
     if (filtering)
       Render_preferred_state.filtering = (*filtering) ? 1 : 0;
     if (mipmapping)
@@ -1118,13 +1235,17 @@ struct video_menu {
 #endif
 
     if (*fullscreen != Game_fullscreen || Render_preferred_state.bit_depth != Render_preferred_bitdepth ||
-        resolution_changed || Render_preferred_state.msaa_samples != msaa_samples ||
-        Render_preferred_state.vfog_level != vfog_level || Render_preferred_state.fxaa_enabled != fxaa_enabled) {
+        resolution_changed || (msaa_moved && Render_preferred_state.msaa_samples != msaa_samples) ||
+        (vfog_moved && Render_preferred_state.vfog_level != vfog_level) ||
+        (fxaa_moved && Render_preferred_state.fxaa_enabled != fxaa_enabled)) {
       resolution_changed = false;
       Game_fullscreen = *fullscreen;
-      Render_preferred_state.msaa_samples = msaa_samples;
-      Render_preferred_state.vfog_level = vfog_level;
-      Render_preferred_state.fxaa_enabled = fxaa_enabled;
+      if (msaa_moved)
+        Render_preferred_state.msaa_samples = msaa_samples;
+      if (vfog_moved)
+        Render_preferred_state.vfog_level = vfog_level;
+      if (fxaa_moved)
+        Render_preferred_state.fxaa_enabled = fxaa_enabled;
       SetScreenMode(GetScreenMode(), true);
       Render_preferred_state.bit_depth = Render_preferred_bitdepth;
       rend_SetPreferredState(&Render_preferred_state, true);
@@ -1136,7 +1257,7 @@ struct video_menu {
 
     // AF takes effect without a mode change: store the level and reset the
     // texture cache so filter state (including AF) is reconfigured.
-    if (Render_preferred_state.anisotropy != anisotropy) {
+    if (af_moved && Render_preferred_state.anisotropy != anisotropy) {
       Render_preferred_state.anisotropy = anisotropy;
       rend_SetPreferredState(&Render_preferred_state);
       rend_ResetCache();
@@ -1221,31 +1342,31 @@ struct video_menu {
       menu.Destroy();
       break;
     }
-    case IDV_MSAA_CYCLE: {
-      // Cycle MSAA Off -> 2x -> 4x -> 8x and refresh the label.
+    case IDV_MSAA_SLIDER: {
+      // MSAA slider moved: refresh the label from the slider position.
       // Applied in finish() via SetScreenMode force (FBO recreate).
-      msaa_samples = MsaaNext(msaa_samples);
+      msaa_samples = MsaaFromPos(*msaa_slider);
       snprintf(msaa_string, 15, "%s", MsaaLabel(msaa_samples));
       break;
     }
-    case IDV_AF_CYCLE: {
-      // Cycle AF Off -> 2x -> 4x -> 8x -> 16x and refresh the label.
+    case IDV_AF_SLIDER: {
+      // AF slider moved: refresh the label from the slider position.
       // Applied in finish() via rend_ResetCache (no mode change needed).
-      anisotropy = AnisotropyNext(anisotropy);
+      anisotropy = AnisotropyFromPos(*anisotropy_slider);
       snprintf(anisotropy_string, 15, "%s", AnisotropyLabel(anisotropy));
       break;
     }
-    case IDV_VFOG_CYCLE: {
-      // Cycle volumetric fog Off -> Low -> High and refresh the label.
+    case IDV_VFOG_SLIDER: {
+      // Volumetric fog slider moved: refresh the label from the slider position.
       // Applied in finish() via SetScreenMode force (FBO recreate).
-      vfog_level = VFogNext(vfog_level);
+      vfog_level = VFogFromPos(*vfog_slider);
       snprintf(vfog_string, 15, "%s", VFogLabel(vfog_level));
       break;
     }
-    case IDV_FXAA_CYCLE: {
-      // Cycle FXAA Off -> On and refresh the label.
+    case IDV_FXAA_SLIDER: {
+      // FXAA slider moved: refresh the label from the slider position.
       // Applied in finish() via SetScreenMode force (FBO recreate).
-      fxaa_enabled = FxaaNext(fxaa_enabled);
+      fxaa_enabled = FxaaFromPos(*fxaa_slider);
       snprintf(fxaa_string, 15, "%s", FxaaLabel(fxaa_enabled));
       break;
     }
@@ -1698,72 +1819,133 @@ struct details_menu {
   bool *headlight; // the only user-adjustable detail toggle
   bool *weapon_impact_3d; // 3D procedural weapon impact trail toggle
 
+  // Rendering-quality sliders (shared with the video page): MSAA, AF,
+  // volumetric fog and FXAA.  Both menus read/write Render_preferred_state,
+  // so each menu only applies a slider the user actually moved on that page.
+  uint8_t msaa_samples = 0;
+  char *msaa_string = nullptr;
+  int16_t *msaa_slider = nullptr;
+  int16_t msaa_setup_pos = 0;
+  uint8_t anisotropy = 0;
+  char *anisotropy_string = nullptr;
+  int16_t *anisotropy_slider = nullptr;
+  int16_t anisotropy_setup_pos = 0;
+  uint8_t vfog_level = 0;
+  char *vfog_string = nullptr;
+  int16_t *vfog_slider = nullptr;
+  int16_t vfog_setup_pos = 0;
+  bool fxaa_enabled = false;
+  char *fxaa_string = nullptr;
+  int16_t *fxaa_slider = nullptr;
+  int16_t fxaa_setup_pos = 0;
+
   // sets the menu up.
   newuiSheet *setup(newuiMenu *menu) {
     sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_MEDIUM);
     parent_menu = menu;
 
-    // detail level radio
-    // int iTemp;
-    // Database->read_int("PredefDetailSetting", &Default_detail_level);
-    // iTemp = Default_detail_level;
-    // sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
-    // detail_level = sheet->AddFirstRadioButton(TXT_LOW);
-    // sheet->AddRadioButton(TXT_CFG_MEDIUM);
-    // sheet->AddRadioButton(TXT_CFG_HIGH);
-    // sheet->AddRadioButton(TXT_CFG_VERYHIGH);
-    // sheet->AddRadioButton(TXT_CFG_CUSTOM);
-    // *detail_level = iTemp;
+    // BUGFIX #685: compute group positions from actual art heights at runtime
+    // (same approach as the video page) and make the sheet scrollable so the
+    // added rendering sliders fit without overflowing the sheet bounds.
+    const int font_h = grfont_GetHeight(MONITOR9_NEWUI_FONT) + 1;
+    const int lchk_h = newui_GetBitmapHeight("LongButtonRed.ogf");
+    const int slider_bar_h = newui_GetBitmapHeight("Bar.ogf");
+    const int group_pad = 5;
 
-    // toggles
-    sheet->NewGroup(TXT_TOGGLES, 0, 87);
-    headlight = sheet->AddLongCheckBox(TXT_FASTHEADLIGHT, Detail_settings.Fast_headlight_on);
-    weapon_impact_3d = sheet->AddLongCheckBox("3D Weapon Impact", Detail_settings.Weapon_impact_3d);
-    // specmap = sheet->AddLongCheckBox(TXT_SPECMAPPING, Detail_settings.Specular_lighting);
-    // mirror = sheet->AddLongCheckBox(TXT_MIRRORSURF, Detail_settings.Mirrored_surfaces);
-    // dynamic = sheet->AddLongCheckBox(TXT_DYNLIGHTING, Detail_settings.Dynamic_lighting);
-    // fog = sheet->AddLongCheckBox(TXT_CFG_ENABLEFOG, Detail_settings.Fog_enabled);
-    // coronas = sheet->AddLongCheckBox(TXT_CFG_ENABLELIGHTCORONA, Detail_settings.Coronas_enabled);
-    // procedurals = sheet->AddLongCheckBox(TXT_CFG_PROCEDURALS, Detail_settings.Procedurals_enabled);
-    // powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
-    // scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
-    // weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
+    const int sheet_w = NEWUI_MEDWIN_OPTIONS_X - NEWUI_MEDWIN_SHEET_X;
+    const int sheet_h = newui_GetBitmapHeight("MediumScreen.ogf") - NEWUI_MEDWIN_SHEET_Y - 30;
+    sheet->SetScrollArea(sheet_w, sheet_h);
 
-    // sliders
-    // tSliderSettings slider_set;
-    // sheet->NewGroup(TXT_GEOMETRY, 90, 0);
-    // iTemp = static_cast<int>(MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL);
-    // if (iTemp < 0)
-    //   iTemp = 0;
-    // slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
-    // slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
-    // slider_set.type = SLIDER_UNITS_INT;
-    // pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
-    // slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
-    // slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
-    // slider_set.type = SLIDER_UNITS_INT;
-    // iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
-    // if (iTemp < 0)
-    //   iTemp = 0;
-    // rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
-
-    // object complexity radio
-    // sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
-    // objcomp = sheet->AddFirstRadioButton(TXT_LOW);
-    // sheet->AddRadioButton(TXT_CFG_MEDIUM);
-    // sheet->AddRadioButton(TXT_CFG_HIGH);
-    // *objcomp = Detail_settings.Object_complexity;
+    int cy = 0;
 
     // show the effective (max) values as read-only text
-    sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
+    sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, cy);
+    cy += font_h;
     sheet->AddText(TXT_CFG_VERYHIGH);
+    cy += font_h;
+    cy += group_pad;
 
-    sheet->NewGroup(TXT_GEOMETRY, 90, 0);
+    sheet->NewGroup(TXT_GEOMETRY, 0, cy);
+    cy += font_h;
     sheet->AddText("%s: %d", TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL);
+    cy += font_h;
     sheet->AddText("%s: %d", TXT_RENDDIST, MAXIMUM_RENDER_DIST);
+    cy += font_h;
+    cy += group_pad;
 
-    sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
+    sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 0, cy);
+    cy += font_h;
     sheet->AddText(TXT_CFG_HIGH);
+    cy += font_h;
+    cy += group_pad;
+
+    // toggles
+    sheet->NewGroup(TXT_TOGGLES, 0, cy);
+    cy += font_h;
+    headlight = sheet->AddLongCheckBox(TXT_FASTHEADLIGHT, Detail_settings.Fast_headlight_on);
+    cy += lchk_h;
+    weapon_impact_3d = sheet->AddLongCheckBox("3D Weapon Impact", Detail_settings.Weapon_impact_3d);
+    cy += lchk_h;
+    cy += group_pad;
+
+    // Rendering-quality sliders (shared with the video page).  MSAA/vfog/FXAA
+    // take effect on menu close (FBOs are recreated via SetScreenMode force);
+    // AF only needs a texture-cache reset.
+    msaa_samples = Render_preferred_state.msaa_samples;
+    sheet->NewGroup("MSAA", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      msaa_string = sheet->AddChangeableText(alloc_size);
+      snprintf(msaa_string, alloc_size, "%s", MsaaLabel(msaa_samples));
+    }
+    cy += font_h;
+    msaa_setup_pos = MsaaToPos(msaa_samples);
+    msaa_slider = sheet->AddSlider(NULL, 3, msaa_setup_pos, NULL, IDV_MSAA_SLIDER);
+    cy += slider_bar_h + 2;
+    cy += group_pad;
+
+    anisotropy = Render_preferred_state.anisotropy;
+    sheet->NewGroup("Anisotropy", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      anisotropy_string = sheet->AddChangeableText(alloc_size);
+      snprintf(anisotropy_string, alloc_size, "%s", AnisotropyLabel(anisotropy));
+    }
+    cy += font_h;
+    anisotropy_setup_pos = AnisotropyToPos(anisotropy);
+    anisotropy_slider = sheet->AddSlider(NULL, 4, anisotropy_setup_pos, NULL, IDV_AF_SLIDER);
+    cy += slider_bar_h + 2;
+    cy += group_pad;
+
+    vfog_level = Render_preferred_state.vfog_level;
+    sheet->NewGroup("Volumetric Fog", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      vfog_string = sheet->AddChangeableText(alloc_size);
+      snprintf(vfog_string, alloc_size, "%s", VFogLabel(vfog_level));
+    }
+    cy += font_h;
+    vfog_setup_pos = VFogToPos(vfog_level);
+    vfog_slider = sheet->AddSlider(NULL, 2, vfog_setup_pos, NULL, IDV_VFOG_SLIDER);
+    cy += slider_bar_h + 2;
+    cy += group_pad;
+
+    fxaa_enabled = Render_preferred_state.fxaa_enabled;
+    sheet->NewGroup("FXAA", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      fxaa_string = sheet->AddChangeableText(alloc_size);
+      snprintf(fxaa_string, alloc_size, "%s", FxaaLabel(fxaa_enabled));
+    }
+    cy += font_h;
+    fxaa_setup_pos = FxaaToPos(fxaa_enabled);
+    fxaa_slider = sheet->AddSlider(NULL, 1, fxaa_setup_pos, NULL, IDV_FXAA_SLIDER);
+    cy += slider_bar_h + 2;
+    cy += group_pad;
 
     return sheet;
   };
@@ -1777,6 +1959,38 @@ struct details_menu {
     Detail_settings.Fast_headlight_on = *headlight;
     Detail_settings.Weapon_impact_3d = *weapon_impact_3d;
 
+    // Apply the rendering sliders only if the user moved them on this page.
+    // The video page edits the same Render_preferred_state values, so applying
+    // a stale slider position here would revert it.
+    msaa_samples = MsaaFromPos(*msaa_slider);
+    anisotropy = AnisotropyFromPos(*anisotropy_slider);
+    vfog_level = VFogFromPos(*vfog_slider);
+    fxaa_enabled = FxaaFromPos(*fxaa_slider);
+
+    const bool msaa_moved = *msaa_slider != msaa_setup_pos;
+    const bool vfog_moved = *vfog_slider != vfog_setup_pos;
+    const bool fxaa_moved = *fxaa_slider != fxaa_setup_pos;
+    const bool af_moved = *anisotropy_slider != anisotropy_setup_pos;
+
+    if ((msaa_moved && Render_preferred_state.msaa_samples != msaa_samples) ||
+        (vfog_moved && Render_preferred_state.vfog_level != vfog_level) ||
+        (fxaa_moved && Render_preferred_state.fxaa_enabled != fxaa_enabled)) {
+      if (msaa_moved)
+        Render_preferred_state.msaa_samples = msaa_samples;
+      if (vfog_moved)
+        Render_preferred_state.vfog_level = vfog_level;
+      if (fxaa_moved)
+        Render_preferred_state.fxaa_enabled = fxaa_enabled;
+      SetScreenMode(GetScreenMode(), true);
+      rend_SetPreferredState(&Render_preferred_state, true);
+    }
+
+    if (af_moved && Render_preferred_state.anisotropy != anisotropy) {
+      Render_preferred_state.anisotropy = anisotropy;
+      rend_SetPreferredState(&Render_preferred_state);
+      rend_ResetCache();
+    }
+
     sheet = NULL;
   };
 
@@ -1785,7 +1999,26 @@ struct details_menu {
     // BUGFIX #1: Every detail control except the Fast Headlight toggle is
     // commented out, so there is nothing to process here; finish() reads the
     // headlight value directly.
-    (void)res;
+    switch (res) {
+    case IDV_MSAA_SLIDER:
+      msaa_samples = MsaaFromPos(*msaa_slider);
+      snprintf(msaa_string, 15, "%s", MsaaLabel(msaa_samples));
+      break;
+    case IDV_AF_SLIDER:
+      anisotropy = AnisotropyFromPos(*anisotropy_slider);
+      snprintf(anisotropy_string, 15, "%s", AnisotropyLabel(anisotropy));
+      break;
+    case IDV_VFOG_SLIDER:
+      vfog_level = VFogFromPos(*vfog_slider);
+      snprintf(vfog_string, 15, "%s", VFogLabel(vfog_level));
+      break;
+    case IDV_FXAA_SLIDER:
+      fxaa_enabled = FxaaFromPos(*fxaa_slider);
+      snprintf(fxaa_string, 15, "%s", FxaaLabel(fxaa_enabled));
+      break;
+    default:
+      break;
+    }
   };
 };
 

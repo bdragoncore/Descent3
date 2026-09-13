@@ -1164,6 +1164,27 @@ TEST_F(ConfigTest, MsaaNextCyclesOff2x4x8x) {
 }
 
 /**
+ * @test ConfigTest.MsaaToPosFromPosRoundTrip
+ * @brief Verifies the MSAA slider position mapping is a bijection over the
+ * supported sample counts (Off -> 2x -> 4x -> 8x).
+ *
+ * @see Descent3/config.cpp (video_menu::MsaaToPos / MsaaFromPos)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, MsaaToPosFromPosRoundTrip) {
+  EXPECT_EQ(MsaaToPos(0), 0);
+  EXPECT_EQ(MsaaToPos(2), 1);
+  EXPECT_EQ(MsaaToPos(4), 2);
+  EXPECT_EQ(MsaaToPos(8), 3);
+  EXPECT_EQ(MsaaFromPos(0), 0);
+  EXPECT_EQ(MsaaFromPos(1), 2);
+  EXPECT_EQ(MsaaFromPos(2), 4);
+  EXPECT_EQ(MsaaFromPos(3), 8);
+  EXPECT_EQ(MsaaFromPos(4), 0); // out of range -> Off
+  EXPECT_EQ(MsaaToPos(16), 0);  // unsupported -> Off
+}
+
+/**
  * @test ConfigTest.AnisotropyLabelMapsLevelToText
  * @brief Verifies the AF toggle labels for each anisotropy level.
  *
@@ -1198,6 +1219,30 @@ TEST_F(ConfigTest, AnisotropyNextCyclesOff2x4x8x16x) {
 }
 
 /**
+ * @test ConfigTest.AnisotropyToPosFromPosRoundTrip
+ * @brief Verifies the AF slider position mapping is a bijection over the
+ * supported levels (Off -> 2x -> 4x -> 8x -> 16x).
+ *
+ * @see Descent3/config.cpp (video_menu::AnisotropyToPos / AnisotropyFromPos)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, AnisotropyToPosFromPosRoundTrip) {
+  EXPECT_EQ(AnisotropyToPos(0), 0);
+  EXPECT_EQ(AnisotropyToPos(1), 0);
+  EXPECT_EQ(AnisotropyToPos(2), 1);
+  EXPECT_EQ(AnisotropyToPos(4), 2);
+  EXPECT_EQ(AnisotropyToPos(8), 3);
+  EXPECT_EQ(AnisotropyToPos(16), 4);
+  EXPECT_EQ(AnisotropyFromPos(0), 0);
+  EXPECT_EQ(AnisotropyFromPos(1), 2);
+  EXPECT_EQ(AnisotropyFromPos(2), 4);
+  EXPECT_EQ(AnisotropyFromPos(3), 8);
+  EXPECT_EQ(AnisotropyFromPos(4), 16);
+  EXPECT_EQ(AnisotropyFromPos(5), 0); // out of range -> Off
+  EXPECT_EQ(AnisotropyToPos(32), 0);  // unsupported -> Off
+}
+
+/**
  * @test ConfigTest.VFogLabelMapsLevelToText
  * @brief Verifies the volumetric fog toggle labels for each quality level.
  *
@@ -1226,6 +1271,25 @@ TEST_F(ConfigTest, VFogNextCyclesOffLowHigh) {
 }
 
 /**
+ * @test ConfigTest.VFogToPosFromPosRoundTrip
+ * @brief Verifies the volumetric fog slider position mapping is a bijection
+ * over the supported levels (Off -> Low -> High).
+ *
+ * @see Descent3/config.cpp (video_menu::VFogToPos / VFogFromPos)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, VFogToPosFromPosRoundTrip) {
+  EXPECT_EQ(VFogToPos(0), 0);
+  EXPECT_EQ(VFogToPos(1), 1);
+  EXPECT_EQ(VFogToPos(2), 2);
+  EXPECT_EQ(VFogFromPos(0), 0);
+  EXPECT_EQ(VFogFromPos(1), 1);
+  EXPECT_EQ(VFogFromPos(2), 2);
+  EXPECT_EQ(VFogFromPos(3), 0); // out of range -> Off
+  EXPECT_EQ(VFogToPos(3), 0);   // unsupported -> Off
+}
+
+/**
  * @test ConfigTest.FxaaLabelMapsStateToText
  * @brief Verifies the FXAA toggle labels for each state.
  *
@@ -1250,8 +1314,24 @@ TEST_F(ConfigTest, FxaaNextCyclesOffOn) {
 }
 
 /**
- * @test ConfigTest.VideoCycleButtonIdsDoNotCollideWithMenuOptionIds
- * @brief Verifies the video-page "Change" button IDs do not collide with the
+ * @test ConfigTest.FxaaToPosFromPosRoundTrip
+ * @brief Verifies the FXAA slider position mapping is a bijection over the
+ * supported states (Off -> On).
+ *
+ * @see Descent3/config.cpp (video_menu::FxaaToPos / FxaaFromPos)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FxaaToPosFromPosRoundTrip) {
+  EXPECT_EQ(FxaaToPos(false), 0);
+  EXPECT_EQ(FxaaToPos(true), 1);
+  EXPECT_EQ(FxaaFromPos(0), false);
+  EXPECT_EQ(FxaaFromPos(1), true);
+  EXPECT_EQ(FxaaFromPos(2), false); // out of range -> Off
+}
+
+/**
+ * @test ConfigTest.VideoSliderIdsDoNotCollideWithMenuOptionIds
+ * @brief Verifies the video-page slider IDs do not collide with the
  * OptionsMenu sheet IDs.
  *
  * newuiMenu::DoUI() treats a button result equal to another sheet's ID as a
@@ -1263,15 +1343,15 @@ TEST_F(ConfigTest, FxaaNextCyclesOffOn) {
  * @see Descent3/newui_core.cpp (newuiMenu::DoUI)
  * @ingroup descent3_tests
  */
-TEST_F(ConfigTest, VideoCycleButtonIdsDoNotCollideWithMenuOptionIds) {
+TEST_F(ConfigTest, VideoSliderIdsDoNotCollideWithMenuOptionIds) {
   const int option_ids[] = {IDV_VCONFIG, IDV_GCONFIG, IDV_SCONFIG, IDV_DCONFIG, IDV_HCONFIG, IDV_CCONFIG};
-  const int cycle_ids[] = {IDV_MSAA_CYCLE, IDV_AF_CYCLE, IDV_VFOG_CYCLE, IDV_FXAA_CYCLE};
+  const int slider_ids[] = {IDV_MSAA_SLIDER, IDV_AF_SLIDER, IDV_VFOG_SLIDER, IDV_FXAA_SLIDER};
 
-  for (int cycle : cycle_ids) {
+  for (int slider : slider_ids) {
     for (int option : option_ids) {
-      EXPECT_NE(cycle, option) << "video cycle button ID " << cycle
-                               << " collides with menu option ID " << option
-                               << "; newuiMenu::DoUI() would navigate pages";
+      EXPECT_NE(slider, option) << "video slider ID " << slider
+                                << " collides with menu option ID " << option
+                                << "; newuiMenu::DoUI() would navigate pages";
     }
   }
 }

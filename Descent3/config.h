@@ -217,6 +217,13 @@ void ConfigSetDetailLevelMax();
 // Unsupported counts map to "Off".
 const char *MsaaLabel(uint8_t samples);
 
+// MSAA sample count -> slider position (0 = Off, 1 = 2x, 2 = 4x, 3 = 8x).
+// Unsupported counts map to Off (0).
+int16_t MsaaToPos(uint8_t samples);
+
+// Slider position (0-3) -> MSAA sample count (0/2/4/8). Out-of-range maps to Off.
+uint8_t MsaaFromPos(int16_t pos);
+
 // Next MSAA level in the Off -> 2x -> 4x -> 8x -> Off cycle.
 // Invalid inputs wrap to Off (0).
 uint8_t MsaaNext(uint8_t samples);
@@ -224,6 +231,13 @@ uint8_t MsaaNext(uint8_t samples);
 // AF level -> display label ("Off", "2x", "4x", "8x", "16x").
 // Unsupported levels map to "Off".
 const char *AnisotropyLabel(uint8_t level);
+
+// AF level -> slider position (0 = Off, 1 = 2x, 2 = 4x, 3 = 8x, 4 = 16x).
+// Unsupported levels map to Off (0).
+int16_t AnisotropyToPos(uint8_t level);
+
+// Slider position (0-4) -> AF level (0/2/4/8/16). Out-of-range maps to Off.
+uint8_t AnisotropyFromPos(int16_t pos);
 
 // Next AF level in the Off -> 2x -> 4x -> 8x -> 16x -> Off cycle.
 // Invalid inputs wrap to Off (0).
@@ -233,12 +247,27 @@ uint8_t AnisotropyNext(uint8_t level);
 // Unsupported levels map to "Off".
 const char *VFogLabel(uint8_t level);
 
+// Volumetric fog level -> slider position (0 = Off, 1 = Low, 2 = High).
+// Unsupported levels map to Off (0).
+int16_t VFogToPos(uint8_t level);
+
+// Slider position (0-2) -> volumetric fog level (0/1/2). Out-of-range maps to Off.
+uint8_t VFogFromPos(int16_t pos);
+
 // Next volumetric fog level in the Off -> Low -> High -> Off cycle.
 // Invalid inputs wrap to Off (0).
 uint8_t VFogNext(uint8_t level);
 
 // FXAA post-process anti-aliasing toggle.
 const char *FxaaLabel(bool enabled);
+
+// FXAA state -> slider position (0 = Off, 1 = On).
+int16_t FxaaToPos(bool enabled);
+
+// Slider position (0-1) -> FXAA state. Out-of-range maps to Off.
+bool FxaaFromPos(int16_t pos);
+
+// Next FXAA state in the Off -> On -> Off cycle.
 bool FxaaNext(bool enabled);
 
 // Options-menu sheet IDs (must be unique across all sheets in OptionsMenu()).
@@ -249,13 +278,13 @@ bool FxaaNext(bool enabled);
 #define IDV_HCONFIG 16 // hud config
 #define IDV_CCONFIG 17 // controller config
 
-// Video-page "Change" button IDs.  BUGFIX #10: these must NOT collide with the
+// Video-page slider IDs.  BUGFIX #10: these must NOT collide with the
 // sheet IDs above, or newuiMenu::DoUI() treats a button press as a page
 // navigation (IDV_VFOG_CYCLE=13 == IDV_GCONFIG=13 jumped to the General page).
-#define IDV_MSAA_CYCLE 11
-#define IDV_AF_CYCLE 18
-#define IDV_VFOG_CYCLE 19
-#define IDV_FXAA_CYCLE 20
+#define IDV_MSAA_SLIDER 11
+#define IDV_AF_SLIDER 18
+#define IDV_VFOG_SLIDER 19
+#define IDV_FXAA_SLIDER 20
 
 // Detail setting bounds (used by ConfigSetDetailLevelMax and the detail sheet)
 #define MINIMUM_TERRAIN_DETAIL 4
