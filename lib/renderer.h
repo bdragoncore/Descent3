@@ -430,6 +430,7 @@ struct renderer_preferred_state {
   uint8_t msaa_samples = 0; // MSAA sample count: 0 = off, else 2/4/8
   uint8_t anisotropy = 0;   // Anisotropic filtering level: 0/1 = off, else 2/4/8/16
   uint8_t vfog_level = 0;   // Volumetric fog: 0 = off, 1 = low (16 steps), 2 = high (32 steps)
+  bool fxaa_enabled = false; // FXAA 3.11 post-process anti-aliasing: false = off, true = on
 };
 
 struct renderer_lfb {

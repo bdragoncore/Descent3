@@ -180,6 +180,27 @@ protected:
   mutable float fog_modelview_[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   mutable bool fog_matrices_captured_ = false;
 
+  // FXAA 3.11 post-process pass.  When fxaa_enabled_ is true the present
+  // pipeline is: scene -> fog pass -> FXAA pass -> window blit.  The FXAA
+  // pass needs its input as a sampleable texture, but the scene and MSAA
+  // resolve FBOs use renderbuffers, so the current blit source is first
+  // copied into fxaa_source_fbo_ (texture) and then filtered into
+  // fxaa_fbo_ (texture), which becomes the new blit source.  The GL objects
+  // are created once in SetupContext and reused every frame, so the members
+  // are mutable to allow PresentFrame() (const) to bind them.
+  mutable GLuint fxaa_source_fbo_ = 0;
+  mutable GLuint fxaa_source_texture_ = 0;
+  mutable GLuint fxaa_fbo_ = 0;
+  mutable GLuint fxaa_color_texture_ = 0;
+  mutable GLuint fxaa_vao_ = 0;
+  mutable GLuint fxaa_vbo_ = 0;
+  mutable GLuint fxaa_shader_program_ = 0;
+  mutable GLint fxaa_uniform_scene_ = -1;
+  mutable GLint fxaa_uniform_rcp_frame_ = -1;
+  mutable GLint fxaa_attrib_pos_ = -1;
+  mutable GLint fxaa_attrib_uv_ = -1;
+  bool fxaa_enabled_ = false;
+
   // Compiles and links the volumetric fog pass shader, caching uniform and
   // attribute locations. Returns 0 on failure.
   GLuint CompileFogShader() const;
@@ -191,4 +212,14 @@ protected:
   // scene unmodified) if the scene blit fails, so the caller can present the
   // unfogged scene instead of a black screen.
   bool RenderFogPass() const;
+  // Compiles and links the FXAA post-process shader, caching uniform and
+  // attribute locations. Returns 0 on failure.
+  GLuint CompileFxaaShader() const;
+  // Creates the full-screen triangle VAO/VBO used by the FXAA pass.
+  void SetupFxaaFullScreenTriangle() const;
+  // Runs the FXAA pass: copies the given source FBO into fxaa_source_fbo_,
+  // filters it into fxaa_fbo_, and leaves fxaa_fbo_ bound as the blit source
+  // for the window present. Returns false (and leaves the scene unmodified)
+  // if the source copy fails, so the caller can present the unfiltered scene.
+  bool RenderFxaaPass(GLuint source_fbo) const;
 };

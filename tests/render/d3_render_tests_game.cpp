@@ -2281,6 +2281,51 @@ TEST_F(D3GameRenderTest, FogShaderCompilesAndLinks) {
     glDeleteShader(fs);
 }
 
+TEST_F(D3GameRenderTest, FxaaShaderCompilesAndLinks) {
+    // Compile the FXAA vertex shader.
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    {
+        char const *src = shaders::fxaa_vertex.data();
+        GLint len = static_cast<GLint>(shaders::fxaa_vertex.size());
+        glShaderSource(vs, 1, &src, &len);
+        glCompileShader(vs);
+        GLint ok = 0;
+        glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "FXAA vertex shader failed to compile";
+    }
+
+    // Compile the FXAA fragment shader.
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    {
+        char const *src = shaders::fxaa_fragment.data();
+        GLint len = static_cast<GLint>(shaders::fxaa_fragment.size());
+        glShaderSource(fs, 1, &src, &len);
+        glCompileShader(fs);
+        GLint ok = 0;
+        glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+        ASSERT_EQ(ok, GL_TRUE) << "FXAA fragment shader failed to compile";
+    }
+
+    // Link into a program.
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glBindAttribLocation(prog, 0, "in_pos");
+    glBindAttribLocation(prog, 1, "in_uv");
+    glLinkProgram(prog);
+    GLint link_ok = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+    EXPECT_EQ(link_ok, GL_TRUE) << "FXAA shader program failed to link";
+
+    // Verify key uniforms are present.
+    EXPECT_GE(glGetUniformLocation(prog, "u_scene"), 0);
+    EXPECT_GE(glGetUniformLocation(prog, "u_rcp_frame"), 0);
+
+    glDeleteProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+}
+
 TEST_F(D3GameRenderTest, FogStateCapture) {
     // The volumetric fog pass reads fog state captured from rend_SetFog*.
     // Verify the HardwareOpenGL setters/getters round-trip correctly.

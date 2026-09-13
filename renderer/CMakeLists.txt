@@ -4,6 +4,8 @@ set(SHADERS
   shaders/fog_fragment.glsl
   shaders/fog_vertex.glsl
   shaders/fragment.glsl
+  shaders/fxaa_fragment.glsl
+  shaders/fxaa_vertex.glsl
   shaders/vertex.glsl
 )
 add_custom_command(

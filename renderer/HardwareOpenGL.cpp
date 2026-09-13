@@ -676,6 +676,64 @@ bool HardwareOpenGL::SetupContext(int width, int height) {
     dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
   }
 
+  // FXAA 3.11 post-process pass: when enabled, the present pipeline becomes
+  // scene -> fog pass -> FXAA pass -> window blit.  The FXAA pass needs its
+  // input as a sampleable texture, but the scene and MSAA resolve FBOs use
+  // renderbuffers, so the current blit source is first copied into
+  // fxaa_source_fbo_ (texture) and then filtered into fxaa_fbo_ (texture),
+  // which becomes the new blit source.
+  fxaa_enabled_ = Render_preferred_state.fxaa_enabled;
+  if (fxaa_enabled_) {
+    // FXAA input FBO: full-res color texture receiving the blit source copy.
+    dglGenFramebuffers(1, &fxaa_source_fbo_);
+    dglBindFramebuffer(GL_FRAMEBUFFER, fxaa_source_fbo_);
+    dglGenTextures(1, &fxaa_source_texture_);
+    dglBindTexture(GL_TEXTURE_2D, fxaa_source_texture_);
+    dglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    dglFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fxaa_source_texture_, 0);
+
+    // FXAA output FBO: full-res color texture holding the filtered result.
+    dglGenFramebuffers(1, &fxaa_fbo_);
+    dglBindFramebuffer(GL_FRAMEBUFFER, fxaa_fbo_);
+    dglGenTextures(1, &fxaa_color_texture_);
+    dglBindTexture(GL_TEXTURE_2D, fxaa_color_texture_);
+    dglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    dglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    dglFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fxaa_color_texture_, 0);
+
+    if (dglCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+      LOG_WARNING << "OpenGL: FXAA framebuffer incomplete, disabling FXAA";
+      dglDeleteFramebuffers(1, &fxaa_source_fbo_);
+      dglDeleteFramebuffers(1, &fxaa_fbo_);
+      dglDeleteTextures(1, &fxaa_source_texture_);
+      dglDeleteTextures(1, &fxaa_color_texture_);
+      fxaa_source_fbo_ = fxaa_fbo_ = fxaa_source_texture_ = fxaa_color_texture_ = 0;
+      fxaa_enabled_ = false;
+    } else {
+      fxaa_shader_program_ = CompileFxaaShader();
+      if (fxaa_shader_program_ == 0) {
+        LOG_WARNING << "OpenGL: FXAA shader compile failed, disabling FXAA";
+        dglDeleteFramebuffers(1, &fxaa_source_fbo_);
+        dglDeleteFramebuffers(1, &fxaa_fbo_);
+        dglDeleteTextures(1, &fxaa_source_texture_);
+        dglDeleteTextures(1, &fxaa_color_texture_);
+        fxaa_source_fbo_ = fxaa_fbo_ = fxaa_source_texture_ = fxaa_color_texture_ = 0;
+        fxaa_enabled_ = false;
+      } else {
+        SetupFxaaFullScreenTriangle();
+        LOG_INFO << "FXAA enabled";
+      }
+    }
+    dglBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+  }
+
   if (parent_application_) {
     reinterpret_cast<oeLnxApplication *>(parent_application_)->set_sizepos(0, 0, width, height);
   }
@@ -712,6 +770,24 @@ void HardwareOpenGL::DestroyContext(bool just_resizing) {
     fog_fbo_ = fog_color_texture_ = 0;
     fog_shader_program_ = fog_vao_ = fog_vbo_ = 0;
     vfog_level_ = 0;
+    // FXAA post-process resources.
+    if (fxaa_shader_program_)
+      dglDeleteProgram(fxaa_shader_program_);
+    if (fxaa_vao_)
+      dglDeleteVertexArrays(1, &fxaa_vao_);
+    if (fxaa_vbo_)
+      dglDeleteBuffers(1, &fxaa_vbo_);
+    if (fxaa_source_fbo_)
+      dglDeleteFramebuffers(1, &fxaa_source_fbo_);
+    if (fxaa_source_texture_)
+      dglDeleteTextures(1, &fxaa_source_texture_);
+    if (fxaa_fbo_)
+      dglDeleteFramebuffers(1, &fxaa_fbo_);
+    if (fxaa_color_texture_)
+      dglDeleteTextures(1, &fxaa_color_texture_);
+    fxaa_source_fbo_ = fxaa_source_texture_ = fxaa_fbo_ = fxaa_color_texture_ = 0;
+    fxaa_shader_program_ = fxaa_vao_ = fxaa_vbo_ = 0;
+    fxaa_enabled_ = false;
   }
 
   if (!just_resizing && window_) {
@@ -1060,6 +1136,182 @@ bool HardwareOpenGL::RenderFogPass() const {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// FXAA 3.11 post-process pass — CompileFxaaShader / SetupFxaaFullScreenTriangle
+// ---------------------------------------------------------------------------
+
+GLuint HardwareOpenGL::CompileFxaaShader() const {
+  auto compile_stage = [](GLenum type, std::string_view src) -> GLuint {
+    GLuint id = dglCreateShader(type);
+    if (id == 0)
+      return 0;
+    char const *ptr = src.data();
+    GLint len = static_cast<GLint>(src.size());
+    dglShaderSource(id, 1, &ptr, &len);
+    dglCompileShader(id);
+    GLint ok = 0;
+    dglGetShaderiv(id, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+      GLchar msg[1024];
+      GLsizei log_len = 0;
+      dglGetShaderInfoLog(id, sizeof(msg), &log_len, msg);
+      LOG_ERROR.printf("FXAA %s shader compile failed: %s", type == GL_VERTEX_SHADER ? "vertex" : "fragment", msg);
+      dglDeleteShader(id);
+      return 0;
+    }
+    return id;
+  };
+
+  GLuint vs = compile_stage(GL_VERTEX_SHADER, shaders::fxaa_vertex);
+  if (vs == 0)
+    return 0;
+  GLuint fs = compile_stage(GL_FRAGMENT_SHADER, shaders::fxaa_fragment);
+  if (fs == 0) {
+    dglDeleteShader(vs);
+    return 0;
+  }
+
+  GLuint prog = dglCreateProgram();
+  dglAttachShader(prog, vs);
+  dglAttachShader(prog, fs);
+  dglBindAttribLocation(prog, 0, "in_pos");
+  dglBindAttribLocation(prog, 1, "in_uv");
+  dglLinkProgram(prog);
+  dglDeleteShader(vs);
+  dglDeleteShader(fs);
+
+  GLint link_ok = 0;
+  dglGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+  if (!link_ok) {
+    GLchar msg[1024];
+    GLsizei log_len = 0;
+    dglGetProgramInfoLog(prog, sizeof(msg), &log_len, msg);
+    LOG_ERROR.printf("FXAA shader link failed: %s", msg);
+    dglDeleteProgram(prog);
+    return 0;
+  }
+
+  fxaa_uniform_scene_ = dglGetUniformLocation(prog, "u_scene");
+  fxaa_uniform_rcp_frame_ = dglGetUniformLocation(prog, "u_rcp_frame");
+  fxaa_attrib_pos_ = dglGetAttribLocation(prog, "in_pos");
+  fxaa_attrib_uv_ = dglGetAttribLocation(prog, "in_uv");
+
+  return prog;
+}
+
+void HardwareOpenGL::SetupFxaaFullScreenTriangle() const {
+  // Oversized single triangle that covers the entire viewport, same topology
+  // as the fog pass (see SetupFogFullScreenTriangle).
+  struct FSVert {
+    float pos[2];
+    float uv[2];
+  };
+  static constexpr FSVert kTri[] = {
+      {{-1.0f, -1.0f}, {0.0f, 0.0f}},
+      {{3.0f, -1.0f}, {2.0f, 0.0f}},
+      {{-1.0f, 3.0f}, {0.0f, 2.0f}},
+  };
+
+  dglGenVertexArrays(1, &fxaa_vao_);
+  dglGenBuffers(1, &fxaa_vbo_);
+  dglBindVertexArray(fxaa_vao_);
+  dglBindBuffer(GL_ARRAY_BUFFER, fxaa_vbo_);
+  dglBufferData(GL_ARRAY_BUFFER, sizeof(kTri), kTri, GL_STATIC_DRAW);
+
+  if (fxaa_attrib_pos_ >= 0) {
+    dglEnableVertexAttribArray(fxaa_attrib_pos_);
+    dglVertexAttribPointer(fxaa_attrib_pos_, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert),
+                           reinterpret_cast<void *>(offsetof(FSVert, pos)));
+  }
+  if (fxaa_attrib_uv_ >= 0) {
+    dglEnableVertexAttribArray(fxaa_attrib_uv_);
+    dglVertexAttribPointer(fxaa_attrib_uv_, 2, GL_FLOAT, GL_FALSE, sizeof(FSVert),
+                           reinterpret_cast<void *>(offsetof(FSVert, uv)));
+  }
+  dglBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// FXAA 3.11 post-process pass — PresentFrame hook
+// ---------------------------------------------------------------------------
+
+bool HardwareOpenGL::RenderFxaaPass(GLuint source_fbo) const {
+  if (!fxaa_enabled_ || fxaa_fbo_ == 0 || fxaa_source_fbo_ == 0)
+    return true;
+
+  // BUGFIX #487: save the blend/depth-test state before the pass.  The pass
+  // disables both, and unconditionally re-enabling them desyncs the renderer's
+  // tracked state (opengl_Blending_on / gpu_state.cur_zbuffer_state), the same
+  // failure mode the fog pass guards against.
+  GLboolean blend_was_enabled = dglIsEnabled(GL_BLEND);
+  GLboolean depth_test_was_enabled = dglIsEnabled(GL_DEPTH_TEST);
+
+  // Step 1: copy the current blit source into the FXAA input texture FBO.
+  dglBindFramebuffer(GL_READ_FRAMEBUFFER, source_fbo);
+  dglBindFramebuffer(GL_DRAW_FRAMEBUFFER, fxaa_source_fbo_);
+  // BUGFIX #487: drain any error left by earlier frame GL calls so the blit
+  // error check below reports the blit's own error, not a stale one.
+  while (dglGetError() != GL_NO_ERROR) {
+  }
+  dglBlitFramebuffer(0, 0, framebuffer_width_, framebuffer_height_, 0, 0, framebuffer_width_, framebuffer_height_,
+                     GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  GLenum blit_error = dglGetError();
+  if (blit_error != GL_NO_ERROR) {
+    LOG_WARNING.printf("OpenGL: FXAA source blit error 0x%04X; skipping FXAA pass", blit_error);
+    return false;
+  }
+
+  // Step 2: FXAA filter — bind fxaa_fbo_, draw full-screen triangle.
+  dglBindFramebuffer(GL_FRAMEBUFFER, fxaa_fbo_);
+  dglViewport(0, 0, framebuffer_width_, framebuffer_height_);
+  dglClear(GL_COLOR_BUFFER_BIT);
+  dglDisable(GL_DEPTH_TEST);
+  dglDisable(GL_BLEND);
+
+  // BUGFIX #487: save the current program and VAO so the pass can restore
+  // them when done.  The renderer's shader/VAO are bound once at init and
+  // never rebound, so leaving them at 0 here desyncs every subsequent
+  // glUniform*/glDrawArrays call (GL_INVALID_OPERATION 0x0502 each frame).
+  GLint prev_program = 0;
+  dglGetIntegerv(GL_CURRENT_PROGRAM, &prev_program);
+  GLint prev_vao = 0;
+  dglGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prev_vao);
+
+  dglUseProgram(fxaa_shader_program_);
+
+  dglActiveTexture(GL_TEXTURE0);
+  dglBindTexture(GL_TEXTURE_2D, fxaa_source_texture_);
+  dglUniform1i(fxaa_uniform_scene_, 0);
+  dglUniform2f(fxaa_uniform_rcp_frame_, 1.0f / static_cast<float>(framebuffer_width_),
+               1.0f / static_cast<float>(framebuffer_height_));
+
+  dglBindVertexArray(fxaa_vao_);
+  dglDrawArrays(GL_TRIANGLE_FAN, 0, 3);
+  dglBindVertexArray(prev_vao);
+
+  dglUseProgram(prev_program);
+
+  // BUGFIX #487: restore the blend/depth-test state captured at the top of the
+  // pass so the renderer's tracked GL state stays in sync with the driver.
+  if (depth_test_was_enabled)
+    dglEnable(GL_DEPTH_TEST);
+  else
+    dglDisable(GL_DEPTH_TEST);
+  if (blend_was_enabled)
+    dglEnable(GL_BLEND);
+  else
+    dglDisable(GL_BLEND);
+
+  // BUGFIX #487: the pass bound fxaa_source_texture_ to unit 0 without
+  // updating OpenGL_last_bound[].  Unbind it and reset the cache so the next
+  // bind is forced (same failure mode the fog pass guards against).
+  dglActiveTexture(GL_TEXTURE0);
+  dglBindTexture(GL_TEXTURE_2D, 0);
+  OpenGL_last_bound[0] = 9999999;
+
+  return true;
+}
+
 void HardwareOpenGL::PresentFrame() const {
   if (framebuffer_ != 0 && window_) {
     int w, h;
@@ -1086,6 +1338,15 @@ void HardwareOpenGL::PresentFrame() const {
       // scene instead of a black screen.
       if (RenderFogPass()) {
         blit_src = fog_fbo_;
+      }
+    }
+
+    // FXAA 3.11 post-process pass: filter the current blit source and make
+    // fxaa_fbo_ the window blit source.  On a source-copy failure it returns
+    // false and we present the unfiltered scene instead of a black screen.
+    if (fxaa_enabled_ && fxaa_fbo_ != 0) {
+      if (RenderFxaaPass(blit_src)) {
+        blit_src = fxaa_fbo_;
       }
     }
 
@@ -1158,6 +1419,10 @@ std::unique_ptr<NewBitmap> HardwareOpenGL::Screenshot(int width, int height) con
   // When volumetric fog is active, the composited result lives in fog_fbo_.
   if (vfog_level_ > 0 && scene_fog_active_ && fog_fbo_ != 0) {
     dglBindFramebuffer(GL_READ_FRAMEBUFFER, fog_fbo_);
+  }
+  // When FXAA is active, the filtered result lives in fxaa_fbo_.
+  if (fxaa_enabled_ && fxaa_fbo_ != 0) {
+    dglBindFramebuffer(GL_READ_FRAMEBUFFER, fxaa_fbo_);
   }
   dglReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLvoid *>(result->getData()));
   return result;

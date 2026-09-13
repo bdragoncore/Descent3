@@ -237,6 +237,10 @@ const char *VFogLabel(uint8_t level);
 // Invalid inputs wrap to Off (0).
 uint8_t VFogNext(uint8_t level);
 
+// FXAA post-process anti-aliasing toggle.
+const char *FxaaLabel(bool enabled);
+bool FxaaNext(bool enabled);
+
 // Options-menu sheet IDs (must be unique across all sheets in OptionsMenu()).
 #define IDV_VCONFIG 12 // video config
 #define IDV_GCONFIG 13 // general config
@@ -251,6 +255,7 @@ uint8_t VFogNext(uint8_t level);
 #define IDV_MSAA_CYCLE 11
 #define IDV_AF_CYCLE 18
 #define IDV_VFOG_CYCLE 19
+#define IDV_FXAA_CYCLE 20
 
 // Detail setting bounds (used by ConfigSetDetailLevelMax and the detail sheet)
 #define MINIMUM_TERRAIN_DETAIL 4

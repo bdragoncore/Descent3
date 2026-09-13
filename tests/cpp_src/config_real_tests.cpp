@@ -1226,6 +1226,30 @@ TEST_F(ConfigTest, VFogNextCyclesOffLowHigh) {
 }
 
 /**
+ * @test ConfigTest.FxaaLabelMapsStateToText
+ * @brief Verifies the FXAA toggle labels for each state.
+ *
+ * @see Descent3/config.cpp (video_menu::FxaaLabel)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FxaaLabelMapsStateToText) {
+  EXPECT_STREQ(FxaaLabel(false), "Off");
+  EXPECT_STREQ(FxaaLabel(true), "On");
+}
+
+/**
+ * @test ConfigTest.FxaaNextCyclesOffOn
+ * @brief Verifies the FXAA toggle cycles Off -> On -> Off.
+ *
+ * @see Descent3/config.cpp (video_menu::FxaaNext)
+ * @ingroup descent3_tests
+ */
+TEST_F(ConfigTest, FxaaNextCyclesOffOn) {
+  EXPECT_EQ(FxaaNext(false), true);
+  EXPECT_EQ(FxaaNext(true), false);
+}
+
+/**
  * @test ConfigTest.VideoCycleButtonIdsDoNotCollideWithMenuOptionIds
  * @brief Verifies the video-page "Change" button IDs do not collide with the
  * OptionsMenu sheet IDs.
@@ -1241,7 +1265,7 @@ TEST_F(ConfigTest, VFogNextCyclesOffLowHigh) {
  */
 TEST_F(ConfigTest, VideoCycleButtonIdsDoNotCollideWithMenuOptionIds) {
   const int option_ids[] = {IDV_VCONFIG, IDV_GCONFIG, IDV_SCONFIG, IDV_DCONFIG, IDV_HCONFIG, IDV_CCONFIG};
-  const int cycle_ids[] = {IDV_MSAA_CYCLE, IDV_AF_CYCLE, IDV_VFOG_CYCLE};
+  const int cycle_ids[] = {IDV_MSAA_CYCLE, IDV_AF_CYCLE, IDV_VFOG_CYCLE, IDV_FXAA_CYCLE};
 
   for (int cycle : cycle_ids) {
     for (int option : option_ids) {

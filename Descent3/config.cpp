@@ -464,6 +464,9 @@ static_assert(IDV_AF_CYCLE != IDV_VCONFIG && IDV_AF_CYCLE != IDV_GCONFIG && IDV_
 static_assert(IDV_VFOG_CYCLE != IDV_VCONFIG && IDV_VFOG_CYCLE != IDV_GCONFIG && IDV_VFOG_CYCLE != IDV_SCONFIG &&
                   IDV_VFOG_CYCLE != IDV_DCONFIG && IDV_VFOG_CYCLE != IDV_HCONFIG && IDV_VFOG_CYCLE != IDV_CCONFIG,
               "IDV_VFOG_CYCLE collides with a menu option ID");
+static_assert(IDV_FXAA_CYCLE != IDV_VCONFIG && IDV_FXAA_CYCLE != IDV_GCONFIG && IDV_FXAA_CYCLE != IDV_SCONFIG &&
+                  IDV_FXAA_CYCLE != IDV_DCONFIG && IDV_FXAA_CYCLE != IDV_HCONFIG && IDV_FXAA_CYCLE != IDV_CCONFIG,
+              "IDV_FXAA_CYCLE collides with a menu option ID");
 
 #define UID_GAMMASLIDER 0x1000
 
@@ -886,6 +889,16 @@ uint8_t VFogNext(uint8_t level) {
   }
 }
 
+// FXAA post-process anti-aliasing label.
+const char *FxaaLabel(bool enabled) {
+  return enabled ? "On" : "Off";
+}
+
+// Next FXAA state in the Off -> On cycle.
+bool FxaaNext(bool enabled) {
+  return !enabled;
+}
+
 struct video_menu {
   newuiSheet *sheet;
 
@@ -908,6 +921,9 @@ struct video_menu {
   // Volumetric fog toggle: cycles Off -> Low -> High. Stored as quality level.
   uint8_t vfog_level = 0;
   char *vfog_string = nullptr;
+  // FXAA toggle: cycles Off -> On. Stored as a boolean.
+  bool fxaa_enabled = false;
+  char *fxaa_string = nullptr;
 
   int *bitdepth = nullptr; // bitdepths
 
@@ -1018,6 +1034,21 @@ struct video_menu {
     cy += lbtn_h;
     cy += group_pad;
 
+    // FXAA: toggle button cycling Off -> On. Takes effect on menu close
+    // (FBOs are recreated via SetScreenMode force).
+    fxaa_enabled = Render_preferred_state.fxaa_enabled;
+    sheet->NewGroup("FXAA", 0, cy);
+    cy += font_h;
+    {
+      auto alloc_size = static_cast<size_t>(15);
+      fxaa_string = sheet->AddChangeableText(alloc_size);
+      snprintf(fxaa_string, alloc_size, "%s", FxaaLabel(fxaa_enabled));
+    }
+    cy += font_h;
+    sheet->AddLongButton("Change", IDV_FXAA_CYCLE);
+    cy += lbtn_h;
+    cy += group_pad;
+
     // FOV setting 72deg -> 90deg (flows after Cockpit, no NewGroup)
     tSliderSettings settings = {};
     settings.min_val.f = D3_DEFAULT_FOV;
@@ -1088,11 +1119,12 @@ struct video_menu {
 
     if (*fullscreen != Game_fullscreen || Render_preferred_state.bit_depth != Render_preferred_bitdepth ||
         resolution_changed || Render_preferred_state.msaa_samples != msaa_samples ||
-        Render_preferred_state.vfog_level != vfog_level) {
+        Render_preferred_state.vfog_level != vfog_level || Render_preferred_state.fxaa_enabled != fxaa_enabled) {
       resolution_changed = false;
       Game_fullscreen = *fullscreen;
       Render_preferred_state.msaa_samples = msaa_samples;
       Render_preferred_state.vfog_level = vfog_level;
+      Render_preferred_state.fxaa_enabled = fxaa_enabled;
       SetScreenMode(GetScreenMode(), true);
       Render_preferred_state.bit_depth = Render_preferred_bitdepth;
       rend_SetPreferredState(&Render_preferred_state, true);
@@ -1208,6 +1240,13 @@ struct video_menu {
       // Applied in finish() via SetScreenMode force (FBO recreate).
       vfog_level = VFogNext(vfog_level);
       snprintf(vfog_string, 15, "%s", VFogLabel(vfog_level));
+      break;
+    }
+    case IDV_FXAA_CYCLE: {
+      // Cycle FXAA Off -> On and refresh the label.
+      // Applied in finish() via SetScreenMode force (FBO recreate).
+      fxaa_enabled = FxaaNext(fxaa_enabled);
+      snprintf(fxaa_string, 15, "%s", FxaaLabel(fxaa_enabled));
       break;
     }
     case IDV_AUTOGAMMA:
