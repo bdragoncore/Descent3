@@ -2946,11 +2946,21 @@ void newuiSlider::SetRange(int16_t range) { m_unitrange = range; }
 
 // when gadget is added to a window (AddGadget is called)
 void newuiSlider::OnAttachToWindow() {
-  int16_t bx = m_X, by = m_Y;
+  // BUGFIX: align -/+ arrow buttons with the slider bar for untitled sliders.
+  // The +2/+3 offsets were only applied when a title was present, so untitled
+  // sliders (video-options MSAA/AF/vfog/FXAA) had their arrow glyphs hugging
+  // the bar edges and sitting above the fill track instead of matching the
+  // titled sliders' alignment (glyph centered on the fill, inset from the ends).
+  // The offsets are scaled by Newui_ui_scale so the glyphs stay vertically
+  // centered on the bar at higher resolutions (the unscaled +3 left them too
+  // high at 720p/1080p; 3.5*scale nudges the arrow glyphs up a hair from the
+  // 4*scale position, which the user reported as just barely too low).
+  extern float Newui_ui_scale;
+  int16_t bx = m_X + (int)(2 * Newui_ui_scale);
+  int16_t by = m_Y + (int)(3.5 * Newui_ui_scale);
 
   if (m_title) {
-    by += m_title->height() + 5;
-    bx += 2;
+    by += m_title->height() + 2;
   }
 
   m_minus_btn.Create(m_Wnd, -1, NEWUI_ARROW_LEFT, NULL, bx, by);
@@ -2958,7 +2968,6 @@ void newuiSlider::OnAttachToWindow() {
   AttachSlaveGadget(&m_minus_btn);
   // BUGFIX #2: scale bar bitmap width and arrow offset by Newui_ui_scale so
   // the plus button aligns with the right end of the scaled slider bar.
-  extern float Newui_ui_scale;
   int plus_x = bx + (int)(m_bar_bmp->width() * Newui_ui_scale) - (int)(24 * Newui_ui_scale);
   m_plus_btn.Create(m_Wnd, -1, NEWUI_ARROW_RIGHT, NULL, plus_x, by);
   m_plus_btn.SetFlag(UIF_NOTIFYMASTERSEL);
